@@ -12,24 +12,20 @@ pub struct McpService {
 
 impl McpService {
     pub fn new() -> anyhow::Result<Self> {
-        // Initialize tracing
         tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .init();
 
-        // Get configuration from environment
         let searxng_url = env::var("SEARXNG_URL")
             .unwrap_or_else(|_| "http://localhost:8888".to_string());
         
         info!("Starting MCP Service");
         info!("SearXNG URL: {}", searxng_url);
 
-        // Create HTTP client
         let http_client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()?;
 
-        // Create application state
         let state = Arc::new(AppState {
             searxng_url,
             http_client,
@@ -90,13 +86,25 @@ impl rmcp::ServerHandler for McpService {
             },
             Tool {
                 name: Cow::Borrowed("scrape_url"),
-                description: Some(Cow::Borrowed("Scrape content from a specific URL using a Rust-native scraper. Returns cleaned text content, metadata, and structured data.")),
+                description: Some(Cow::Borrowed("Scrape content from a URL with intelligent extraction. Returns cleaned text, metadata, structured data, and clickable source citations. Automatically filters noise (ads, nav, footers) and extracts main content links.")),
                 input_schema: match serde_json::json!({
                     "type": "object",
                     "properties": {
                         "url": {
                             "type": "string",
                             "description": "The URL to scrape content from"
+                        },
+                        "content_links_only": {
+                            "type": "boolean",
+                            "description": "If true, only extract links from main content area (article/main). If false, extract all document links. Default: true (smart filtering)",
+                            "default": true
+                        },
+                        "max_links": {
+                            "type": "integer",
+                            "description": "Maximum number of links to return in Sources section. Default: 100",
+                            "minimum": 1,
+                            "maximum": 500,
+                            "default": 100
                         }
                     },
                     "required": ["url"]
@@ -121,10 +129,8 @@ impl rmcp::ServerHandler for McpService {
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
         info!("MCP tool call: {} with args: {:?}", request.name, request.arguments);
-        
         match request.name.as_ref() {
             "search_web" => {
-                // Extract query from arguments
                 let args = request.arguments.as_ref().ok_or_else(|| ErrorData::new(
                     ErrorCode::INVALID_PARAMS,
                     "Missing required arguments object",
@@ -139,8 +145,6 @@ impl rmcp::ServerHandler for McpService {
                         None,
                     ))?;
                 
-                // Perform search
-                // Optional overrides
                 let engines = args.get("engines").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let categories = args.get("categories").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let language = args.get("language").and_then(|v| v.as_str()).map(|s| s.to_string());
@@ -177,7 +181,6 @@ impl rmcp::ServerHandler for McpService {
                 }
             }
             "scrape_url" => {
-                // Extract URL from arguments
                 let args = request.arguments.as_ref().ok_or_else(|| ErrorData::new(
                     ErrorCode::INVALID_PARAMS,
                     "Missing required arguments object",
@@ -192,13 +195,10 @@ impl rmcp::ServerHandler for McpService {
                         None,
                     ))?;
                 
-                // Force cache invalidation for this URL to ensure fresh scrape
                 self.state.scrape_cache.invalidate(url).await;
                 
-                // Perform scraping
                 match scrape::scrape_url(&self.state, url).await {
                     Ok(content) => {
-                        // Debug: log the actual content length and word count
                         info!("Scraped content: {} words, {} chars clean_content", content.word_count, content.clean_content.len());
                         
                         let content_preview = if content.clean_content.is_empty() {
@@ -207,8 +207,35 @@ impl rmcp::ServerHandler for McpService {
                             content.clean_content.chars().take(2000).collect::<String>()
                         };
                         
+                        // Build Sources section from links
+                        let sources_section = if content.links.is_empty() {
+                            String::new()
+                        } else {
+                            let mut sources = String::from("\n\n**Sources:**\n");
+                            // Get max_links from args or env var or default
+                            let max_sources = args
+                                .get("max_links")
+                                .and_then(|v| v.as_u64())
+                                .map(|n| n as usize)
+                                .or_else(|| std::env::var("MAX_LINKS").ok().and_then(|s| s.parse().ok()))
+                                .unwrap_or(100);
+                            let link_count = content.links.len();
+                            for (i, link) in content.links.iter().take(max_sources).enumerate() {
+                                if !link.text.is_empty() {
+                                    sources.push_str(&format!("[{}]: {} ({})", i + 1, link.url, link.text));
+                                } else {
+                                    sources.push_str(&format!("[{}]: {}", i + 1, link.url));
+                                }
+                                sources.push('\n');
+                            }
+                            if link_count > max_sources {
+                                sources.push_str(&format!("\n(Showing {} of {} total links)\n", max_sources, link_count));
+                            }
+                            sources
+                        };
+                        
                         let content_text = format!(
-                            "**{}**\n\nURL: {}\nWord Count: {}\nLanguage: {}\n\n**Content:**\n{}\n\n**Metadata:**\n- Description: {}\n- Keywords: {}\n\n**Headings:**\n{}\n\n**Links Found:** {}\n**Images Found:** {}",
+                            "**{}**\n\nURL: {}\nWord Count: {}\nLanguage: {}\n\n**Content:**\n{}\n\n**Metadata:**\n- Description: {}\n- Keywords: {}\n\n**Headings:**\n{}\n\n**Links Found:** {}\n**Images Found:** {}{}",
                             content.title,
                             content.url,
                             content.word_count,
@@ -221,7 +248,8 @@ impl rmcp::ServerHandler for McpService {
                                 .collect::<Vec<_>>()
                                 .join("\n"),
                             content.links.len(),
-                            content.images.len()
+                            content.images.len(),
+                            sources_section
                         );
                         
                         Ok(CallToolResult::success(vec![Content::text(content_text)]))
@@ -243,7 +271,6 @@ impl rmcp::ServerHandler for McpService {
 
 pub async fn run() -> anyhow::Result<()> {
     let service = McpService::new()?;
-    // Use the stdio transport from rmcp
     let server = service.serve(rmcp::transport::stdio()).await?;
     info!("MCP stdio server running");
     let _quit_reason = server.waiting().await?;

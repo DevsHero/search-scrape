@@ -28,14 +28,12 @@ select = "0.6"
 html2text = "0.6"
 uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
-# New dependencies for enhanced web scraping
 scraper = "0.19"
 readability = "0.3"
 whatlang = "0.16"
 regex = "1.10"
 percent-encoding = "2.3"
 rand = "0.8"
-# MCP SDK for stdio
 rmcp = { version = "0.5.0", features = ["server", "transport-io"] }
 schemars = "0.8"
 futures = "0.3"

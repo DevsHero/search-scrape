@@ -22,6 +22,12 @@ pub struct SearchResult {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScrapeRequest {
     pub url: String,
+    #[serde(default)]
+    pub content_links_only: Option<bool>,
+    #[serde(default)]
+    pub max_links: Option<usize>,
+    #[serde(default)]
+    pub max_images: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -40,7 +46,6 @@ pub struct ScrapeResponse {
     pub content_type: String,
     pub word_count: usize,
     pub language: String,
-    // Optional enriched metadata
     #[serde(default)]
     pub canonical_url: Option<String>,
     #[serde(default)]

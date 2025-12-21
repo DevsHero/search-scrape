@@ -27,7 +27,6 @@ pub async fn search_web_with_params(
     overrides: Option<SearchParamOverrides>,
 ) -> Result<Vec<SearchResult>> {
     info!("Searching for: {}", query);
-    // Build cache key that includes overrides so different params don't collide
     let cache_key = if let Some(ref ov) = overrides {
         format!(
             "q={}|eng={}|cat={}|lang={}|safe={}|time={}|page={}",
@@ -42,30 +41,25 @@ pub async fn search_web_with_params(
     } else {
         format!("q={}|default", query)
     };
-    // Cache hit fast-path
+
     if let Some(cached) = state.search_cache.get(&cache_key).await {
         debug!("search cache hit for query");
         return Ok(cached);
     }
 
-    // Acquire rate limiter permit
     let _permit = state.outbound_limit.acquire().await.expect("semaphore closed");
-
-    // Prepare search parameters
     let mut params: HashMap<String, String> = HashMap::new();
+    let engines = std::env::var("SEARXNG_ENGINES").unwrap_or_else(|_| "duckduckgo,google,bing".to_string());
+    
     params.insert("q".into(), query.to_string());
     params.insert("format".into(), "json".into());
-    // Allow override via env
-    let engines = std::env::var("SEARXNG_ENGINES").unwrap_or_else(|_| "duckduckgo,google,bing".to_string());
     params.insert("engines".into(), engines);
     params.insert("categories".into(), "general".into());
     params.insert("time_range".into(), "".into());
     params.insert("language".into(), "en".into());
     params.insert("safesearch".into(), "0".into());
-    // Default page number
     params.insert("pageno".into(), "1".into());
 
-    // Apply overrides if provided
     if let Some(ov) = overrides {
     if let Some(v) = ov.engines { if !v.is_empty() { params.insert("engines".into(), v); } }
     if let Some(v) = ov.categories { if !v.is_empty() { params.insert("categories".into(), v); } }
@@ -75,11 +69,9 @@ pub async fn search_web_with_params(
     if let Some(v) = ov.pageno { params.insert("pageno".into(), v.to_string()); }
     }
     
-    // Build search URL
     let search_url = format!("{}/search", state.searxng_url);
     debug!("Search URL: {}", search_url);
     
-    // Make request to SearXNG with retries
     let client = state.http_client.clone();
     let search_url_owned = search_url.clone();
     let params_cloned = params.clone();

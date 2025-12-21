@@ -85,13 +85,25 @@ pub async fn list_tools() -> Json<McpToolsResponse> {
         },
         McpTool {
             name: "scrape_url".to_string(),
-            description: "Scrape content from a specific URL using a Rust-native scraper. Returns cleaned text content, metadata, and structured data.".to_string(),
+            description: "Scrape content from a URL with intelligent extraction. Returns cleaned text, metadata, structured data, and clickable source citations. Automatically filters noise (ads, nav, footers) and extracts main content links.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "url": {
                         "type": "string",
                         "description": "The URL to scrape content from"
+                    },
+                    "content_links_only": {
+                        "type": "boolean",
+                        "description": "If true, only extract links from main content area (article/main). If false, extract all document links. Default: true (smart filtering)",
+                        "default": true
+                    },
+                    "max_links": {
+                        "type": "integer",
+                        "description": "Maximum number of links to return in Sources section. Default: 100",
+                        "minimum": 1,
+                        "maximum": 500,
+                        "default": 100
                     }
                 },
                 "required": ["url"]
@@ -206,8 +218,36 @@ pub async fn call_tool(
                             .map(|h| format!("- {} {}", h.level.to_uppercase(), h.text))
                             .collect::<Vec<_>>()
                             .join("\n");
+                        
+                        // Build Sources section from links
+                        let sources_section = if content.links.is_empty() {
+                            String::new()
+                        } else {
+                            let mut sources = String::from("\n\nSources:\n");
+                            // Get max_links from args or env var or default
+                            let max_sources = request.arguments
+                                .get("max_links")
+                                .and_then(|v| v.as_u64())
+                                .map(|n| n as usize)
+                                .or_else(|| std::env::var("MAX_LINKS").ok().and_then(|s| s.parse().ok()))
+                                .unwrap_or(100);
+                            let link_count = content.links.len();
+                            for (i, link) in content.links.iter().take(max_sources).enumerate() {
+                                if !link.text.is_empty() {
+                                    sources.push_str(&format!("[{}]: {} ({})", i + 1, link.url, link.text));
+                                } else {
+                                    sources.push_str(&format!("[{}]: {}", i + 1, link.url));
+                                }
+                                sources.push('\n');
+                            }
+                            if link_count > max_sources {
+                                sources.push_str(&format!("\n(Showing {} of {} total links)\n", max_sources, link_count));
+                            }
+                            sources
+                        };
+                        
                         format!(
-                            "{}\nURL: {}\nCanonical: {}\nWord Count: {} ({}m)\nLanguage: {}\nSite: {}\nAuthor: {}\nPublished: {}\n\nDescription: {}\nOG Image: {}\n\nHeadings:\n{}\n\nLinks: {}  Images: {}\n\nPreview:\n{}",
+                            "{}\nURL: {}\nCanonical: {}\nWord Count: {} ({}m)\nLanguage: {}\nSite: {}\nAuthor: {}\nPublished: {}\n\nDescription: {}\nOG Image: {}\n\nHeadings:\n{}\n\nLinks: {}  Images: {}\n\nPreview:\n{}{}",
                             content.title,
                             content.url,
                             content.canonical_url.as_deref().unwrap_or("-"),
@@ -222,7 +262,8 @@ pub async fn call_tool(
                             headings,
                             content.links.len(),
                             content.images.len(),
-                            content.clean_content.chars().take(1200).collect::<String>()
+                            content.clean_content.chars().take(1200).collect::<String>(),
+                            sources_section
                         )
                     };
                     

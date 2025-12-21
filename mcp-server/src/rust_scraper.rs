@@ -108,7 +108,8 @@ impl RustScraper {
 
         // Extract structured data
         let headings = self.extract_headings(&document);
-        let links = self.extract_links(&document, &parsed_url);
+        // Smart link extraction: prefer content links over all document links
+        let links = self.extract_content_links(&document, &parsed_url);
         let images = self.extract_images(&document, &parsed_url);
 
         let result = ScrapeResponse {
@@ -598,14 +599,54 @@ impl RustScraper {
         headings
     }
 
-    /// Extract links with absolute URLs
+    /// Extract links with absolute URLs (all document links)
     fn extract_links(&self, document: &Html, base_url: &Url) -> Vec<Link> {
+        self.extract_links_from_selector(document, base_url, "a[href]")
+    }
+
+    /// Extract links only from main content area (smart filtering)
+    fn extract_content_links(&self, document: &Html, base_url: &Url) -> Vec<Link> {
+        // Try to find main content area first
+        let content_selectors = [
+            "article a[href]",
+            "main a[href]",
+            "[role=main] a[href]",
+            "[itemprop=articleBody] a[href]",
+            ".entry-content a[href]",
+            ".post-content a[href]",
+            ".article-content a[href]",
+            "#content a[href]",
+            "#main a[href]",
+        ];
+
+        for content_sel in content_selectors.iter() {
+            if Selector::parse(content_sel).is_ok() {
+                let links = self.extract_links_from_selector(document, base_url, content_sel);
+                if !links.is_empty() && links.len() >= 3 {
+                    info!("Extracted {} links from main content using selector: {}", links.len(), content_sel);
+                    return links;
+                }
+            }
+        }
+
+        // Fallback to all links if no main content found
+        info!("No main content area found, using all document links");
+        self.extract_links(document, base_url)
+    }
+
+    /// Helper to extract links from a specific selector
+    fn extract_links_from_selector(&self, document: &Html, base_url: &Url, selector_str: &str) -> Vec<Link> {
         let mut links = Vec::new();
         let mut seen_urls = HashSet::new();
         
-        if let Ok(selector) = Selector::parse("a[href]") {
+        if let Ok(selector) = Selector::parse(selector_str) {
             for element in document.select(&selector) {
                 if let Some(href) = element.value().attr("href") {
+                    // Skip anchor links, javascript, and common non-content patterns
+                    if href.starts_with('#') || href.starts_with("javascript:") || href.starts_with("mailto:") {
+                        continue;
+                    }
+
                     let text = element.text().collect::<String>().trim().to_string();
                     
                     // Convert relative URLs to absolute
