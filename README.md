@@ -38,7 +38,7 @@ cd mcp-server && cargo build --release
 {
   "mcpServers": {
     "search-scrape": {
-      "command": "/path/to/mcp-server/target/release/mcp-stdio",
+      "command": "/path/to/mcp-server/target/release/search-scrape-mcp",
       "env": { 
         "SEARXNG_URL": "http://localhost:8888",
         "SEARXNG_ENGINES": "google,bing,duckduckgo",
@@ -139,10 +139,10 @@ curl -X POST "http://localhost:5000/scrape" \
 ```bash
 # HTTP server (port 5000)
 cd mcp-server
-SEARXNG_URL=http://localhost:8888 cargo run --release
+SEARXNG_URL=http://localhost:8888 cargo run --release --bin mcp-server
 
 # MCP stdio server (for AI assistants)
-SEARXNG_URL=http://localhost:8888 ./target/release/mcp-stdio
+SEARXNG_URL=http://localhost:8888 ./target/release/search-scrape-mcp
 
 # With debug logging
 RUST_LOG=debug SEARXNG_URL=http://localhost:8888 cargo run --release
@@ -176,7 +176,7 @@ outbound_limit: 32 concurrent requests
 │   │   ├── mcp.rs        # MCP HTTP endpoints
 │   │   ├── types.rs      # Data structures & API types
 │   │   └── lib.rs        # Shared application state
-│   └── target/release/   # Compiled binaries (mcp-server, mcp-stdio)
+│   └── target/release/   # Compiled binaries (mcp-server, search-scrape-mcp)
 ├── searxng/             # SearXNG configuration
 │   ├── settings.yml     # Search engine settings
 │   └── uwsgi.ini        # UWSGI server config

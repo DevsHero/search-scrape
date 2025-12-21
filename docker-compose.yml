@@ -17,4 +17,4 @@ services:
   # To run the MCP server natively:
   # 1. Build: cargo build --release
   # 2. HTTP server: SEARXNG_URL=http://localhost:8888 ./target/release/mcp-server
-  # 3. stdio server: SEARXNG_URL=http://localhost:8888 ./target/release/mcp-stdio
+  # 3. MCP stdio server: SEARXNG_URL=http://localhost:8888 ./target/release/search-scrape-mcp
