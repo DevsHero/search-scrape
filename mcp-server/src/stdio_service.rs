@@ -64,7 +64,7 @@ impl rmcp::ServerHandler for McpService {
         let tools = vec![
             Tool {
                 name: Cow::Borrowed("search_web"),
-                description: Some(Cow::Borrowed("Search the web using SearXNG federated search engine. Supports optional parameters: engines, categories, language, safesearch, time_range, pageno.")),
+                description: Some(Cow::Borrowed("Search the web using SearXNG federated search engine. Returns results with answers, suggestions, and spelling corrections to help refine queries. Supports engines, categories, language, safesearch, time_range, pageno, and max_results.")),
                 input_schema: match serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -74,7 +74,8 @@ impl rmcp::ServerHandler for McpService {
                         "language": {"type": "string", "description": "Language code (e.g., en, en-US)"},
                         "safesearch": {"type": "integer", "minimum": 0, "maximum": 2, "description": "0=off, 1=moderate, 2=strict"},
                         "time_range": {"type": "string", "description": "Filter by time (e.g., day, week, month, year)"},
-                        "pageno": {"type": "integer", "minimum": 1, "description": "Page number (1..N)"}
+                        "pageno": {"type": "integer", "minimum": 1, "description": "Page number (1..N)"},
+                        "max_results": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10, "description": "Maximum number of results to return (default: 10, max: 100)"}
                     },
                     "required": ["query"]
                 }) {
@@ -105,6 +106,13 @@ impl rmcp::ServerHandler for McpService {
                             "minimum": 1,
                             "maximum": 500,
                             "default": 100
+                        },
+                        "max_chars": {
+                            "type": "integer",
+                            "description": "Maximum characters to return in content preview. Useful to control token usage. Default: 10000",
+                            "minimum": 100,
+                            "maximum": 50000,
+                            "default": 10000
                         }
                     },
                     "required": ["url"]
@@ -152,15 +160,46 @@ impl rmcp::ServerHandler for McpService {
                 let safesearch = args.get("safesearch").and_then(|v| v.as_i64()).and_then(|n| if (0..=2).contains(&n) { Some(n as u8) } else { None });
                 let pageno = args.get("pageno").and_then(|v| v.as_u64()).map(|n| n as u32);
 
+                let max_results = args.get("max_results").and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(10);
                 let overrides = crate::search::SearchParamOverrides { engines, categories, language, safesearch, time_range, pageno };
 
                 match search::search_web_with_params(&self.state, query, Some(overrides)).await {
-                    Ok(results) => {
+                    Ok((results, extras)) => {
                         let content_text = if results.is_empty() {
-                            format!("No search results found for query: {}", query)
+                            let mut text = format!("No search results found for query: '{}'\n\n", query);
+                            
+                            // Show suggestions/corrections to help user refine query
+                            if !extras.suggestions.is_empty() {
+                                text.push_str(&format!("**Suggestions:** {}\n", extras.suggestions.join(", ")));
+                            }
+                            if !extras.corrections.is_empty() {
+                                text.push_str(&format!("**Did you mean:** {}\n", extras.corrections.join(", ")));
+                            }
+                            if !extras.unresponsive_engines.is_empty() {
+                                text.push_str(&format!("\n**Note:** {} search engine(s) did not respond. Try different engines or retry.\n", extras.unresponsive_engines.len()));
+                            }
+                            text
                         } else {
-                            let mut text = format!("Found {} search results for '{}':\n\n", results.len(), query);
-                            for (i, result) in results.iter().enumerate() {
+                            let limited_results = results.iter().take(max_results);
+                            let result_count = results.len();
+                            let showing = result_count.min(max_results);
+                            
+                            let mut text = format!("Found {} search results for '{}':", result_count, query);
+                            if result_count > max_results {
+                                text.push_str(&format!(" (showing top {})\n", max_results));
+                            }
+                            text.push_str("\n\n");
+                            
+                            // Show instant answers first if available
+                            if !extras.answers.is_empty() {
+                                text.push_str("**Instant Answers:**\n");
+                                for answer in &extras.answers {
+                                    text.push_str(&format!("📌 {}\n\n", answer));
+                                }
+                            }
+                            
+                            // Show search results
+                            for (i, result) in limited_results.enumerate() {
                                 text.push_str(&format!(
                                     "{}. **{}**\n   URL: {}\n   Snippet: {}\n\n",
                                     i + 1,
@@ -169,6 +208,15 @@ impl rmcp::ServerHandler for McpService {
                                     result.content.chars().take(200).collect::<String>()
                                 ));
                             }
+                            
+                            // Show helpful metadata at the end
+                            if !extras.suggestions.is_empty() {
+                                text.push_str(&format!("\n**Related searches:** {}\n", extras.suggestions.join(", ")));
+                            }
+                            if !extras.unresponsive_engines.is_empty() {
+                                text.push_str(&format!("\n⚠️ **Note:** {} engine(s) did not respond (may affect completeness)\n", extras.unresponsive_engines.len()));
+                            }
+                            
                             text
                         };
                         
@@ -201,10 +249,32 @@ impl rmcp::ServerHandler for McpService {
                     Ok(content) => {
                         info!("Scraped content: {} words, {} chars clean_content", content.word_count, content.clean_content.len());
                         
+                        let max_chars = args
+                            .get("max_chars")
+                            .and_then(|v| v.as_u64())
+                            .map(|n| n as usize)
+                            .or_else(|| std::env::var("MAX_CONTENT_CHARS").ok().and_then(|s| s.parse().ok()))
+                            .unwrap_or(10000);
+                        
                         let content_preview = if content.clean_content.is_empty() {
-                            "[No content extracted - this may indicate a parsing issue]".to_string()
+                            let msg = "[No content extracted]\n\n**Possible reasons:**\n\
+                            • Page is JavaScript-heavy (requires browser execution)\n\
+                            • Content is behind authentication/paywall\n\
+                            • Site blocks automated access\n\n\
+                            **Suggestion:** For JS-heavy sites, try using the Playwright MCP tool instead.";
+                            msg.to_string()
+                        } else if content.word_count < 10 {
+                            format!("{}\n\n⚠️ **Very short content** ({} words). Page may be mostly dynamic/JS-based.", 
+                                content.clean_content.chars().take(max_chars).collect::<String>(),
+                                content.word_count)
                         } else {
-                            content.clean_content.chars().take(2000).collect::<String>()
+                            let preview = content.clean_content.chars().take(max_chars).collect::<String>();
+                            if content.clean_content.len() > max_chars {
+                                format!("{}\n\n[Content truncated: {}/{} chars shown. Increase max_chars parameter to see more]",
+                                    preview, max_chars, content.clean_content.len())
+                            } else {
+                                preview
+                            }
                         };
                         
                         // Build Sources section from links

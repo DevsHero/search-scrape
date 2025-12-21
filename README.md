@@ -8,7 +8,8 @@
 - 🕷️ **Intelligent Scraping**: Smart content extraction with automatic noise filtering (ads, nav, footers removed)
 - 🔗 **Smart Link Filtering**: Extracts links from main content area only, avoiding navigation clutter
 - 📝 **Source Citations**: Automatic reference-style `[1]`, `[2]` citations with clickable URLs in Sources section
-- 🎯 **Configurable Limits**: Control max links, images, and content focus via parameters or env vars
+- 🧠 **Agent-Friendly Extras**: SearXNG instant answers, related suggestions, spelling corrections, and unresponsive-engine warnings help agents self-start follow-ups
+- 🎯 **Configurable Limits**: Control `max_results`, `max_chars`, and `max_links` via request parameters or env vars to stay within token budgets
 - 🔧 **Native MCP Tools**: Direct integration with VS Code, Cursor, and other AI assistants
 - 💰 **100% Free**: No API keys or subscriptions required - runs completely locally
 - 🛡️ **Privacy First**: All processing happens on your machine
@@ -56,6 +57,7 @@ cd mcp-server && cargo build --release
 | `SEARXNG_URL` | `http://localhost:8888` | SearXNG instance URL |
 | `SEARXNG_ENGINES` | `duckduckgo,google,bing` | Default search engines (comma-separated) |
 | `MAX_LINKS` | `100` | Max links to return in Sources section |
+| `MAX_CONTENT_CHARS` | `10000` | Default `max_chars` limit for scraped content (100-50000) |
 | `RUST_LOG` | - | Log level: `error`, `warn`, `info`, `debug`, `trace` |
 
 ## � MCP Tools
@@ -76,9 +78,14 @@ cd mcp-server && cargo build --release
   "categories": "it,general",
   "language": "en",
   "safesearch": 1,
-  "time_range": "month"
+  "time_range": "month",
+  "max_results": 20
 }
 ```
+
+**Agent-friendly extras:**
+- `max_results`: Limit how many ranked results you return to keep the response concise (1-100, default: 10)
+- The tool surfaces SearXNG `answers`, spelling `corrections`, `suggestions`, and a count of `unresponsive_engines` so agents know when to retry or refine the query
 
 ### `scrape_url` - Optimized Content Extraction
 **Intelligent scraping with advanced cleanup:**
@@ -90,6 +97,7 @@ cd mcp-server && cargo build --release
 - ✅ **Structured Data**: Headings (H1-H6), images with alt text, language detection
 - ✅ **Documentation Sites**: Special handling for mdBook, GitBook, and similar formats
 - ✅ **Fallback Methods**: Multiple extraction strategies for difficult sites
+- ✅ **Token-aware trimming**: `max_chars` keeps previews within a manageable length and shows a flag when the content is truncated
 - ✅ **Configurable**: Control link/image limits and filtering behavior
 
 **Parameters:**
@@ -97,9 +105,12 @@ cd mcp-server && cargo build --release
 {
   "url": "https://doc.rust-lang.org/book/ch01-00-getting-started.html",
   "content_links_only": true,  // Optional: smart filter (default: true)
-  "max_links": 100             // Optional: limit sources (default: 100, max: 500)
+  "max_links": 100,            // Optional: limit sources (default: 100, max: 500)
+  "max_chars": 10000           // Optional: cap preview length (default: 10000, max: 50000)
 }
 ```
+
+`max_chars` keeps scraped previews within token budgets; override the default for the entire server with the `MAX_CONTENT_CHARS` env var (100-50000).
 
 **Example Output:**
 ```markdown
@@ -187,6 +198,8 @@ outbound_limit: 32 concurrent requests
 
 ### For AI Assistants
 - **Use smart filtering**: Keep `content_links_only: true` (default) to avoid nav/footer links
+- **Limit result counts**: Dial back `max_results` to 5-20 when agents only need the top snippets
+- **Cap preview length**: Use `max_chars` (or `MAX_CONTENT_CHARS`) to prevent huge scrape responses from draining tokens
 - **Limit sources**: Set `max_links: 20-50` for cleaner responses when you don't need all links
 - **Follow citations**: Use the `[1]`, `[2]` markers in content to find specific sources
 - **Search first, scrape second**: Use `search_web` to find URLs, then `scrape_url` for deep content

@@ -17,7 +17,15 @@ pub struct SearchParamOverrides {
     pub pageno: Option<u32>,           // 1..N
 }
 
-pub async fn search_web(state: &Arc<AppState>, query: &str) -> Result<Vec<SearchResult>> {
+#[derive(Debug, Default, Clone)]
+pub struct SearchExtras {
+    pub answers: Vec<String>,
+    pub suggestions: Vec<String>,
+    pub corrections: Vec<String>,
+    pub unresponsive_engines: Vec<String>,
+}
+
+pub async fn search_web(state: &Arc<AppState>, query: &str) -> Result<(Vec<SearchResult>, SearchExtras)> {
     search_web_with_params(state, query, None).await
 }
 
@@ -25,7 +33,7 @@ pub async fn search_web_with_params(
     state: &Arc<AppState>,
     query: &str,
     overrides: Option<SearchParamOverrides>,
-) -> Result<Vec<SearchResult>> {
+) -> Result<(Vec<SearchResult>, SearchExtras)> {
     info!("Searching for: {}", query);
     let cache_key = if let Some(ref ov) = overrides {
         format!(
@@ -42,9 +50,11 @@ pub async fn search_web_with_params(
         format!("q={}|default", query)
     };
 
+    // Note: We don't cache extras, only results, to keep cache simple
+    // Extras are usually lightweight and context-dependent
     if let Some(cached) = state.search_cache.get(&cache_key).await {
         debug!("search cache hit for query");
-        return Ok(cached);
+        return Ok((cached, SearchExtras::default()));
     }
 
     let _permit = state.outbound_limit.acquire().await.expect("semaphore closed");
@@ -111,6 +121,32 @@ pub async fn search_web_with_params(
     
     info!("SearXNG returned {} results", searxng_response.results.len());
     
+    // Extract extras from SearXNG response
+    let extras = SearchExtras {
+        answers: searxng_response.answers
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect(),
+        suggestions: searxng_response.suggestions
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect(),
+        corrections: searxng_response.corrections
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect(),
+        unresponsive_engines: searxng_response.unresponsive_engines
+            .and_then(|v| v.as_object().cloned())
+            .map(|obj| obj.keys().cloned().collect())
+            .unwrap_or_default(),
+    };
+    
     // Convert to our format
     let mut seen = std::collections::HashSet::new();
     let mut results: Vec<SearchResult> = Vec::new();
@@ -129,7 +165,7 @@ pub async fn search_web_with_params(
     debug!("Converted {} results", results.len());
     // Fill cache with composite key
     state.search_cache.insert(cache_key, results.clone()).await;
-    Ok(results)
+    Ok((results, extras))
 }
 
 #[cfg(test)]

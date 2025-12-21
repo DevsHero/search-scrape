@@ -44,7 +44,7 @@ pub async fn list_tools() -> Json<McpToolsResponse> {
     let tools = vec![
         McpTool {
             name: "search_web".to_string(),
-            description: "Search the web using SearXNG federated search engine. Supports engines, categories, language, safesearch, time_range, and pageno. Returns a list of relevant URLs with titles and snippets.".to_string(),
+            description: "Search the web using SearXNG federated search engine. Returns results with answers, suggestions, and spelling corrections to help refine queries. Supports engines, categories, language, safesearch, time_range, pageno, and max_results.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -78,6 +78,13 @@ pub async fn list_tools() -> Json<McpToolsResponse> {
                         "type": "integer",
                         "minimum": 1,
                         "description": "Page number for pagination"
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 10,
+                        "description": "Maximum number of results to return (default: 10, max: 100)"
                     }
                 },
                 "required": ["query"]
@@ -104,6 +111,13 @@ pub async fn list_tools() -> Json<McpToolsResponse> {
                         "minimum": 1,
                         "maximum": 500,
                         "default": 100
+                    },
+                    "max_chars": {
+                        "type": "integer",
+                        "description": "Maximum characters to return in content preview. Useful to control token usage. Default: 10000",
+                        "minimum": 100,
+                        "maximum": 50000,
+                        "default": 10000
                     }
                 },
                 "required": ["url"]
@@ -155,15 +169,47 @@ pub async fn call_tool(
                 overrides.pageno = Some(v as u32);
             }
             
+            let max_results = request.arguments
+                .get("max_results")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize)
+                .unwrap_or(10);
+            
             // Perform search
             let ov_opt = Some(overrides);
             match search::search_web_with_params(&state, query, ov_opt).await {
-                Ok(results) => {
+                Ok((results, extras)) => {
                     let content_text = if results.is_empty() {
-                        format!("No search results found for query: {}", query)
+                        let mut text = format!("No search results found for query: '{}'\n\n", query);
+                        
+                        if !extras.suggestions.is_empty() {
+                            text.push_str(&format!("**Suggestions:** {}\n", extras.suggestions.join(", ")));
+                        }
+                        if !extras.corrections.is_empty() {
+                            text.push_str(&format!("**Did you mean:** {}\n", extras.corrections.join(", ")));
+                        }
+                        if !extras.unresponsive_engines.is_empty() {
+                            text.push_str(&format!("\n**Note:** {} search engine(s) did not respond. Try different engines or retry.\n", extras.unresponsive_engines.len()));
+                        }
+                        text
                     } else {
-                        let mut text = format!("Found {} search results for '{}':\n\n", results.len(), query);
-                        for (i, result) in results.iter().take(10).enumerate() {
+                        let limited_results = results.iter().take(max_results);
+                        let result_count = results.len();
+                        
+                        let mut text = format!("Found {} search results for '{}':", result_count, query);
+                        if result_count > max_results {
+                            text.push_str(&format!(" (showing top {})\n", max_results));
+                        }
+                        text.push_str("\n\n");
+                        
+                        if !extras.answers.is_empty() {
+                            text.push_str("**Instant Answers:**\n");
+                            for answer in &extras.answers {
+                                text.push_str(&format!("📌 {}\n\n", answer));
+                            }
+                        }
+                        
+                        for (i, result) in limited_results.enumerate() {
                             text.push_str(&format!(
                                 "{}. **{}**\n   URL: {}\n   Snippet: {}\n\n",
                                 i + 1,
@@ -172,6 +218,14 @@ pub async fn call_tool(
                                 result.content.chars().take(200).collect::<String>()
                             ));
                         }
+                        
+                        if !extras.suggestions.is_empty() {
+                            text.push_str(&format!("\n**Related searches:** {}\n", extras.suggestions.join(", ")));
+                        }
+                        if !extras.unresponsive_engines.is_empty() {
+                            text.push_str(&format!("\n⚠️ **Note:** {} engine(s) did not respond (may affect completeness)\n", extras.unresponsive_engines.len()));
+                        }
+                        
                         text
                     };
                     
@@ -213,6 +267,33 @@ pub async fn call_tool(
             match scrape::scrape_url(&state, url).await {
                 Ok(content) => {
                     let content_text = {
+                        let max_chars = request.arguments
+                            .get("max_chars")
+                            .and_then(|v| v.as_u64())
+                            .map(|n| n as usize)
+                            .or_else(|| std::env::var("MAX_CONTENT_CHARS").ok().and_then(|s| s.parse().ok()))
+                            .unwrap_or(10000);
+                        
+                        let content_preview = if content.clean_content.is_empty() {
+                            "[No content extracted]\n\n**Possible reasons:**\n\
+                            • Page is JavaScript-heavy (requires browser execution)\n\
+                            • Content is behind authentication/paywall\n\
+                            • Site blocks automated access\n\n\
+                            **Suggestion:** For JS-heavy sites, try using the Playwright MCP tool instead.".to_string()
+                        } else if content.word_count < 10 {
+                            format!("{}\n\n⚠️ **Very short content** ({} words). Page may be mostly dynamic/JS-based.", 
+                                content.clean_content.chars().take(max_chars).collect::<String>(),
+                                content.word_count)
+                        } else {
+                            let preview = content.clean_content.chars().take(max_chars).collect::<String>();
+                            if content.clean_content.len() > max_chars {
+                                format!("{}\n\n[Content truncated: {}/{} chars shown. Increase max_chars parameter to see more]",
+                                    preview, max_chars, content.clean_content.len())
+                            } else {
+                                preview
+                            }
+                        };
+                        
                         let headings = content.headings.iter()
                             .take(10)
                             .map(|h| format!("- {} {}", h.level.to_uppercase(), h.text))
@@ -262,7 +343,7 @@ pub async fn call_tool(
                             headings,
                             content.links.len(),
                             content.images.len(),
-                            content.clean_content.chars().take(1200).collect::<String>(),
+                            content_preview,
                             sources_section
                         )
                     };

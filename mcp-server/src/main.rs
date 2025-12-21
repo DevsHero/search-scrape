@@ -76,7 +76,7 @@ async fn search_web_handler(
     Json(request): Json<SearchRequest>,
 ) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
     match search::search_web(&state, &request.query).await {
-        Ok(results) => Ok(Json(SearchResponse { results })),
+        Ok((results, _extras)) => Ok(Json(SearchResponse { results })),
         Err(e) => {
             error!("Search error: {}", e);
             Err((
@@ -115,7 +115,7 @@ async fn chat_handler(
     
     // Step 1: Search for relevant URLs
     let search_results = match search::search_web(&state, &request.query).await {
-        Ok(results) => results,
+        Ok((results, _extras)) => results,
         Err(e) => {
             error!("Search failed: {}", e);
             return Err((
