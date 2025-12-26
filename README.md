@@ -196,6 +196,41 @@ outbound_limit: 32 concurrent requests
 
 ## 💡 Best Practices
 
+### 🤖 For AI Agents (Auto-Follow These Guidelines)
+
+**The tool descriptions already contain this guidance**, but here's a quick reference:
+
+#### search_web Smart Usage
+- **Always set `max_results`** based on your task:
+  - Quick fact-check? → `max_results: 5-10`
+  - Balanced research? → `max_results: 15-25`
+  - Comprehensive survey? → `max_results: 30-50`
+- **Use `time_range`** for time-sensitive queries:
+  - Breaking news → `time_range: "day"`
+  - Current events → `time_range: "week"`
+  - Recent trends → `time_range: "month"`
+- **Use `categories`** to filter results:
+  - Technical/programming → `categories: "it"`
+  - News articles → `categories: "news"`
+  - Research papers → `categories: "science"`
+- **Check the response extras**:
+  - Read `answers` field first (instant facts from SearXNG)
+  - If you see `corrections`, retry with the suggested spelling
+  - If `unresponsive_engines > 3`, consider retrying the query
+
+#### scrape_url Smart Usage
+- **Always adjust `max_chars`** based on your need:
+  - Quick summary? → `max_chars: 3000-5000`
+  - Standard article? → `max_chars: 10000` (default)
+  - Long-form content? → `max_chars: 20000-30000`
+  - Full documentation? → `max_chars: 40000+`
+- **Keep `content_links_only: true`** (default) unless you specifically need nav/footer links
+- **Check `word_count` in response**:
+  - If < 50 words, the page may be JS-heavy or paywalled
+  - Consider trying a different URL or informing the user
+- **Use citation markers**: Content has `[1]`, `[2]` markers - reference the Sources section for specific URLs
+- **Lower `max_links`** for faster responses when you don't need all sources
+
 ### For AI Assistants
 - **Use smart filtering**: Keep `content_links_only: true` (default) to avoid nav/footer links
 - **Limit result counts**: Dial back `max_results` to 5-20 when agents only need the top snippets

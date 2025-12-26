@@ -44,47 +44,47 @@ pub async fn list_tools() -> Json<McpToolsResponse> {
     let tools = vec![
         McpTool {
             name: "search_web".to_string(),
-            description: "Search the web using SearXNG federated search engine. Returns results with answers, suggestions, and spelling corrections to help refine queries. Supports engines, categories, language, safesearch, time_range, pageno, and max_results.".to_string(),
+            description: "Search the web using SearXNG federated search. AGENT GUIDANCE: (1) Set max_results=5-10 for quick lookups, 20-50 for comprehensive research. (2) Use time_range='week' or 'month' for recent topics. (3) Use categories='it' for tech, 'news' for current events, 'science' for research. (4) Check 'answers' field for instant facts before reading snippets. (5) If you see 'Did you mean' corrections, retry with the suggested spelling. (6) If unresponsive_engines > 3, consider retrying.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "The search query to execute"
+                        "description": "Search query. TIP: Use specific terms and quotes for exact phrases. Example: 'rust async' instead of just 'rust'"
                     },
                     "engines": {
                         "type": "string",
-                        "description": "Comma-separated list of engines (e.g., 'google,bing,duckduckgo')"
+                        "description": "Comma-separated engines (e.g., 'google,bing'). TIP: Omit for default. Use 'google,bing' for English content, add 'duckduckgo' for privacy-focused results"
                     },
                     "categories": {
                         "type": "string",
-                        "description": "Comma-separated list of categories (e.g., 'general,news,it,science')"
+                        "description": "Comma-separated categories. WHEN TO USE: 'it' for programming/tech, 'news' for current events, 'science' for research papers, 'general' for mixed. Omit for all categories"
                     },
                     "language": {
                         "type": "string",
-                        "description": "Language code (e.g., 'en', 'en-US')"
+                        "description": "Language code (e.g., 'en', 'es', 'fr'). TIP: Use 'en' for English-only results, omit for multilingual"
                     },
                     "safesearch": {
                         "type": "integer",
                         "minimum": 0,
                         "maximum": 2,
-                        "description": "Safe search level: 0 (off), 1 (moderate), 2 (strict)"
+                        "description": "Safe search: 0=off, 1=moderate (recommended), 2=strict. Default env setting usually sufficient"
                     },
                     "time_range": {
                         "type": "string",
-                        "description": "Time filter (e.g., 'day', 'week', 'month', 'year')"
+                        "description": "Filter by recency. WHEN TO USE: 'day' for breaking news, 'week' for current events, 'month' for recent tech/trends, 'year' for last 12 months. Omit for all-time results"
                     },
                     "pageno": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Page number for pagination"
+                        "description": "Page number for pagination. TIP: Start with page 1, use page 2+ only if initial results insufficient"
                     },
                     "max_results": {
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 100,
                         "default": 10,
-                        "description": "Maximum number of results to return (default: 10, max: 100)"
+                        "description": "Max results to return. GUIDANCE: 5-10 for quick facts, 15-25 for balanced research, 30-50 for comprehensive surveys. Default 10 is good for most queries. Higher = more tokens"
                     }
                 },
                 "required": ["query"]
@@ -92,29 +92,29 @@ pub async fn list_tools() -> Json<McpToolsResponse> {
         },
         McpTool {
             name: "scrape_url".to_string(),
-            description: "Scrape content from a URL with intelligent extraction. Returns cleaned text, metadata, structured data, and clickable source citations. Automatically filters noise (ads, nav, footers) and extracts main content links.".to_string(),
+            description: "Scrape and extract clean content from URLs. AGENT GUIDANCE: (1) Set max_chars=3000-5000 for summaries, 10000-20000 for full articles, 30000+ for documentation. (2) Keep content_links_only=true (default) to get only relevant links. (3) Check word_count - if <50, page may be JS-heavy or paywalled. (4) Use [N] citation markers in content to reference specific sources. (5) For docs sites, increase max_chars to capture full tutorials.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "url": {
                         "type": "string",
-                        "description": "The URL to scrape content from"
+                        "description": "Full URL to scrape. TIP: Works best with article/blog/docs pages. May have limited content for JS-heavy sites or paywalls"
                     },
                     "content_links_only": {
                         "type": "boolean",
-                        "description": "If true, only extract links from main content area (article/main). If false, extract all document links. Default: true (smart filtering)",
+                        "description": "Extract main content links only (true, default) or all page links (false). GUIDANCE: Keep true for articles/blogs to avoid nav clutter. Set false only when you need site-wide links like sitemaps",
                         "default": true
                     },
                     "max_links": {
                         "type": "integer",
-                        "description": "Maximum number of links to return in Sources section. Default: 100",
+                        "description": "Max links in Sources section. GUIDANCE: 20-30 for focused articles, 50-100 (default) for comprehensive pages, 200+ for navigation-heavy docs. Lower = faster response",
                         "minimum": 1,
                         "maximum": 500,
                         "default": 100
                     },
                     "max_chars": {
                         "type": "integer",
-                        "description": "Maximum characters to return in content preview. Useful to control token usage. Default: 10000",
+                        "description": "Max content length. WHEN TO ADJUST: 3000-5000 for quick summaries, 10000 (default) for standard articles, 20000-30000 for long-form content, 40000+ for full documentation pages. Truncated content shows a warning",
                         "minimum": 100,
                         "maximum": 50000,
                         "default": 10000
