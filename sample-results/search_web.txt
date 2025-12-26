@@ -1,0 +1,78 @@
+--INPUT--
+
+{
+  "query": "rust async programming tutorial",
+  "categories": "it",
+  "time_range": "month",
+  "max_results": 15,
+  "engines": "google,bing,duckduckgo",
+  "language": "en"
+}
+
+
+
+--OUTPUT--
+
+Found 20 search results for 'rust async programming tutorial': (showing top 15)
+
+
+1. **Rust — Explore, Build and Survive**
+   URL: https://rust.facepunch.com/
+   Snippet: The only aim in Rust is to survive. Everything wants you to die - the island’s wildlife and other inhabitants, the environment, other survivors. Do whatever it takes to last another night.
+
+2. **Don't Miss Out on Mastering Rust Async in just 20 Minutes**
+   URL: https://www.youtube.com/watch?v=tusHroTNPbM
+   Snippet: Want to master Rust async programming in just 20 minutes? Learn about Rust async, await, Tokio, running parallel code, and adding delays in this quick and informative video!
+
+3. **Getting started - Rust Programming Language**
+   URL: https://rust-lang.org/learn/get-started/
+   Snippet: A language empowering everyone to build reliable and efficient software.
+
+4. **How to Use Async Programming Patterns - AyoKoding**
+   URL: https://www.ayokoding.com/en/learn/swe/prog-lang/rust/how-to/async-programming-patterns/
+   Snippet: Practical techniques for async programming in Rust with Tokio runtime, async traits, futures, and concurrent patterns
+
+5. **Rust (programming language) - Wikipedia**
+   URL: https://en.m.wikipedia.org/wiki/Rust_(programming_language)
+   Snippet: Rust is a general-purpose programming language. It is noted for its emphasis on performance, type safety, concurrency, and memory safety. Rust supports multiple programming paradigms. …
+
+6. **Async Programming in Rust: Understanding Futures and Tokio**
+   URL: https://thenewstack.io/async-programming-in-rust-understanding-futures-and-tokio/
+   Snippet: Async programming solves this by allowing tasks to yield control while waiting for input/output (I/O), letting other tasks progress. Rust accomplishes this without a garbage collector, providing zero-
+
+7. **Save 50% on Rust on Steam**
+   URL: https://store.steampowered.com/app/252490/Rust/
+   Snippet: The only aim in Rust is to survive. Everything wants you to die - the island’s wildlife, other inhabitants, the environment, and other survivors. Do whatever it takes to last another night.
+
+8. **std::async_iter - Rust**
+   URL: https://doc.rust-lang.org/std/async_iter/index.html
+   Snippet: Composable asynchronous iteration. If you've found yourself with an asynchronous collection of some kind, and needed to perform an operation on the elements of said collection, you'll quickly run into
+
+9. **The Rust Programming Language**
+   URL: http://rust-lang.github.io/book/
+   Snippet: The Rust Programming Language The Rust Programming Language by Steve Klabnik, Carol Nichols, and Chris Krycho, with contributions from the Rust Community This version of the text …
+
+10. **Inside Rust's Async State Machines — What the Compiler ... - Medium**
+   URL: https://medium.com/@theopinionatedev/inside-rusts-async-state-machines-what-the-compiler-actually-generates-dd6d0b0723cc
+   Snippet: Rust's async isn't "just functions that pause." It's a compiler-built Rube Goldberg machine that manages your state, lifetimes, and memory with microscopic precision.
+
+11. **Introduction to Rust Programming Language - GeeksforGeeks**
+   URL: https://www.geeksforgeeks.org/rust/introduction-to-rust-programming-language/
+   Snippet: Jul 23, 2025 · Rust is a blazing fast and memory-efficient static compiled language with a rich type system and ownership model. It can be used to power performance-critical services while …
+
+12. **How to Use async/await in Rust Option::and_then or Option::map Closures ...**
+   URL: https://www.codegenes.net/blog/how-to-use-async-await-inside-closure-of-option-and-then-or-option-map-without-using-optionfuture/
+   Snippet: Rust's `async/await` syntax has revolutionized asynchronous programming in Rust, making it more readable and maintainable. However, when combining asynchronous operations with Rust's `Option` type—spe
+
+13. **GitHub - rust-lang/rust: Empowering everyone to build reliable …**
+   URL: https://github.com/rust-lang/rust
+   Snippet: The Rust Foundation owns and protects the Rust and Cargo trademarks and logos (the "Rust Trademarks"). If you want to use these names or brands, please read the Rust language …
+
+14. **Async Programming in Rust: Understanding Futures and Tokio**
+   URL: https://www.secdevops.com/news/async-programming-in-rust-understanding-futures-and-tokio
+   Snippet: As modern software demands ever-increasing performance and responsiveness, traditional synchronous programming can become a bottleneck. In server applications,
+
+15. **How to Learn Rust in 2025: A Complete Beginner’s Guide to …**
+   URL: https://blog.jetbrains.com/rust/2024/09/20/how-to-learn-rust/
+   Snippet: Sep 20, 2024 · So, you're thinking about choosing Rust as your next programming language to learn. You already know what it means to write code and have some experience with at least …
+
