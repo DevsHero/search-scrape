@@ -189,7 +189,7 @@ mod tests {
         let results = search_web(&state, "rust programming language").await;
         
         match results {
-            Ok(results) => {
+            Ok((results, _extras)) => {
                 assert!(!results.is_empty(), "Should return some results");
                 for result in &results {
                     assert!(!result.url.is_empty(), "URL should not be empty");

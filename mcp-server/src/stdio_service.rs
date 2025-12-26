@@ -182,7 +182,7 @@ impl rmcp::ServerHandler for McpService {
                         } else {
                             let limited_results = results.iter().take(max_results);
                             let result_count = results.len();
-                            let showing = result_count.min(max_results);
+                            let _showing = result_count.min(max_results);
                             
                             let mut text = format!("Found {} search results for '{}':", result_count, query);
                             if result_count > max_results {
