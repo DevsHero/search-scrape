@@ -22,9 +22,11 @@ Here are screenshots showing the MCP tools working in Vscode, Cursor, Trae:
 
 #### Search Web Tool
 ![Search Web Tool Screenshot](screenshot/search_web.png)
+[View the full sample output for this search interaction](sample-results/search_web.txt)
 
 #### Scrape URL Tool  
 ![Scrape URL Tool Screenshot](screenshot/scrape_url.png)
+[View the full sample output for this scrape interaction](sample-results/scrape_url.txt)
 
 ## 🚀 Quick Start
 
