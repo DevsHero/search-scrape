@@ -17,6 +17,11 @@ pub struct SearchResult {
     pub content: String,
     pub engine: Option<String>,
     pub score: Option<f64>,
+    // New Priority 2 fields for better filtering
+    #[serde(default)]
+    pub domain: Option<String>,
+    #[serde(default)]
+    pub source_type: Option<String>, // docs, repo, blog, news, other
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -62,6 +67,31 @@ pub struct ScrapeResponse {
     pub og_image: Option<String>,
     #[serde(default)]
     pub reading_time_minutes: Option<u32>,
+    // New Priority 1 fields
+    #[serde(default)]
+    pub code_blocks: Vec<CodeBlock>,
+    #[serde(default)]
+    pub truncated: bool,
+    #[serde(default)]
+    pub actual_chars: usize,
+    #[serde(default)]
+    pub max_chars_limit: Option<usize>,
+    #[serde(default)]
+    pub extraction_score: Option<f64>,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+    #[serde(default)]
+    pub domain: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CodeBlock {
+    pub language: Option<String>,
+    pub code: String,
+    #[serde(default)]
+    pub start_char: Option<usize>,
+    #[serde(default)]
+    pub end_char: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

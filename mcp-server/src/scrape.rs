@@ -163,15 +163,23 @@ pub async fn scrape_url_fallback(state: &Arc<AppState>, url: &str) -> Result<Scr
         status_code,
         content_type,
         word_count,
-    language: "unknown".to_string(),
-    canonical_url: None,
-    site_name: None,
-    author: None,
-    published_at: None,
-    og_title: None,
-    og_description: None,
-    og_image: None,
-    reading_time_minutes: None,
+        language: "unknown".to_string(),
+        canonical_url: None,
+        site_name: None,
+        author: None,
+        published_at: None,
+        og_title: None,
+        og_description: None,
+        og_image: None,
+        reading_time_minutes: None,
+        // New Priority 1 fields (fallback scraper)
+        code_blocks: Vec::new(),
+        truncated: false,
+        actual_chars: 0,
+        max_chars_limit: None,
+        extraction_score: Some(0.3), // Lower score for fallback
+        warnings: vec!["fallback_scraper_used".to_string()],
+        domain: url::Url::parse(url).ok().and_then(|u| u.host_str().map(|h| h.to_string())),
     };
     
     info!("Fallback scraper extracted {} words", result.word_count);

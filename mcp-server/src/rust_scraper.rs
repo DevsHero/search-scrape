@@ -101,6 +101,9 @@ impl RustScraper {
     let author = self.extract_author(&document);
     let published_at = self.extract_published_time(&document);
 
+        // Extract code blocks BEFORE html2text conversion (Priority 1 fix)
+        let code_blocks = self.extract_code_blocks(&document);
+
         // Extract readable content using readability
         let clean_content = self.extract_clean_content(&html, &parsed_url);
     let word_count = self.count_words(&clean_content);
@@ -112,6 +115,20 @@ impl RustScraper {
         let links = self.extract_content_links(&document, &parsed_url);
         let images = self.extract_images(&document, &parsed_url);
 
+        // Calculate extraction quality score (Priority 1 fix)
+        let extraction_score = self.calculate_extraction_score(
+            word_count,
+            &published_at,
+            &code_blocks,
+            &headings,
+        );
+
+        // Extract domain from URL (Priority 2 enhancement)
+        let domain = parsed_url.host_str().map(|h| h.to_string());
+
+        // Initialize warnings
+        let warnings = Vec::new();
+        
         let result = ScrapeResponse {
             url: url.to_string(),
             title,
@@ -135,9 +152,17 @@ impl RustScraper {
             og_description,
             og_image,
             reading_time_minutes,
+            // New Priority 1 fields
+            code_blocks,
+            truncated: false,      // Will be set by caller based on max_chars
+            actual_chars: 0,       // Will be set by caller
+            max_chars_limit: None, // Will be set by caller
+            extraction_score: Some(extraction_score),
+            warnings,
+            domain,
         };
 
-        info!("Successfully scraped: {} ({} words)", result.title, result.word_count);
+        info!("Successfully scraped: {} ({} words, score: {:.2})", result.title, result.word_count, extraction_score);
         Ok(result)
     }
 
@@ -702,6 +727,109 @@ impl RustScraper {
         }
         
         images
+    }
+
+    /// Extract code blocks with language hints (Priority 1 fix)
+    fn extract_code_blocks(&self, document: &Html) -> Vec<CodeBlock> {
+        let mut code_blocks = Vec::new();
+        
+        // Extract <pre><code> blocks
+        if let Ok(selector) = Selector::parse("pre code, pre, code") {
+            for element in document.select(&selector) {
+                // Get the code content preserving whitespace
+                let code = element.text().collect::<Vec<_>>().join("");
+                
+                // Skip if empty or too small
+                if code.trim().len() < 10 {
+                    continue;
+                }
+                
+                // Try to extract language hint from class attribute
+                let language = element.value().attr("class")
+                    .and_then(|classes| {
+                        // Look for patterns like "language-rust", "lang-python", "rust", etc.
+                        classes.split_whitespace()
+                            .find(|c| c.starts_with("language-") || c.starts_with("lang-"))
+                            .map(|c| {
+                                c.strip_prefix("language-")
+                                    .or_else(|| c.strip_prefix("lang-"))
+                                    .unwrap_or(c)
+                                    .to_string()
+                            })
+                    })
+                    .or_else(|| {
+                        // Check parent <pre> element
+                        element.value().attr("data-lang").map(|s| s.to_string())
+                    });
+                
+                code_blocks.push(CodeBlock {
+                    language,
+                    code,
+                    start_char: None,  // Could be enhanced with position tracking
+                    end_char: None,
+                });
+            }
+        }
+        
+        // Deduplicate (sometimes code appears in nested tags)
+        let mut seen = HashSet::new();
+        code_blocks.retain(|cb| {
+            let key = format!("{:?}:{}", cb.language, &cb.code);
+            seen.insert(key)
+        });
+        
+        code_blocks
+    }
+
+    /// Calculate extraction quality score (Priority 1 fix)
+    /// Returns a score from 0.0 to 1.0 indicating extraction quality
+    fn calculate_extraction_score(
+        &self,
+        word_count: usize,
+        published_at: &Option<String>,
+        code_blocks: &[CodeBlock],
+        headings: &[Heading],
+    ) -> f64 {
+        let mut score = 0.0;
+        
+        // Content presence (0.0-0.3)
+        if word_count > 50 {
+            score += 0.3;
+        } else if word_count > 20 {
+            score += 0.15;
+        }
+        
+        // Has publish date (0.2)
+        if published_at.is_some() {
+            score += 0.2;
+        }
+        
+        // Has code blocks (0.2) - good for technical content
+        if !code_blocks.is_empty() {
+            score += 0.2;
+        }
+        
+        // Has structured headings (0.15)
+        if headings.len() > 2 {
+            score += 0.15;
+        } else if headings.len() > 0 {
+            score += 0.075;
+        }
+        
+        // Content length score (0.0-0.15)
+        // Optimal around 500-2000 words
+        let length_score = if word_count >= 500 && word_count <= 2000 {
+            0.15
+        } else if word_count > 2000 {
+            0.15 * (2000.0 / word_count as f64).min(1.0)
+        } else if word_count > 100 {
+            0.15 * (word_count as f64 / 500.0)
+        } else {
+            0.0
+        };
+        score += length_score;
+        
+        score.min(1.0)
     }
 }
 

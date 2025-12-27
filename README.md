@@ -16,6 +16,15 @@
 - ⚡ **Performance**: Built-in caching (10min search, 30min scrape), retry logic, and concurrency control
 - 🎨 **Content-Aware**: Special handling for documentation sites (mdBook, GitBook, etc.)
 
+### 🆕 New: Agent-Optimized Features (v2.0)
+
+- 📊 **JSON Output Mode**: Structured data format for programmatic consumption (`output_format: "json"`)
+- 💻 **Code Block Extraction**: Preserves syntax, whitespace, and language hints from `<pre><code>` tags
+- 🎯 **Quality Scoring**: 0.0-1.0 heuristic score based on content length, metadata, code blocks, and headings
+- 🏷️ **Search Classification**: Automatic categorization (docs, repo, blog, video, qa, package, gaming)
+- ⚠️ **Machine-Readable Warnings**: Truncation flags, error indicators, and quality assessments
+- 🌐 **Domain Extraction**: Identifies content source domains for filtering and trust assessment
+
 ### 📸 Screenshot
 
 Here are screenshots showing the MCP tools working in Vscode, Cursor, Trae:
@@ -89,6 +98,28 @@ cd mcp-server && cargo build --release
 - `max_results`: Limit how many ranked results you return to keep the response concise (1-100, default: 10)
 - The tool surfaces SearXNG `answers`, spelling `corrections`, `suggestions`, and a count of `unresponsive_engines` so agents know when to retry or refine the query
 
+**Enhanced Results (v2.0):**
+Each search result now includes:
+- `domain`: Extracted domain name (e.g., `"tokio.rs"`)
+- `source_type`: Automatic classification:
+  - `docs` - Official documentation (*.github.io, docs.rs, readthedocs.org)
+  - `repo` - Code repositories (github.com, gitlab.com, bitbucket.org)
+  - `blog` - Technical blogs (medium.com, dev.to, substack.com)
+  - `video` - Video platforms (youtube.com, vimeo.com)
+  - `qa` - Q&A sites (stackoverflow.com, reddit.com)
+  - `package` - Package registries (crates.io, npmjs.com, pypi.org)
+  - `gaming` - Gaming sites (steam, facepunch)
+  - `other` - General/unknown sites
+
+**Example**: Agents can now filter results programmatically:
+```python
+# Get only documentation links
+docs = [r for r in results if r['source_type'] == 'docs']
+
+# Filter by trusted domains
+trusted = [r for r in results if r['domain'] in ['rust-lang.org', 'tokio.rs']]
+```
+
 ### `scrape_url` - Optimized Content Extraction
 **Intelligent scraping with advanced cleanup:**
 - ✅ **Smart Link Filtering**: Extracts links from main content (article/main tags) only
@@ -101,6 +132,9 @@ cd mcp-server && cargo build --release
 - ✅ **Fallback Methods**: Multiple extraction strategies for difficult sites
 - ✅ **Token-aware trimming**: `max_chars` keeps previews within a manageable length and shows a flag when the content is truncated
 - ✅ **Configurable**: Control link/image limits and filtering behavior
+- ✅ **Code Extraction**: Preserves code blocks with syntax and language hints
+- ✅ **JSON Mode**: Structured output for programmatic consumption
+- ✅ **Quality Scoring**: Automatic content quality assessment (0.0-1.0)
 
 **Parameters:**
 ```json
@@ -108,13 +142,14 @@ cd mcp-server && cargo build --release
   "url": "https://doc.rust-lang.org/book/ch01-00-getting-started.html",
   "content_links_only": true,  // Optional: smart filter (default: true)
   "max_links": 100,            // Optional: limit sources (default: 100, max: 500)
-  "max_chars": 10000           // Optional: cap preview length (default: 10000, max: 50000)
+  "max_chars": 10000,          // Optional: cap preview length (default: 10000, max: 50000)
+  "output_format": "text"      // Optional: "text" (default) or "json"
 }
 ```
 
 `max_chars` keeps scraped previews within token budgets; override the default for the entire server with the `MAX_CONTENT_CHARS` env var (100-50000).
 
-**Example Output:**
+**Text Output (Default):**
 ```markdown
 **Getting Started - The Rust Programming Language**
 
@@ -132,6 +167,53 @@ Learn more about [Cargo][1] and the [installation process][2].
 [3]: https://doc.rust-lang.org/book/ch01-02-hello-world.html (Hello World)
 ...
 ```
+
+**JSON Output (New in v2.0):**
+Set `output_format: "json"` to get structured data:
+```json
+{
+  "url": "https://example.com/article",
+  "title": "Article Title",
+  "clean_content": "Extracted text...",
+  "meta_description": "Article description",
+  "word_count": 842,
+  "language": "en",
+  "author": "John Doe",
+  "published_at": "2024-12-01T10:00:00Z",
+  "reading_time_minutes": 4,
+  "code_blocks": [
+    {
+      "language": "rust",
+      "code": "fn main() { println!(\"Hello\"); }",
+      "start_char": null,
+      "end_char": null
+    }
+  ],
+  "truncated": false,
+  "actual_chars": 8420,
+  "max_chars_limit": 10000,
+  "extraction_score": 0.85,
+  "warnings": [],
+  "domain": "example.com",
+  "headings": [
+    {"level": "h1", "text": "Main Title"},
+    {"level": "h2", "text": "Section"}
+  ],
+  "links": [
+    {"url": "https://...", "text": "Link text"}
+  ],
+  "images": [
+    {"src": "https://...", "alt": "Image alt", "title": ""}
+  ]
+}
+```
+
+**Key JSON Fields:**
+- `code_blocks`: Extracted code with language detection (e.g., `rust`, `python`, `javascript`)
+- `extraction_score`: Quality assessment (0.0-1.0) based on content richness
+- `truncated`: Boolean flag indicating if content was cut off
+- `warnings`: Array of issues (e.g., `["content_truncated"]`)
+- `domain`: Source domain for filtering/trust assessment
 
 ## 🛠️ Development
 

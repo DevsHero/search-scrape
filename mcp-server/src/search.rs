@@ -147,17 +147,20 @@ pub async fn search_web_with_params(
             .unwrap_or_default(),
     };
     
-    // Convert to our format
+    // Convert to our format with enhanced metadata (Priority 2)
     let mut seen = std::collections::HashSet::new();
     let mut results: Vec<SearchResult> = Vec::new();
     for result in searxng_response.results.into_iter() {
         if seen.insert(result.url.clone()) {
+            let (domain, source_type) = classify_search_result(&result.url);
             results.push(SearchResult {
                 url: result.url,
                 title: result.title,
                 content: result.content,
                 engine: Some(result.engine),
                 score: result.score,
+                domain,
+                source_type: Some(source_type),
             });
         }
     }
@@ -166,6 +169,84 @@ pub async fn search_web_with_params(
     // Fill cache with composite key
     state.search_cache.insert(cache_key, results.clone()).await;
     Ok((results, extras))
+}
+
+/// Classify search result by domain and source type (Priority 2)
+/// Returns (domain, source_type)
+fn classify_search_result(url_str: &str) -> (Option<String>, String) {
+    let domain = url::Url::parse(url_str)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_string()));
+    
+    let source_type = if let Some(ref d) = domain {
+        let d_lower = d.to_lowercase();
+        
+        // Documentation sites
+        if d_lower.ends_with(".github.io") 
+            || d_lower.contains("docs.rs")
+            || d_lower.contains("readthedocs")
+            || d_lower.contains("rust-lang.org")
+            || d_lower.contains("doc.rust-lang")
+            || d_lower.contains("developer.mozilla.org")
+            || d_lower.contains("learn.microsoft.com")
+            || d_lower.contains("man7.org")
+            || d_lower.contains("devdocs.io")
+        {
+            "docs".to_string()
+        }
+        // Repository hosting
+        else if d_lower.contains("github.com")
+            || d_lower.contains("gitlab.com")
+            || d_lower.contains("bitbucket.org")
+            || d_lower.contains("codeberg.org")
+        {
+            "repo".to_string()
+        }
+        // News sites
+        else if d_lower.contains("news")
+            || d_lower.contains("blog")
+            || d_lower.contains("medium.com")
+            || d_lower.contains("dev.to")
+            || d_lower.contains("hackernews")
+            || d_lower.contains("reddit.com")
+            || d_lower.contains("thenewstack.io")
+        {
+            "blog".to_string()
+        }
+        // Video platforms
+        else if d_lower.contains("youtube.com")
+            || d_lower.contains("vimeo.com")
+        {
+            "video".to_string()
+        }
+        // Q&A sites
+        else if d_lower.contains("stackoverflow.com")
+            || d_lower.contains("stackexchange.com")
+        {
+            "qa".to_string()
+        }
+        // Package registries
+        else if d_lower.contains("crates.io")
+            || d_lower.contains("npmjs.com")
+            || d_lower.contains("pypi.org")
+        {
+            "package".to_string()
+        }
+        // Gaming/unrelated (noise filtering)
+        else if d_lower.contains("steam")
+            || d_lower.contains("facepunch")
+            || d_lower.contains("game")
+        {
+            "gaming".to_string()
+        }
+        else {
+            "other".to_string()
+        }
+    } else {
+        "other".to_string()
+    };
+    
+    (domain, source_type)
 }
 
 #[cfg(test)]

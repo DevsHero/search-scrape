@@ -113,6 +113,12 @@ impl rmcp::ServerHandler for McpService {
                             "minimum": 100,
                             "maximum": 50000,
                             "default": 10000
+                        },
+                        "output_format": {
+                            "type": "string",
+                            "enum": ["text", "json"],
+                            "description": "Output format. 'text' (default) returns formatted markdown for humans. 'json' returns structured JSON for agents/parsing. AGENT TIP: Use 'json' to get extraction_score, truncated flag, code_blocks array, and all metadata as machine-readable fields",
+                            "default": "text"
                         }
                     },
                     "required": ["url"]
@@ -246,8 +252,9 @@ impl rmcp::ServerHandler for McpService {
                 self.state.scrape_cache.invalidate(url).await;
                 
                 match scrape::scrape_url(&self.state, url).await {
-                    Ok(content) => {
-                        info!("Scraped content: {} words, {} chars clean_content", content.word_count, content.clean_content.len());
+                    Ok(mut content) => {
+                        info!("Scraped content: {} words, {} chars clean_content, score: {:?}", 
+                              content.word_count, content.clean_content.len(), content.extraction_score);
                         
                         let max_chars = args
                             .get("max_chars")
@@ -256,6 +263,35 @@ impl rmcp::ServerHandler for McpService {
                             .or_else(|| std::env::var("MAX_CONTENT_CHARS").ok().and_then(|s| s.parse().ok()))
                             .unwrap_or(10000);
                         
+                        // Set truncation metadata (Priority 1)
+                        content.actual_chars = content.clean_content.len();
+                        content.max_chars_limit = Some(max_chars);
+                        content.truncated = content.clean_content.len() > max_chars;
+                        
+                        if content.truncated {
+                            content.warnings.push("content_truncated".to_string());
+                        }
+                        if content.word_count < 50 {
+                            content.warnings.push("short_content".to_string());
+                        }
+                        if content.extraction_score.map(|s| s < 0.4).unwrap_or(false) {
+                            content.warnings.push("low_extraction_score".to_string());
+                        }
+                        
+                        // Check for output_format parameter (Priority 1)
+                        let output_format = args
+                            .get("output_format")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("text");
+                        
+                        if output_format == "json" {
+                            // Return JSON format
+                            let json_str = serde_json::to_string_pretty(&content)
+                                .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
+                            return Ok(CallToolResult::success(vec![Content::text(json_str)]));
+                        }
+                        
+                        // Otherwise return formatted text (backward compatible)
                         let content_preview = if content.clean_content.is_empty() {
                             let msg = "[No content extracted]\n\n**Possible reasons:**\n\
                             • Page is JavaScript-heavy (requires browser execution)\n\
