@@ -7,6 +7,12 @@ pub struct QueryRewriter {
     site_mappings: HashMap<&'static str, Vec<&'static str>>,
 }
 
+impl Default for QueryRewriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QueryRewriter {
     pub fn new() -> Self {
         Self {
@@ -146,12 +152,11 @@ impl QueryRewriter {
 
         // If query doesn't have "docs" or "tutorial", suggest adding them
         let lower = original.to_lowercase();
-        if !lower.contains("docs") && !lower.contains("documentation") && !lower.contains("tutorial") {
-            if !_keywords.is_empty() {
+        if !lower.contains("docs") && !lower.contains("documentation") && !lower.contains("tutorial")
+            && !_keywords.is_empty() {
                 suggestions.push(format!("{} documentation", original));
                 suggestions.push(format!("{} tutorial", original));
             }
-        }
 
         // Suggest site-specific searches for top 2 sites
         for site in sites.iter().take(2) {
@@ -159,11 +164,10 @@ impl QueryRewriter {
         }
 
         // If it's an error query, enhance it
-        if lower.contains("error") || lower.contains("bug") {
-            if !lower.contains("stackoverflow") {
+        if (lower.contains("error") || lower.contains("bug"))
+            && !lower.contains("stackoverflow") {
                 suggestions.push(format!("{} site:stackoverflow.com", original));
             }
-        }
 
         suggestions
     }
@@ -178,7 +182,7 @@ impl QueryRewriter {
         let lower = original.to_lowercase();
 
         // Pattern 1: Simple "rust docs" -> add site filter
-        if (lower.contains("docs") || lower.contains("documentation")) && sites.len() > 0 {
+        if (lower.contains("docs") || lower.contains("documentation")) && !sites.is_empty() {
             let primary_site = sites[0].clone();
             // Only rewrite if not already has site: filter
             if !lower.contains("site:") {
@@ -195,7 +199,7 @@ impl QueryRewriter {
         for lang in &["rust", "python", "javascript", "go", "typescript"] {
             if lower.contains("how to") && lower.contains(lang) {
                 if let Some(sites) = self.site_mappings.get(lang) {
-                    if !lower.contains("site:") && sites.len() > 0 {
+                    if !lower.contains("site:") && !sites.is_empty() {
                         return Some(format!("{} site:{}", original, sites[0]));
                     }
                 }
@@ -220,24 +224,32 @@ impl QueryRewriter {
             return true;
         }
 
-        // Check if one is substring of other (e.g., "rust" vs "rust programming")
-        if q1.contains(&q2) || q2.contains(&q1) {
-            return true;
-        }
-
-        // Check token overlap (simple word-based similarity)
+        // Tokenize for word-level comparison
         let tokens1: Vec<&str> = q1.split_whitespace().collect();
         let tokens2: Vec<&str> = q2.split_whitespace().collect();
 
-        if tokens1.len() < 2 || tokens2.len() < 2 {
-            return false;
+        // Check if one is a complete subset of the other (e.g., "rust" vs "rust programming")
+        // But only if both have meaningful tokens
+        if !tokens1.is_empty() && !tokens2.is_empty() {
+            let set1: std::collections::HashSet<_> = tokens1.iter().collect();
+            let set2: std::collections::HashSet<_> = tokens2.iter().collect();
+            
+            // If one set is completely contained in the other
+            if set1.is_subset(&set2) || set2.is_subset(&set1) {
+                return true;
+            }
         }
 
-        let common_tokens = tokens1.iter().filter(|t| tokens2.contains(t)).count();
-        let total_tokens = tokens1.len().max(tokens2.len());
+        // For multi-word queries, check token overlap
+        if tokens1.len() >= 2 && tokens2.len() >= 2 {
+            let common_tokens = tokens1.iter().filter(|t| tokens2.contains(t)).count();
+            let total_tokens = tokens1.len().max(tokens2.len());
 
-        // If 70%+ tokens match, consider similar
-        (common_tokens as f32 / total_tokens as f32) > 0.7
+            // If 70%+ tokens match, consider similar
+            return (common_tokens as f32 / total_tokens as f32) > 0.7;
+        }
+
+        false
     }
 }
 

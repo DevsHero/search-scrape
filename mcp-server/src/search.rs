@@ -96,9 +96,11 @@ pub async fn search_web_with_params(
     if let Some(cached) = state.search_cache.get(&cache_key).await {
         debug!("search cache hit for query");
         // Return cached results with current extras (rewrite + duplicate check)
-        let mut cached_extras = SearchExtras::default();
-        cached_extras.query_rewrite = Some(rewrite_result);
-        cached_extras.duplicate_warning = duplicate_warning;
+        let cached_extras = SearchExtras {
+            query_rewrite: Some(rewrite_result),
+            duplicate_warning,
+            ..Default::default()
+        };
         return Ok((cached, cached_extras));
     }
 

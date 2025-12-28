@@ -492,7 +492,7 @@ impl RustScraper {
             r"(?i)advert", r"(?i)sponsor", r"(?i)newsletter", r"(?i)\bshare\b", r"(?i)related articles",
             r"(?i)^comments?$", r"(?i)read more", r"(?i)continue reading", r"(?i)terms of service", r"(?i)privacy policy",
         ];
-        let re_garbage = Regex::new(&format!("{}", garbage.join("|"))).unwrap();
+        let re_garbage = Regex::new(&garbage.join("|")).unwrap();
 
         let mut kept = Vec::new();
         for line in out.split('\n') {
@@ -812,13 +812,13 @@ impl RustScraper {
         // Has structured headings (0.15)
         if headings.len() > 2 {
             score += 0.15;
-        } else if headings.len() > 0 {
+        } else if !headings.is_empty() {
             score += 0.075;
         }
         
         // Content length score (0.0-0.15)
         // Optimal around 500-2000 words
-        let length_score = if word_count >= 500 && word_count <= 2000 {
+        let length_score = if (500..=2000).contains(&word_count) {
             0.15
         } else if word_count > 2000 {
             0.15 * (2000.0 / word_count as f64).min(1.0)

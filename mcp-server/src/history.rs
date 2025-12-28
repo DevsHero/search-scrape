@@ -192,7 +192,7 @@ impl MemoryManager {
                 must: vec![qdrant_client::qdrant::Condition::matches(
                     "entry_type",
                     filter_value.to_string(),
-                ).into()],
+                )],
                 ..Default::default()
             });
         }

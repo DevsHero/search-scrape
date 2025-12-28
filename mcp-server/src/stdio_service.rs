@@ -62,7 +62,6 @@ impl rmcp::ServerHandler for McpService {
             capabilities: ServerCapabilities::builder()
                 .enable_tools()
                 .build(),
-            ..Default::default()
         }
     }
 
@@ -249,7 +248,7 @@ impl rmcp::ServerHandler for McpService {
                                     for (i, suggestion) in rewrite.suggestions.iter().take(2).enumerate() {
                                         text.push_str(&format!("   {}. {}\n", i + 1, suggestion));
                                     }
-                                    text.push_str("\n");
+                                    text.push('\n');
                                 }
                             }
                             
@@ -481,7 +480,7 @@ impl rmcp::ServerHandler for McpService {
                                 // query field is always a String, show it
                                 text.push_str(&format!("   Query: {}\n", entry.query));
                                 
-                                text.push_str("\n");
+                                text.push('\n');
                             }
                             
                             text.push_str(&format!("\n💡 Tip: Use threshold={:.2} for similar results, or higher (0.8-0.9) for more specific matches", threshold));
