@@ -14,3 +14,4 @@ scrapy-service/webspider/.scrapy/
 # Docker
 *.pid
 .DS_Store
+.fastembed_cache/
