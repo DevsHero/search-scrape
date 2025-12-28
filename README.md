@@ -50,9 +50,9 @@ Here are screenshots showing the MCP tools working in Vscode, Cursor, Trae:
 ![Scrape URL Tool Screenshot](screenshot/scrape_url.png)
 [View the full sample output for this scrape interaction](sample-results/scrape_url.txt)
 
-#### Scrape URL JSON Output
-![Scrape URL JSON Output Screenshot](screenshot/scrape_url_json.png)
-[View the JSON sample output for this scrape interaction](sample-results/scrape_url_json.txt)
+#### Research History Tool
+![Research History Tool Screenshot](screenshot/history.png)
+[View the history sample output for this interaction](sample-results/history.txt)
 
 ## 🚀 Quick Start
 
