@@ -74,7 +74,7 @@ cd mcp-server && cargo build --release
       "env": { 
         "SEARXNG_URL": "http://localhost:8888",
         "SEARXNG_ENGINES": "google,bing,duckduckgo",
-        "QDRANT_URL": "http://localhost:6333",  // Optional: enables history
+        "QDRANT_URL": "http://localhost:6334",  // Optional: enables history (gRPC port)
         "MAX_LINKS": "100"
       }
     }
@@ -87,7 +87,7 @@ cd mcp-server && cargo build --release
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SEARXNG_URL` | `http://localhost:8888` | SearXNG instance URL |
-| `QDRANT_URL` | - | **Optional**: Qdrant URL (e.g., `http://localhost:6333`). Enables research history feature |
+| `QDRANT_URL` | - | **Optional**: Qdrant gRPC URL (e.g., `http://localhost:6334`). Enables research history feature. **Note**: Use gRPC port 6334, NOT HTTP port 6333 |
 | `SEARXNG_ENGINES` | `duckduckgo,google,bing` | Default search engines (comma-separated) |
 | `MAX_LINKS` | `100` | Max links to return in Sources section |
 | `MAX_CONTENT_CHARS` | `10000` | Default `max_chars` limit for scraped content (100-50000) |
@@ -237,25 +237,29 @@ Set `output_format: "json"` to get structured data:
 - `warnings`: Array of issues (e.g., `["content_truncated"]`)
 - `domain`: Source domain for filtering/trust assessment
 
-### `research_history` - Semantic Search History (🆕 v3.0)
+### `research_history` - Semantic Search History (🆕 v3.0 | Enhanced v3.5)
 
 **100% Open Source Memory System**: Track and search your research history using local embeddings and Qdrant vector database. Perfect for avoiding duplicate work and maintaining context across sessions.
 
 **Features:**
 - 🧠 **Semantic Search**: Find related searches/scrapes even with different wording
 - 🔒 **100% Local**: No external API calls - uses fastembed for embeddings
-- 📊 **Auto-Logging**: All searches and scrapes are automatically saved
-- 🎯 **Smart Filtering**: Filter by entry type (search vs scrape)
+- 📊 **Auto-Logging**: All searches and scrapes are automatically saved with full context
+- 🎯 **Type Filtering** (🆕 v3.5): Separate search history from scrape history
+  - Filter by `entry_type: "search"` for past web searches
+  - Filter by `entry_type: "scrape"` for scraped page history
+  - Omit filter to search both types together
+- 🔍 **Rich Context**: Each entry includes query, domain, summary, and full results
 - ⚙️ **Optional**: Only enabled when `QDRANT_URL` is set
 
 **Setup:**
 ```bash
-# 1. Start Qdrant vector database
+# 1. Start Qdrant vector database (gRPC port 6334)
 docker-compose up qdrant -d
 
 # 2. Run MCP server with history enabled
 SEARXNG_URL=http://localhost:8888 \
-QDRANT_URL=http://localhost:6333 \
+QDRANT_URL=http://localhost:6334 \
 ./target/release/search-scrape-mcp
 ```
 
@@ -264,7 +268,8 @@ QDRANT_URL=http://localhost:6333 \
 {
   "query": "rust async web scraping",  // Natural language query
   "limit": 10,                         // Max results (default: 10)
-  "threshold": 0.7                     // Similarity 0-1 (default: 0.7)
+  "threshold": 0.7,                    // Similarity 0-1 (default: 0.7)
+  "entry_type": "search"               // Optional: "search" or "scrape" or omit for both
 }
 ```
 
@@ -292,12 +297,27 @@ Found 5 relevant entries for 'rust async web scraping':
 💡 Tip: Use threshold=0.70 for similar results, or higher (0.8-0.9) for more specific matches
 ```
 
+**Filtering by Type:**
+```json
+// Find only past searches
+{"query": "rust tutorials", "entry_type": "search", "threshold": 0.75}
+
+// Find only scraped pages
+{"query": "tokio documentation", "entry_type": "scrape", "limit": 5}
+
+// Search both types (default)
+{"query": "async programming", "threshold": 0.7}
+```
+
 **Technical Details:**
-- **Embedding Model**: AllMiniLML6V2 (384 dimensions, ~23MB, downloaded on first use)
-- **Vector DB**: Qdrant (local Docker container)
-- **Storage**: Persistent volume (`qdrant_storage`)
-- **Collection**: `research_history` with cosine similarity
-- **Auto-created**: Collection is created automatically on first use
+- **Embedding Model**: fastembed AllMiniLML6V2 (384 dimensions, ~23MB, downloaded on first use)
+- **Vector DB**: Qdrant v1.11+ (local Docker container, gRPC port 6334)
+- **Storage**: Persistent volume (`qdrant_storage`) - survives restarts
+- **Collection**: `research_history` with cosine similarity search
+- **Auto-created**: Collection created automatically on first use
+- **Entry Types**: Separate tracking for `Search` and `Scrape` operations
+- **Duplicate Detection**: Built-in 6-hour window, 0.9+ similarity threshold
+- **Performance**: Typically <100ms for semantic search with 1000+ entries
 
 ## 🛠️ Development
 
@@ -367,6 +387,29 @@ outbound_limit: 32 concurrent requests
 ### 🤖 For AI Agents (Auto-Follow These Guidelines)
 
 **The tool descriptions already contain this guidance**, but here's a quick reference:
+
+#### research_history Smart Usage (🆕 v3.5)
+- **Always check history FIRST** before doing new searches/scrapes:
+  - Saves API calls and bandwidth
+  - Maintains context across sessions
+  - Avoids duplicate work (search_web has built-in duplicate detection)
+- **Use type filtering** for focused results:
+  - `entry_type: "search"` → Find what you've searched for before
+  - `entry_type: "scrape"` → Find pages you've already read
+  - Omit `entry_type` → Search both types together
+- **Adjust threshold** based on your need:
+  - `0.6-0.7`: Broad exploration ("rust" finds "tokio", "async")
+  - `0.75-0.85`: Specific queries ("web scraping" finds "HTML parsing")
+  - `0.9+`: Near-exact matches (avoid duplicate work)
+- **Check timestamps**: Recent results (<24h) are more reliable
+- **Use limit wisely**:
+  - `limit: 5-10` for quick context checks
+  - `limit: 20+` for comprehensive review
+- **Workflow recommendation**:
+  1. `research_history` with `entry_type: "search"` to check past searches
+  2. If not found, use `search_web` (auto-logs to history)
+  3. `research_history` with `entry_type: "scrape"` to check if page already read
+  4. If not found, use `scrape_url` (auto-logs to history)
 
 #### search_web Smart Usage
 - **Always set `max_results`** based on your task:

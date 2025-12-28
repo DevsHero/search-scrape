@@ -140,7 +140,7 @@ impl rmcp::ServerHandler for McpService {
             },
             Tool {
                 name: Cow::Borrowed("research_history"),
-                description: Some(Cow::Borrowed("Search past research using semantic similarity (vector search). Finds related searches/scrapes even with different wording.\n\nKEY FEATURES:\n• Semantic search finds related topics (e.g., 'rust tutorials' finds 'learning rust')\n• Returns similarity scores (0.0-1.0) showing relevance\n• Shows when each search was performed (helps avoid stale info)\n• Includes summaries and domains from past research\n• Persists across sessions (uses Qdrant vector DB)\n\nAGENT BEST PRACTICES:\n1. **Use FIRST before new searches** - Saves API calls and finds existing research\n2. Set threshold=0.6-0.7 for broad exploration, 0.75-0.85 for specific matches\n3. Check timestamps: Recent results (<24h) are more reliable than old ones\n4. Use limit=5-10 for quick checks, 20+ for comprehensive review\n5. If similarity >0.9, you likely already researched this exact topic\n6. Combine with search_web: Check history first, then search if not found\n\nNOTE: Only available when Qdrant is running (QDRANT_URL configured)")),
+                description: Some(Cow::Borrowed("Search past research using semantic similarity (vector search). Finds related searches/scrapes even with different wording.\n\nKEY FEATURES:\n• Semantic search finds related topics (e.g., 'rust tutorials' finds 'learning rust')\n• Returns similarity scores (0.0-1.0) showing relevance\n• Shows when each search was performed (helps avoid stale info)\n• Includes summaries and domains from past research\n• Persists across sessions (uses Qdrant vector DB)\n• Filter by type: 'search' for web searches, 'scrape' for scraped pages\n\nAGENT BEST PRACTICES:\n1. **Use FIRST before new searches** - Saves API calls and finds existing research\n2. Set threshold=0.6-0.7 for broad exploration, 0.75-0.85 for specific matches\n3. Use entry_type='search' to find past searches, 'scrape' for scraped content history\n4. Check timestamps: Recent results (<24h) are more reliable than old ones\n5. Use limit=5-10 for quick checks, 20+ for comprehensive review\n6. If similarity >0.9, you likely already researched this exact topic\n7. Combine with search_web/scrape_url: Check history first, then fetch if not found\n\nNOTE: Only available when Qdrant is running (QDRANT_URL configured)")),
                 input_schema: match serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -161,6 +161,11 @@ impl rmcp::ServerHandler for McpService {
                             "maximum": 1.0,
                             "default": 0.7,
                             "description": "Similarity threshold (0-1). GUIDANCE: 0.6-0.7 for broad topics, 0.75-0.85 for specific queries, 0.9+ for near-exact matches"
+                        },
+                        "entry_type": {
+                            "type": "string",
+                            "description": "Filter by entry type. Use 'search' for past web searches, 'scrape' for scraped pages. Omit to search both types.",
+                            "enum": ["search", "scrape"]
                         }
                     },
                     "required": ["query"]
@@ -456,8 +461,17 @@ impl rmcp::ServerHandler for McpService {
                 
                 let limit = args.get("limit").and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(10);
                 let threshold = args.get("threshold").and_then(|v| v.as_f64()).unwrap_or(0.7) as f32;
+                
+                // Parse entry_type filter if provided
+                let entry_type_filter = args.get("entry_type")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| match s.to_lowercase().as_str() {
+                        "search" => Some(crate::history::EntryType::Search),
+                        "scrape" => Some(crate::history::EntryType::Scrape),
+                        _ => None
+                    });
 
-                match memory.search_history(query, limit, threshold, None).await {
+                match memory.search_history(query, limit, threshold, entry_type_filter).await {
                     Ok(results) => {
                         if results.is_empty() {
                             let text = format!("No relevant history found for: '{}'\n\nTry:\n- Lower threshold (currently {:.2})\n- Broader search terms\n- Check if you have any saved history", query, threshold);
