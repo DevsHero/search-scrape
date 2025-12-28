@@ -33,13 +33,25 @@ async fn main() -> anyhow::Result<()> {
         .build()?;
 
     // Create application state
-    let state = Arc::new(AppState {
-        searxng_url,
-        http_client,
-        search_cache: moka::future::Cache::builder().max_capacity(10_000).time_to_live(std::time::Duration::from_secs(60 * 10)).build(),
-        scrape_cache: moka::future::Cache::builder().max_capacity(10_000).time_to_live(std::time::Duration::from_secs(60 * 30)).build(),
-        outbound_limit: Arc::new(tokio::sync::Semaphore::new(32)),
-    });
+    let mut state = AppState::new(searxng_url, http_client);
+
+    // Initialize memory if QDRANT_URL is set
+    if let Ok(qdrant_url) = env::var("QDRANT_URL") {
+        info!("Initializing memory with Qdrant at: {}", qdrant_url);
+        match mcp_server::history::MemoryManager::new(&qdrant_url).await {
+            Ok(memory) => {
+                state = state.with_memory(Arc::new(memory));
+                info!("Memory initialized successfully");
+            }
+            Err(e) => {
+                warn!("Failed to initialize memory: {}. Continuing without memory feature.", e);
+            }
+        }
+    } else {
+        info!("QDRANT_URL not set. Memory feature disabled.");
+    }
+
+    let state = Arc::new(state);
 
     // Build router
     let app = Router::new()

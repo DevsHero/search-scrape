@@ -1,9 +1,9 @@
 use rmcp::{model::*, ServiceExt};
 use std::env;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use std::borrow::Cow;
-use crate::{search, scrape, AppState};
+use crate::{search, scrape, AppState, history};
 
 #[derive(Clone, Debug)]
 pub struct McpService {
@@ -11,7 +11,7 @@ pub struct McpService {
 }
 
 impl McpService {
-    pub fn new() -> anyhow::Result<Self> {
+    pub async fn new() -> anyhow::Result<Self> {
         tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .init();
@@ -26,15 +26,25 @@ impl McpService {
             .timeout(std::time::Duration::from_secs(30))
             .build()?;
 
-        let state = Arc::new(AppState {
-            searxng_url,
-            http_client,
-            search_cache: moka::future::Cache::builder().max_capacity(10_000).time_to_live(std::time::Duration::from_secs(60 * 10)).build(),
-            scrape_cache: moka::future::Cache::builder().max_capacity(10_000).time_to_live(std::time::Duration::from_secs(60 * 30)).build(),
-            outbound_limit: Arc::new(tokio::sync::Semaphore::new(32)),
-        });
+        let mut state = AppState::new(searxng_url, http_client);
 
-        Ok(Self { state })
+        // Initialize memory if QDRANT_URL is set
+        if let Ok(qdrant_url) = std::env::var("QDRANT_URL") {
+            info!("Initializing memory with Qdrant at: {}", qdrant_url);
+            match history::MemoryManager::new(&qdrant_url).await {
+                Ok(memory) => {
+                    state = state.with_memory(Arc::new(memory));
+                    info!("Memory initialized successfully");
+                }
+                Err(e) => {
+                    warn!("Failed to initialize memory: {}. Continuing without memory feature.", e);
+                }
+            }
+        } else {
+            info!("QDRANT_URL not set. Memory feature disabled.");
+        }
+
+        Ok(Self { state: Arc::new(state) })
     }
 }
 
@@ -122,6 +132,39 @@ impl rmcp::ServerHandler for McpService {
                         }
                     },
                     "required": ["url"]
+                }) {
+                    serde_json::Value::Object(map) => std::sync::Arc::new(map),
+                    _ => std::sync::Arc::new(serde_json::Map::new()),
+                },
+                output_schema: None,
+                annotations: None,
+            },
+            Tool {
+                name: Cow::Borrowed("research_history"),
+                description: Some(Cow::Borrowed("Search research history using semantic similarity. Returns past searches and scrapes related to your topic. AGENT GUIDANCE: (1) Use this BEFORE new searches to avoid duplicate work. (2) Helps remember context across sessions. (3) Set threshold=0.7 for similar topics, 0.8+ for exact matches. (4) Returns entry_type, query, summary, domain, timestamp. (5) Check full_result for complete data. Only available when QDRANT_URL is configured.")),
+                input_schema: match serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Topic or question to search in history. Use natural language. Example: 'rust async web scraping' or 'how to configure Qdrant'"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 10,
+                            "description": "Max number of results to return. GUIDANCE: 5-10 for quick context, 20+ for comprehensive review"
+                        },
+                        "threshold": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.7,
+                            "description": "Similarity threshold (0-1). GUIDANCE: 0.6-0.7 for broad topics, 0.75-0.85 for specific queries, 0.9+ for near-exact matches"
+                        }
+                    },
+                    "required": ["query"]
                 }) {
                     serde_json::Value::Object(map) => std::sync::Arc::new(map),
                     _ => std::sync::Arc::new(serde_json::Map::new()),
@@ -366,6 +409,72 @@ impl rmcp::ServerHandler for McpService {
                     }
                 }
             }
+            "research_history" => {
+                // Check if memory is enabled
+                let memory = match &self.state.memory {
+                    Some(m) => m,
+                    None => {
+                        return Ok(CallToolResult::success(vec![Content::text(
+                            "Research history feature is not available. Set QDRANT_URL environment variable to enable.\n\nExample: QDRANT_URL=http://localhost:6333".to_string()
+                        )]));
+                    }
+                };
+
+                let args = request.arguments.as_ref().ok_or_else(|| ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    "Missing required arguments object",
+                    None,
+                ))?;
+                
+                let query = args
+                    .get("query")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| ErrorData::new(
+                        ErrorCode::INVALID_PARAMS,
+                        "Missing required parameter: query",
+                        None,
+                    ))?;
+                
+                let limit = args.get("limit").and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(10);
+                let threshold = args.get("threshold").and_then(|v| v.as_f64()).unwrap_or(0.7) as f32;
+
+                match memory.search_history(query, limit, threshold, None).await {
+                    Ok(results) => {
+                        if results.is_empty() {
+                            let text = format!("No relevant history found for: '{}'\n\nTry:\n- Lower threshold (currently {:.2})\n- Broader search terms\n- Check if you have any saved history", query, threshold);
+                            Ok(CallToolResult::success(vec![Content::text(text)]))
+                        } else {
+                            let mut text = format!("Found {} relevant entries for '{}':\n\n", results.len(), query);
+                            
+                            for (i, (entry, score)) in results.iter().enumerate() {
+                                text.push_str(&format!(
+                                    "{}. [Similarity: {:.3}] **{}** ({})\n   Type: {:?}\n   When: {}\n   Summary: {}\n",
+                                    i + 1,
+                                    score,
+                                    entry.topic,
+                                    entry.domain.as_deref().unwrap_or("N/A"),
+                                    entry.entry_type,
+                                    entry.timestamp.format("%Y-%m-%d %H:%M UTC"),
+                                    entry.summary.chars().take(150).collect::<String>()
+                                ));
+                                
+                                // query field is always a String, show it
+                                text.push_str(&format!("   Query: {}\n", entry.query));
+                                
+                                text.push_str("\n");
+                            }
+                            
+                            text.push_str(&format!("\n💡 Tip: Use threshold={:.2} for similar results, or higher (0.8-0.9) for more specific matches", threshold));
+                            
+                            Ok(CallToolResult::success(vec![Content::text(text)]))
+                        }
+                    }
+                    Err(e) => {
+                        error!("History search error: {}", e);
+                        Ok(CallToolResult::success(vec![Content::text(format!("History search failed: {}", e))]))
+                    }
+                }
+            }
             _ => Err(ErrorData::new(
                 ErrorCode::METHOD_NOT_FOUND,
                 format!("Unknown tool: {}", request.name),
@@ -374,9 +483,8 @@ impl rmcp::ServerHandler for McpService {
         }
     }
 }
-
 pub async fn run() -> anyhow::Result<()> {
-    let service = McpService::new()?;
+    let service = McpService::new().await?;
     let server = service.serve(rmcp::transport::stdio()).await?;
     info!("MCP stdio server running");
     let _quit_reason = server.waiting().await?;

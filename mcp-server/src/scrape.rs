@@ -55,6 +55,33 @@ pub async fn scrape_url(state: &Arc<AppState>, url: &str) -> Result<ScrapeRespon
         info!("Rust-native scraper succeeded for {}", url);
     }
     state.scrape_cache.insert(url.to_string(), result.clone()).await;
+    
+    // Auto-log to history if memory is enabled (Phase 1)
+    if let Some(memory) = &state.memory {
+        let summary = format!(
+            "{} words, {} code blocks",
+            result.word_count,
+            result.code_blocks.len()
+        );
+        
+        // Extract domain from URL
+        let domain = url::Url::parse(url)
+            .ok()
+            .and_then(|u| u.host_str().map(|s| s.to_string()));
+        
+        let result_json = serde_json::to_value(&result).unwrap_or_default();
+        
+        if let Err(e) = memory.log_scrape(
+            url.to_string(),
+            Some(result.title.clone()),
+            summary,
+            domain,
+            &result_json
+        ).await {
+            tracing::warn!("Failed to log scrape to history: {}", e);
+        }
+    }
+    
     Ok(result)
 }
 

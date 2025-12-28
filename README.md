@@ -15,6 +15,7 @@
 - 🛡️ **Privacy First**: All processing happens on your machine
 - ⚡ **Performance**: Built-in caching (10min search, 30min scrape), retry logic, and concurrency control
 - 🎨 **Content-Aware**: Special handling for documentation sites (mdBook, GitBook, etc.)
+- 🧠 **Research History** (🆕): Semantic search memory with local embeddings - track all searches/scrapes, avoid duplicate work
 
 ### 🆕 New: Agent-Optimized Features (v2.0)
 
@@ -44,13 +45,16 @@ Here are screenshots showing the MCP tools working in Vscode, Cursor, Trae:
 ## 🚀 Quick Start
 
 ```bash
-# 1. Start SearXNG search engine
+# 1. Start SearXNG search engine (required)
 docker-compose up searxng -d
 
-# 2. Build MCP server
+# 2. Optional: Start Qdrant for research history
+docker-compose up qdrant -d
+
+# 3. Build MCP server
 cd mcp-server && cargo build --release
 
-# 3. Add to your AI assistant's MCP config:
+# 4. Add to your AI assistant's MCP config:
 {
   "mcpServers": {
     "search-scrape": {
@@ -58,6 +62,7 @@ cd mcp-server && cargo build --release
       "env": { 
         "SEARXNG_URL": "http://localhost:8888",
         "SEARXNG_ENGINES": "google,bing,duckduckgo",
+        "QDRANT_URL": "http://localhost:6333",  // Optional: enables history
         "MAX_LINKS": "100"
       }
     }
@@ -70,6 +75,7 @@ cd mcp-server && cargo build --release
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SEARXNG_URL` | `http://localhost:8888` | SearXNG instance URL |
+| `QDRANT_URL` | - | **Optional**: Qdrant URL (e.g., `http://localhost:6333`). Enables research history feature |
 | `SEARXNG_ENGINES` | `duckduckgo,google,bing` | Default search engines (comma-separated) |
 | `MAX_LINKS` | `100` | Max links to return in Sources section |
 | `MAX_CONTENT_CHARS` | `10000` | Default `max_chars` limit for scraped content (100-50000) |
@@ -218,6 +224,68 @@ Set `output_format: "json"` to get structured data:
 - `truncated`: Boolean flag indicating if content was cut off
 - `warnings`: Array of issues (e.g., `["content_truncated"]`)
 - `domain`: Source domain for filtering/trust assessment
+
+### `research_history` - Semantic Search History (🆕 v3.0)
+
+**100% Open Source Memory System**: Track and search your research history using local embeddings and Qdrant vector database. Perfect for avoiding duplicate work and maintaining context across sessions.
+
+**Features:**
+- 🧠 **Semantic Search**: Find related searches/scrapes even with different wording
+- 🔒 **100% Local**: No external API calls - uses fastembed for embeddings
+- 📊 **Auto-Logging**: All searches and scrapes are automatically saved
+- 🎯 **Smart Filtering**: Filter by entry type (search vs scrape)
+- ⚙️ **Optional**: Only enabled when `QDRANT_URL` is set
+
+**Setup:**
+```bash
+# 1. Start Qdrant vector database
+docker-compose up qdrant -d
+
+# 2. Run MCP server with history enabled
+SEARXNG_URL=http://localhost:8888 \
+QDRANT_URL=http://localhost:6333 \
+./target/release/search-scrape-mcp
+```
+
+**Parameters:**
+```json
+{
+  "query": "rust async web scraping",  // Natural language query
+  "limit": 10,                         // Max results (default: 10)
+  "threshold": 0.7                     // Similarity 0-1 (default: 0.7)
+}
+```
+
+**Threshold Guide:**
+- `0.6-0.7`: Broad topic search (e.g., "async programming" finds "tokio", "futures")
+- `0.75-0.85`: Specific queries (e.g., "web scraping" finds "HTML parsing", "requests")
+- `0.9+`: Near-exact matches
+
+**Example Output:**
+```
+Found 5 relevant entries for 'rust async web scraping':
+
+1. [Similarity: 0.89] Web Scraping in Rust (docs.rs)
+   Type: Scrape
+   When: 2024-12-01 14:30 UTC
+   Summary: Introduction to Web Scraping - 2500 words, 8 code blocks
+   Query: https://docs.rs/scraper/latest/scraper/
+
+2. [Similarity: 0.82] async web frameworks (stackoverflow.com)
+   Type: Search
+   When: 2024-12-01 10:15 UTC
+   Summary: Found 15 results. Top domains: stackoverflow.com, reddit.com
+   Query: best async web frameworks rust
+
+💡 Tip: Use threshold=0.70 for similar results, or higher (0.8-0.9) for more specific matches
+```
+
+**Technical Details:**
+- **Embedding Model**: AllMiniLML6V2 (384 dimensions, ~23MB, downloaded on first use)
+- **Vector DB**: Qdrant (local Docker container)
+- **Storage**: Persistent volume (`qdrant_storage`)
+- **Collection**: `research_history` with cosine similarity
+- **Auto-created**: Collection is created automatically on first use
 
 ## 🛠️ Development
 

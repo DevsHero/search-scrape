@@ -13,8 +13,28 @@ services:
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
     restart: unless-stopped
 
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - "6333:6333"  # HTTP API
+      - "6334:6334"  # gRPC API (optional)
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    restart: unless-stopped
+
+volumes:
+  qdrant_storage:
+    driver: local
+
   # Note: MCP server runs natively for better performance and compatibility
   # To run the MCP server natively:
   # 1. Build: cargo build --release
   # 2. HTTP server: SEARXNG_URL=http://localhost:8888 ./target/release/mcp-server
-  # 3. MCP stdio server: SEARXNG_URL=http://localhost:8888 ./target/release/search-scrape-mcp
+  # 3. MCP stdio server (with history): 
+  #    SEARXNG_URL=http://localhost:8888 QDRANT_URL=http://localhost:6333 ./target/release/search-scrape-mcp
+  # 4. MCP stdio server (without history):
+  #    SEARXNG_URL=http://localhost:8888 ./target/release/search-scrape-mcp

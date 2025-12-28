@@ -168,6 +168,16 @@ pub async fn search_web_with_params(
     debug!("Converted {} results", results.len());
     // Fill cache with composite key
     state.search_cache.insert(cache_key, results.clone()).await;
+    
+    // Auto-log to history if memory is enabled (Phase 1)
+    if let Some(memory) = &state.memory {
+        let result_json = serde_json::to_value(&results).unwrap_or_default();
+        
+        if let Err(e) = memory.log_search(query.to_string(), &result_json, results.len()).await {
+            tracing::warn!("Failed to log search to history: {}", e);
+        }
+    }
+    
     Ok((results, extras))
 }
 
