@@ -310,6 +310,10 @@ Found 5 relevant entries for 'rust async web scraping':
 ```
 
 **Technical Details:**
+- **Search Algorithm**: **Hybrid Search** (Vector + Keyword Boosting) for BEST agent results
+  - Vector embeddings find semantically similar content
+  - Keyword matching boosts exact term matches (+15% score)
+  - Combines semantic understanding with precise technical term matching
 - **Embedding Model**: fastembed AllMiniLML6V2 (384 dimensions, ~23MB, downloaded on first use)
 - **Vector DB**: Qdrant v1.11+ (local Docker container, gRPC port 6334)
 - **Storage**: Persistent volume (`qdrant_storage`) - survives restarts
@@ -317,7 +321,7 @@ Found 5 relevant entries for 'rust async web scraping':
 - **Auto-created**: Collection created automatically on first use
 - **Entry Types**: Separate tracking for `Search` and `Scrape` operations
 - **Duplicate Detection**: Built-in 6-hour window, 0.9+ similarity threshold
-- **Performance**: Typically <100ms for semantic search with 1000+ entries
+- **Performance**: Typically <100ms for hybrid search with 1000+ entries
 
 ## 🛠️ Development
 

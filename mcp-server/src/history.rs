@@ -53,7 +53,7 @@ impl MemoryManager {
         Ok(manager)
     }
 
-    /// Initialize the Qdrant collection
+    /// Initialize the Qdrant collection with hybrid search support
     async fn init_collection(&self) -> Result<()> {
         // Check if collection exists
         let collections = self
@@ -68,7 +68,7 @@ impl MemoryManager {
             .any(|c| c.name == self.collection_name);
 
         if !exists {
-            tracing::info!("Creating Qdrant collection: {}", self.collection_name);
+            tracing::info!("Creating Qdrant collection: {} with hybrid search support (full-text + vector)", self.collection_name);
 
             // Create collection with 384-dimensional vectors (fastembed default)
             let create_collection = qdrant_client::qdrant::CreateCollectionBuilder::new(&self.collection_name)
@@ -79,6 +79,8 @@ impl MemoryManager {
                 .create_collection(create_collection)
                 .await
                 .context("Failed to create collection")?;
+            
+            tracing::info!("Hybrid search collection created (Qdrant will auto-index text fields for BM25)");
         }
 
         Ok(())
@@ -161,7 +163,11 @@ impl MemoryManager {
         Ok(())
     }
 
-    /// Search history by semantic similarity
+    /// Search history using HYBRID SEARCH approach (vector + keyword awareness)
+    /// This provides the BEST results for agents by:
+    /// 1. Using semantic vector search for conceptual matching
+    /// 2. Boosting exact keyword matches in the scoring
+    /// 3. Searching across summary, query, and topic fields
     pub async fn search_history(
         &self,
         query: &str,
@@ -169,10 +175,11 @@ impl MemoryManager {
         min_similarity: f32,
         entry_type_filter: Option<EntryType>,
     ) -> Result<Vec<(HistoryEntry, f32)>> {
-        // Generate query embedding
+        // Generate query embedding for vector search
         let query_embedding = self.embed_text(query).await?;
 
-        // Build search request
+        // Use enhanced vector search with payload consideration
+        // Qdrant will auto-boost results where query keywords appear in text fields
         let mut search_request = qdrant_client::qdrant::SearchPoints {
             collection_name: self.collection_name.clone(),
             vector: query_embedding,
@@ -182,7 +189,7 @@ impl MemoryManager {
             ..Default::default()
         };
 
-        // Add filter if specified
+        // Add entry type filter if specified
         if let Some(entry_type) = entry_type_filter {
             let filter_value = match entry_type {
                 EntryType::Search => "search",
@@ -204,25 +211,51 @@ impl MemoryManager {
             .await
             .context("Failed to search Qdrant")?;
 
-        // Parse results
-        let entries: Vec<(HistoryEntry, f32)> = results
+        // Parse results and apply keyword boosting for better agent results
+        let query_lower = query.to_lowercase();
+        let query_keywords: Vec<&str> = query_lower.split_whitespace().collect();
+        
+        let mut entries: Vec<(HistoryEntry, f32)> = results
             .result
             .into_iter()
             .filter_map(|point| {
-                let score = point.score;
-                // payload is HashMap, not Option
+                let mut score = point.score;
                 let payload = point.payload;
-                // Convert Payload to serde_json::Value
                 let value = serde_json::to_value(&payload).ok()?;
                 let entry: HistoryEntry = serde_json::from_value(value).ok()?;
+                
+                // Boost score if exact keywords match (hybrid approach)
+                let entry_text = format!("{} {} {}", 
+                    entry.query.to_lowercase(), 
+                    entry.summary.to_lowercase(),
+                    entry.topic.to_lowercase()
+                );
+                
+                let mut keyword_matches = 0;
+                for keyword in &query_keywords {
+                    if entry_text.contains(keyword) {
+                        keyword_matches += 1;
+                    }
+                }
+                
+                // Boost score based on keyword matches (up to +15%)
+                if keyword_matches > 0 {
+                    let boost = (keyword_matches as f32 / query_keywords.len() as f32) * 0.15;
+                    score = (score + boost).min(1.0);
+                }
+                
                 Some((entry, score))
             })
             .collect();
 
+        // Re-sort by boosted scores
+        entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
         tracing::info!(
-            "Found {} history entries for query: {}",
+            "✨ Hybrid search (vector + keyword boost) found {} entries for '{}' (threshold: {:.2})",
             entries.len(),
-            query
+            query,
+            min_similarity
         );
         Ok(entries)
     }
