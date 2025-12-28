@@ -73,7 +73,7 @@ impl rmcp::ServerHandler for McpService {
         let tools = vec![
             Tool {
                 name: Cow::Borrowed("search_web"),
-                description: Some(Cow::Borrowed("Search the web using SearXNG federated search. AGENT GUIDANCE: (1) Set max_results=5-10 for quick lookups, 20-50 for comprehensive research. (2) Use time_range='week' or 'month' for recent topics. (3) Use categories='it' for tech, 'news' for current events, 'science' for research. (4) Check 'answers' field for instant facts before reading snippets. (5) If you see 'Did you mean' corrections, retry with the suggested spelling. (6) If unresponsive_engines > 3, consider retrying.")),
+                description: Some(Cow::Borrowed("Search the web using SearXNG federated search. Returns ranked results with domain classification and automatic query optimization.\n\nKEY FEATURES:\n• Auto-rewrites developer queries (e.g., 'rust docs' → adds 'site:doc.rust-lang.org')\n• Duplicate detection warns if query searched within 6 hours\n• Extracts domains and classifies sources (docs/repo/blog/news)\n• Shows query suggestions and instant answers when available\n\nAGENT BEST PRACTICES:\n1. Use categories='it' for programming/tech queries (gets better results)\n2. Start with max_results=5-10, increase to 20-50 for comprehensive research\n3. Check duplicate warnings - use research_history tool instead if duplicate detected\n4. Look for 'Query Optimization Tips' in output for better refinements\n5. Use time_range='week' for recent news, 'month' for current tech trends")),
                 input_schema: match serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -96,7 +96,7 @@ impl rmcp::ServerHandler for McpService {
             },
             Tool {
                 name: Cow::Borrowed("scrape_url"),
-                description: Some(Cow::Borrowed("Scrape and extract clean content from URLs. AGENT GUIDANCE: (1) Set max_chars=3000-5000 for summaries, 10000-20000 for full articles, 30000+ for documentation. (2) Keep content_links_only=true (default) to get only relevant links. (3) Check word_count - if <50, page may be JS-heavy or paywalled. (4) Use [N] citation markers in content to reference specific sources. (5) For docs sites, increase max_chars to capture full tutorials.")),
+                description: Some(Cow::Borrowed("Extract clean content from URLs with automatic code block detection, quality scoring, and metadata extraction.\n\nKEY FEATURES:\n• Extracts code blocks with language detection (returns array of {language, code})\n• Quality scoring (0.0-1.0) indicates content reliability\n• Automatic metadata: title, author, publish date, reading time\n• Citation-ready: Use [N] markers to reference extracted links\n• JSON mode: Set output_format='json' for structured data with all metadata\n\nAGENT BEST PRACTICES:\n1. For code examples: Use output_format='json' to get code_blocks array\n2. Set max_chars based on need: 3000-5000 (summary), 10000 (article), 30000+ (docs)\n3. Check extraction_score: <0.4 = low quality, >0.7 = high quality\n4. Check warnings array: 'short_content' = likely JS-heavy, 'low_extraction_score' = may need browser\n5. For documentation sites: Increase max_chars to 40000+ to capture full tutorials\n6. Use content_links_only=false only when you need navigation/sitemap links")),
                 input_schema: match serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -140,7 +140,7 @@ impl rmcp::ServerHandler for McpService {
             },
             Tool {
                 name: Cow::Borrowed("research_history"),
-                description: Some(Cow::Borrowed("Search research history using semantic similarity. Returns past searches and scrapes related to your topic. AGENT GUIDANCE: (1) Use this BEFORE new searches to avoid duplicate work. (2) Helps remember context across sessions. (3) Set threshold=0.7 for similar topics, 0.8+ for exact matches. (4) Returns entry_type, query, summary, domain, timestamp. (5) Check full_result for complete data. Only available when QDRANT_URL is configured.")),
+                description: Some(Cow::Borrowed("Search past research using semantic similarity (vector search). Finds related searches/scrapes even with different wording.\n\nKEY FEATURES:\n• Semantic search finds related topics (e.g., 'rust tutorials' finds 'learning rust')\n• Returns similarity scores (0.0-1.0) showing relevance\n• Shows when each search was performed (helps avoid stale info)\n• Includes summaries and domains from past research\n• Persists across sessions (uses Qdrant vector DB)\n\nAGENT BEST PRACTICES:\n1. **Use FIRST before new searches** - Saves API calls and finds existing research\n2. Set threshold=0.6-0.7 for broad exploration, 0.75-0.85 for specific matches\n3. Check timestamps: Recent results (<24h) are more reliable than old ones\n4. Use limit=5-10 for quick checks, 20+ for comprehensive review\n5. If similarity >0.9, you likely already researched this exact topic\n6. Combine with search_web: Check history first, then search if not found\n\nNOTE: Only available when Qdrant is running (QDRANT_URL configured)")),
                 input_schema: match serde_json::json!({
                     "type": "object",
                     "properties": {
