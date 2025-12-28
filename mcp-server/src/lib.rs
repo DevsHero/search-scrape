@@ -5,6 +5,7 @@ pub mod mcp;
 pub mod rust_scraper;
 pub mod stdio_service;
 pub mod history;
+pub mod query_rewriter;
 
 #[derive(Clone)]
 pub struct AppState {

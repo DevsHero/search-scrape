@@ -15,7 +15,9 @@
 - 🛡️ **Privacy First**: All processing happens on your machine
 - ⚡ **Performance**: Built-in caching (10min search, 30min scrape), retry logic, and concurrency control
 - 🎨 **Content-Aware**: Special handling for documentation sites (mdBook, GitBook, etc.)
-- 🧠 **Research History** (🆕): Semantic search memory with local embeddings - track all searches/scrapes, avoid duplicate work
+- 🧠 **Research History** (v3.0): Semantic search memory with local embeddings - track all searches/scrapes, avoid duplicate work
+- 🤖 **Smart Query Rewriting** (🆕 v3.5): Auto-enhances developer queries with site filters and optimizations
+- 🔄 **Duplicate Detection** (🆕 v3.5): Warns about similar recent searches to avoid redundant work
 
 ### 🆕 New: Agent-Optimized Features (v2.0)
 
@@ -25,6 +27,16 @@
 - 🏷️ **Search Classification**: Automatic categorization (docs, repo, blog, video, qa, package, gaming)
 - ⚠️ **Machine-Readable Warnings**: Truncation flags, error indicators, and quality assessments
 - 🌐 **Domain Extraction**: Identifies content source domains for filtering and trust assessment
+
+### 🚀 New: Developer Experience Enhancements (v3.5)
+
+- 🔍 **Intelligent Query Rewriting**: Automatically detects developer queries and enhances them
+  - "rust docs" → "rust docs site:doc.rust-lang.org"
+  - "tokio error" → "tokio error site:stackoverflow.com"
+  - Supports 40+ programming languages and frameworks
+- 🎯 **Smart Site Suggestions**: AI-powered recommendations for best sources
+- ⚠️ **Duplicate Warnings**: Detects similar searches within 6 hours (0.9+ similarity)
+- 📊 **Optimized SearXNG**: Weighted engines prioritize GitHub, Stack Overflow, and official docs
 
 ### 📸 Screenshot
 

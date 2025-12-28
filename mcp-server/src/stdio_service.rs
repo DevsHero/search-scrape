@@ -233,7 +233,27 @@ impl rmcp::ServerHandler for McpService {
                             let result_count = results.len();
                             let _showing = result_count.min(max_results);
                             
-                            let mut text = format!("Found {} search results for '{}':", result_count, query);
+                            let mut text = String::new();
+                            
+                            // Phase 2: Show duplicate warning if present
+                            if let Some(dup_warning) = &extras.duplicate_warning {
+                                text.push_str(&format!("{}\n\n", dup_warning));
+                            }
+                            
+                            // Phase 2: Show query rewrite info if query was enhanced
+                            if let Some(ref rewrite) = extras.query_rewrite {
+                                if rewrite.was_rewritten() {
+                                    text.push_str(&format!("🔍 **Query Enhanced:** '{}' → '{}'\n\n", rewrite.original, rewrite.best_query()));
+                                } else if rewrite.is_developer_query && !rewrite.suggestions.is_empty() {
+                                    text.push_str("💡 **Query Optimization Tips:**\n");
+                                    for (i, suggestion) in rewrite.suggestions.iter().take(2).enumerate() {
+                                        text.push_str(&format!("   {}. {}\n", i + 1, suggestion));
+                                    }
+                                    text.push_str("\n");
+                                }
+                            }
+                            
+                            text.push_str(&format!("Found {} search results for '{}':", result_count, query));
                             if result_count > max_results {
                                 text.push_str(&format!(" (showing top {})\n", max_results));
                             }

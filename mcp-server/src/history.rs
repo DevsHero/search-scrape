@@ -299,4 +299,53 @@ impl MemoryManager {
         // Count by type (simplified - just return total for both)
         Ok((total, total))
     }
+
+    /// Check for recent duplicate searches (within last N hours)
+    pub async fn find_recent_duplicate(
+        &self,
+        query: &str,
+        hours_back: u64,
+    ) -> Result<Option<(HistoryEntry, f32)>> {
+        use chrono::Duration;
+
+        // Search for very similar queries (high threshold)
+        let results = self
+            .search_history(query, 5, 0.9, Some(EntryType::Search))
+            .await?;
+
+        // Filter to only recent entries
+        let cutoff = Utc::now() - Duration::hours(hours_back as i64);
+
+        for (entry, score) in results {
+            if entry.timestamp > cutoff {
+                return Ok(Some((entry, score)));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Get top domains from history
+    pub async fn get_top_domains(&self, limit: usize) -> Result<Vec<(String, usize)>> {
+        use std::collections::HashMap;
+
+        // Search all entries
+        let results = self
+            .search_history("", 1000, 0.0, None)
+            .await?;
+
+        let mut domain_counts: HashMap<String, usize> = HashMap::new();
+
+        for (entry, _) in results {
+            if let Some(domain) = entry.domain {
+                *domain_counts.entry(domain).or_insert(0) += 1;
+            }
+        }
+
+        let mut sorted: Vec<_> = domain_counts.into_iter().collect();
+        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        sorted.truncate(limit);
+
+        Ok(sorted)
+    }
 }

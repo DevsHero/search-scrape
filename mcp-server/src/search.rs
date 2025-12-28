@@ -1,11 +1,12 @@
 use crate::types::*;
 use crate::AppState;
+use crate::query_rewriter::{QueryRewriter, QueryRewriteResult};
 use anyhow::{anyhow, Result};
 use backoff::future::retry;
 use backoff::ExponentialBackoffBuilder;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 #[derive(Debug, Default, Clone)]
 pub struct SearchParamOverrides {
@@ -23,6 +24,8 @@ pub struct SearchExtras {
     pub suggestions: Vec<String>,
     pub corrections: Vec<String>,
     pub unresponsive_engines: Vec<String>,
+    pub query_rewrite: Option<QueryRewriteResult>,
+    pub duplicate_warning: Option<String>,
 }
 
 pub async fn search_web(state: &Arc<AppState>, query: &str) -> Result<(Vec<SearchResult>, SearchExtras)> {
@@ -35,6 +38,44 @@ pub async fn search_web_with_params(
     overrides: Option<SearchParamOverrides>,
 ) -> Result<(Vec<SearchResult>, SearchExtras)> {
     info!("Searching for: {}", query);
+    
+    // Phase 2: Check for recent duplicates if memory enabled
+    let mut duplicate_warning = None;
+    if let Some(memory) = &state.memory {
+        match memory.find_recent_duplicate(query, 6).await {
+            Ok(Some((entry, score))) => {
+                let time_ago = chrono::Utc::now().signed_duration_since(entry.timestamp);
+                let hours = time_ago.num_hours();
+                let minutes = time_ago.num_minutes();
+                
+                let time_str = if hours > 0 {
+                    format!("{} hour{} ago", hours, if hours == 1 { "" } else { "s" })
+                } else {
+                    format!("{} minute{} ago", minutes, if minutes == 1 { "" } else { "s" })
+                };
+                
+                duplicate_warning = Some(format!(
+                    "⚠️ Similar search found from {} (similarity: {:.2}). Consider checking history first.",
+                    time_str, score
+                ));
+                warn!("Duplicate search detected: {} ({} ago)", entry.query, time_str);
+            }
+            Ok(None) => {}
+            Err(e) => warn!("Failed to check for duplicates: {}", e),
+        }
+    }
+    
+    // Phase 2: Query rewriting for developer queries
+    let rewriter = QueryRewriter::new();
+    let rewrite_result = rewriter.rewrite_query(query);
+    
+    let effective_query = if rewrite_result.was_rewritten() {
+        info!("Query rewritten: '{}' -> '{}'", query, rewrite_result.best_query());
+        rewrite_result.best_query()
+    } else {
+        query
+    };
+    
     let cache_key = if let Some(ref ov) = overrides {
         format!(
             "q={}|eng={}|cat={}|lang={}|safe={}|time={}|page={}",
@@ -54,14 +95,19 @@ pub async fn search_web_with_params(
     // Extras are usually lightweight and context-dependent
     if let Some(cached) = state.search_cache.get(&cache_key).await {
         debug!("search cache hit for query");
-        return Ok((cached, SearchExtras::default()));
+        // Return cached results with current extras (rewrite + duplicate check)
+        let mut cached_extras = SearchExtras::default();
+        cached_extras.query_rewrite = Some(rewrite_result);
+        cached_extras.duplicate_warning = duplicate_warning;
+        return Ok((cached, cached_extras));
     }
 
     let _permit = state.outbound_limit.acquire().await.expect("semaphore closed");
     let mut params: HashMap<String, String> = HashMap::new();
     let engines = std::env::var("SEARXNG_ENGINES").unwrap_or_else(|_| "duckduckgo,google,bing".to_string());
     
-    params.insert("q".into(), query.to_string());
+    // Use effective query (rewritten or original)
+    params.insert("q".into(), effective_query.to_string());
     params.insert("format".into(), "json".into());
     params.insert("engines".into(), engines);
     params.insert("categories".into(), "general".into());
@@ -145,6 +191,8 @@ pub async fn search_web_with_params(
             .and_then(|v| v.as_object().cloned())
             .map(|obj| obj.keys().cloned().collect())
             .unwrap_or_default(),
+        query_rewrite: Some(rewrite_result),
+        duplicate_warning,
     };
     
     // Convert to our format with enhanced metadata (Priority 2)
