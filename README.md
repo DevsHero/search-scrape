@@ -1,3 +1,4 @@
+[![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=ff69b4&style=flat-square)](https://github.com/sponsors/DevsHero)
 # 🔍 Search-Scrape MCP
 
 **The ultimate 100% Free, Privacy-First, AI-Native Web Search & Scraping Engine.**  
@@ -58,6 +59,7 @@ graph TD
 | `crawl_website` | Recursive multi-depth crawler | Mapping out entire documentation sites or blogs. |
 | `scrape_batch` | Concurrent high-speed scraping | Fetching data from dozens of URLs in seconds. |
 | `extract_structured` | Schema-based data extraction | Pulling emails, prices, dates, or custom fields. |
+| `research_history` | Semantic vector search memory | Finding related past searches and maintaining context with Qdrant embeddings. |
 
 ---
 
