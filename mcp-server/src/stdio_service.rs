@@ -176,6 +176,67 @@ impl rmcp::ServerHandler for McpService {
                 output_schema: None,
                 annotations: None,
             },
+            Tool {
+                name: Cow::Borrowed("crawl_website"),
+                description: Some(Cow::Borrowed("Recursively crawl a website to discover and extract content from multiple pages. Start with max_depth=2, max_pages=20. Explore 20 pages in ~10-20s, 50 pages in ~30-60s.")),
+                input_schema: match serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "Starting URL to crawl"},
+                        "max_depth": {"type": "integer", "minimum": 1, "maximum": 10, "default": 3},
+                        "max_pages": {"type": "integer", "minimum": 1, "maximum": 500, "default": 50},
+                        "max_concurrent": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
+                        "same_domain_only": {"type": "boolean", "default": true},
+                        "include_patterns": {"type": "array", "items": {"type": "string"}},
+                        "exclude_patterns": {"type": "array", "items": {"type": "string"}},
+                        "max_chars_per_page": {"type": "integer", "minimum": 100, "maximum": 50000, "default": 5000}
+                    },
+                    "required": ["url"]
+                }) {
+                    serde_json::Value::Object(map) => std::sync::Arc::new(map),
+                    _ => std::sync::Arc::new(serde_json::Map::new()),
+                },
+                output_schema: None,
+                annotations: None,
+            },
+            Tool {
+                name: Cow::Borrowed("scrape_batch"),
+                description: Some(Cow::Borrowed("Scrape multiple URLs concurrently. 10 URLs in ~2-5s, 50 URLs in ~5-15s. Max 100 URLs per request.")),
+                input_schema: match serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "urls": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 100},
+                        "max_concurrent": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                        "max_chars": {"type": "integer", "minimum": 100, "maximum": 50000, "default": 10000},
+                        "output_format": {"type": "string", "enum": ["text", "json"], "default": "json"}
+                    },
+                    "required": ["urls"]
+                }) {
+                    serde_json::Value::Object(map) => std::sync::Arc::new(map),
+                    _ => std::sync::Arc::new(serde_json::Map::new()),
+                },
+                output_schema: None,
+                annotations: None,
+            },
+            Tool {
+                name: Cow::Borrowed("extract_structured"),
+                description: Some(Cow::Borrowed("Extract structured JSON data from a webpage using schema or natural language prompts. Built-in patterns: title, author, date, price, email, phone, code_blocks.")),
+                input_schema: match serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "schema": {"type": "array", "items": {"type": "object"}},
+                        "prompt": {"type": "string"},
+                        "max_chars": {"type": "integer", "minimum": 100, "maximum": 50000, "default": 10000}
+                    },
+                    "required": ["url"]
+                }) {
+                    serde_json::Value::Object(map) => std::sync::Arc::new(map),
+                    _ => std::sync::Arc::new(serde_json::Map::new()),
+                },
+                output_schema: None,
+                annotations: None,
+            },
         ];
 
         Ok(ListToolsResult {
@@ -505,6 +566,134 @@ impl rmcp::ServerHandler for McpService {
                     Err(e) => {
                         error!("History search error: {}", e);
                         Ok(CallToolResult::success(vec![Content::text(format!("History search failed: {}", e))]))
+                    }
+                }
+            }
+            "crawl_website" => {
+                let args = request.arguments.as_ref().ok_or_else(|| ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    "Missing required arguments object",
+                    None,
+                ))?;
+                
+                let url = args.get("url").and_then(|v| v.as_str()).ok_or_else(|| ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    "Missing required parameter: url",
+                    None,
+                ))?;
+                
+                let config = crate::crawl::CrawlConfig {
+                    max_depth: args.get("max_depth").and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(3),
+                    max_pages: args.get("max_pages").and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(50),
+                    max_concurrent: args.get("max_concurrent").and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(5),
+                    same_domain_only: args.get("same_domain_only").and_then(|v| v.as_bool()).unwrap_or(true),
+                    include_patterns: args.get("include_patterns")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|s| s.to_string())).collect())
+                        .unwrap_or_default(),
+                    exclude_patterns: args.get("exclude_patterns")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|s| s.to_string())).collect())
+                        .unwrap_or_default(),
+                    max_chars_per_page: args.get("max_chars_per_page").and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(5000),
+                };
+                
+                match crate::crawl::crawl_website(&self.state, url, config).await {
+                    Ok(response) => {
+                        let json_str = serde_json::to_string_pretty(&response)
+                            .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}\"#, e));
+                        Ok(CallToolResult::success(vec![Content::text(json_str)]))
+                    }
+                    Err(e) => {
+                        error!("Crawl tool error: {}", e);
+                        Ok(CallToolResult::success(vec![Content::text(format!("Crawl failed: {}", e))]))
+                    }
+                }
+            }
+            "scrape_batch" => {
+                let args = request.arguments.as_ref().ok_or_else(|| ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    "Missing required arguments object",
+                    None,
+                ))?;
+                
+                let urls = args.get("urls")
+                    .and_then(|v| v.as_array())
+                    .ok_or_else(|| ErrorData::new(
+                        ErrorCode::INVALID_PARAMS,
+                        "Missing required parameter: urls (must be array)",
+                        None,
+                    ))?
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<_>>();
+                
+                if urls.is_empty() {
+                    return Err(ErrorData::new(
+                        ErrorCode::INVALID_PARAMS,
+                        "urls array cannot be empty",
+                        None,
+                    ));
+                }
+                
+                let max_concurrent = args.get("max_concurrent").and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(10);
+                let max_chars = args.get("max_chars").and_then(|v| v.as_u64()).map(|n| n as usize);
+                
+                match crate::batch_scrape::scrape_batch(&self.state, urls, max_concurrent, max_chars).await {
+                    Ok(response) => {
+                        let json_str = serde_json::to_string_pretty(&response)
+                            .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
+                        Ok(CallToolResult::success(vec![Content::text(json_str)]))
+                    }
+                    Err(e) => {
+                        error!("Batch scrape tool error: {}", e);
+                        Ok(CallToolResult::success(vec![Content::text(format!("Batch scrape failed: {}", e))]))
+                    }
+                }
+            }
+            "extract_structured" => {
+                let args = request.arguments.as_ref().ok_or_else(|| ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    "Missing required arguments object",
+                    None,
+                ))?;
+                
+                let url = args.get("url").and_then(|v| v.as_str()).ok_or_else(|| ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    "Missing required parameter: url",
+                    None,
+                ))?;
+                
+                let schema = args.get("schema")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter().filter_map(|item| {
+                            let obj = item.as_object()?;
+                            let name = obj.get("name")?.as_str()?.to_string();
+                            let description = obj.get("description")?.as_str()?.to_string();
+                            let field_type = obj.get("field_type").and_then(|v| v.as_str()).map(|s| s.to_string());
+                            let required = obj.get("required").and_then(|v| v.as_bool());
+                            Some(crate::types::ExtractField {
+                                name,
+                                description,
+                                field_type,
+                                required,
+                            })
+                        }).collect()
+                    });
+                
+                let prompt = args.get("prompt").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let max_chars = args.get("max_chars").and_then(|v| v.as_u64()).map(|n| n as usize);
+                
+                match crate::extract::extract_structured(&self.state, url, schema, prompt, max_chars).await {
+                    Ok(response) => {
+                        let json_str = serde_json::to_string_pretty(&response)
+                            .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
+                        Ok(CallToolResult::success(vec![Content::text(json_str)]))
+                    }
+                    Err(e) => {
+                        error!("Extract tool error: {}", e);
+                        Ok(CallToolResult::success(vec![Content::text(format!("Extract failed: {}", e))]))
                     }
                 }
             }

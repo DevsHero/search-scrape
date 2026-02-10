@@ -130,6 +130,125 @@ pub struct ErrorResponse {
     pub error: String,
 }
 
+// Batch scraping types
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ScrapeBatchRequest {
+    pub urls: Vec<String>,
+    #[serde(default)]
+    pub max_concurrent: Option<usize>,
+    #[serde(default)]
+    pub max_chars: Option<usize>,
+    #[serde(default)]
+    pub output_format: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ScrapeBatchResult {
+    pub url: String,
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<ScrapeResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub duration_ms: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ScrapeBatchResponse {
+    pub total: usize,
+    pub successful: usize,
+    pub failed: usize,
+    pub total_duration_ms: u64,
+    pub results: Vec<ScrapeBatchResult>,
+}
+
+// Website crawling types
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CrawlRequest {
+    pub url: String,
+    #[serde(default)]
+    pub max_depth: Option<usize>,
+    #[serde(default)]
+    pub max_pages: Option<usize>,
+    #[serde(default)]
+    pub max_concurrent: Option<usize>,
+    #[serde(default)]
+    pub include_patterns: Option<Vec<String>>,
+    #[serde(default)]
+    pub exclude_patterns: Option<Vec<String>>,
+    #[serde(default)]
+    pub same_domain_only: Option<bool>,
+    #[serde(default)]
+    pub max_chars_per_page: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CrawlPageResult {
+    pub url: String,
+    pub depth: usize,
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub word_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub links_found: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_preview: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub duration_ms: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CrawlResponse {
+    pub start_url: String,
+    pub pages_crawled: usize,
+    pub pages_failed: usize,
+    pub max_depth_reached: usize,
+    pub total_duration_ms: u64,
+    pub unique_domains: Vec<String>,
+    pub results: Vec<CrawlPageResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sitemap: Option<Vec<String>>,
+}
+
+// Structured extraction types
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExtractField {
+    pub name: String,
+    pub description: String,
+    #[serde(default)]
+    pub field_type: Option<String>,  // string, number, boolean, array, object
+    #[serde(default)]
+    pub required: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ExtractRequest {
+    pub url: String,
+    #[serde(default)]
+    pub schema: Option<Vec<ExtractField>>,
+    #[serde(default)]
+    pub prompt: Option<String>,
+    #[serde(default)]
+    pub max_chars: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ExtractResponse {
+    pub url: String,
+    pub title: String,
+    pub extracted_data: serde_json::Value,
+    pub raw_content_preview: String,
+    pub extraction_method: String,
+    pub field_count: usize,
+    pub confidence: f64,
+    pub duration_ms: u64,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+}
+
 // SearXNG API types
 #[derive(Debug, Deserialize)]
 pub struct SearxngResponse {

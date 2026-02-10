@@ -163,7 +163,7 @@ impl MemoryManager {
         Ok(())
     }
 
-    /// Search history using HYBRID SEARCH approach (vector + keyword awareness)
+ 
     /// This provides the BEST results for agents by:
     /// 1. Using semantic vector search for conceptual matching
     /// 2. Boosting exact keyword matches in the scoring

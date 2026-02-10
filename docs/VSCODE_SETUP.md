@@ -29,7 +29,7 @@ Binary contains:
 }
 ```
 
-### Step 2: Restart VS Code
+
 
 **IMPORTANT:** VS Code caches MCP tool lists. You MUST:
 

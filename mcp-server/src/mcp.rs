@@ -1,5 +1,7 @@
 use crate::types::*;
-use crate::{search, scrape, AppState};
+use crate::{search, scrape, crawl, batch_scrape, extract, AppState};
+use crate::types::ExtractField;
+use crate::crawl::CrawlConfig;
 use axum::{
     extract::State,
     http::StatusCode,
@@ -125,6 +127,52 @@ pub async fn list_tools() -> Json<McpToolsResponse> {
                         "description": "Output format. 'text' (default) returns formatted markdown for humans. 'json' returns structured JSON for agents/parsing. AGENT TIP: Use 'json' to get extraction_score, truncated flag, code_blocks array, and all metadata as machine-readable fields",
                         "default": "text"
                     }
+                },
+                "required": ["url"]
+            }),
+        },
+        McpTool {
+            name: "crawl_website".to_string(),
+            description: "Recursively crawl a website to discover and extract content from multiple pages. Start with max_depth=2, max_pages=20. Explore 20 pages in ~10-20s, 50 pages in ~30-60s.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "Starting URL to crawl"},
+                    "max_depth": {"type": "integer", "minimum": 1, "maximum": 10, "default": 3},
+                    "max_pages": {"type": "integer", "minimum": 1, "maximum": 500, "default": 50},
+                    "max_concurrent": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
+                    "same_domain_only": {"type": "boolean", "default": true},
+                    "include_patterns": {"type": "array", "items": {"type": "string"}},
+                    "exclude_patterns": {"type": "array", "items": {"type": "string"}},
+                    "max_chars_per_page": {"type": "integer", "minimum": 100, "maximum": 50000, "default": 5000}
+                },
+                "required": ["url"]
+            }),
+        },
+        McpTool {
+            name: "scrape_batch".to_string(),
+            description: "Scrape multiple URLs concurrently. 10 URLs in ~2-5s, 50 URLs in ~5-15s. Max 100 URLs per request.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "urls": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 100},
+                    "max_concurrent": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                    "max_chars": {"type": "integer", "minimum": 100, "maximum": 50000, "default": 10000},
+                    "output_format": {"type": "string", "enum": ["text", "json"], "default": "json"}
+                },
+                "required": ["urls"]
+            }),
+        },
+        McpTool {
+            name: "extract_structured".to_string(),
+            description: "Extract structured JSON data from a webpage using schema or natural language prompts. Built-in patterns: title, author, date, price, email, phone, code_blocks.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "schema": {"type": "array", "items": {"type": "object"}},
+                    "prompt": {"type": "string"},
+                    "max_chars": {"type": "integer", "minimum": 100, "maximum": 50000, "default": 10000}
                 },
                 "required": ["url"]
             }),
@@ -403,6 +451,184 @@ pub async fn call_tool(
                         content: vec![McpContent {
                             content_type: "text".to_string(),
                             text: format!("Scraping failed: {}", e),
+                        }],
+                        is_error: true,
+                    }))
+                }
+            }
+        }
+        "crawl_website" => {
+            let url = request.arguments
+                .get("url")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse {
+                            error: "Missing required parameter: url".to_string(),
+                        }),
+                    )
+                })?;
+            
+            let config = CrawlConfig {
+                max_depth: request.arguments.get("max_depth").and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(3),
+                max_pages: request.arguments.get("max_pages").and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(50),
+                max_concurrent: request.arguments.get("max_concurrent").and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(5),
+                same_domain_only: request.arguments.get("same_domain_only").and_then(|v| v.as_bool()).unwrap_or(true),
+                include_patterns: request.arguments.get("include_patterns")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|s| s.to_string())).collect())
+                    .unwrap_or_default(),
+                exclude_patterns: request.arguments.get("exclude_patterns")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|s| s.to_string())).collect())
+                    .unwrap_or_default(),
+                max_chars_per_page: request.arguments.get("max_chars_per_page").and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(5000),
+            };
+            
+            match crawl::crawl_website(&state, url, config).await {
+                Ok(response) => {
+                    let json_str = serde_json::to_string_pretty(&response)
+                        .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
+                    Ok(Json(McpCallResponse {
+                        content: vec![McpContent {
+                            content_type: "text".to_string(),
+                            text: json_str,
+                        }],
+                        is_error: false,
+                    }))
+                }
+                Err(e) => {
+                    error!("Crawl tool error: {}", e);
+                    Ok(Json(McpCallResponse {
+                        content: vec![McpContent {
+                            content_type: "text".to_string(),
+                            text: format!("Crawl failed: {}", e),
+                        }],
+                        is_error: true,
+                    }))
+                }
+            }
+        }
+        "scrape_batch" => {
+            let urls = request.arguments
+                .get("urls")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse {
+                            error: "Missing required parameter: urls (must be array)".to_string(),
+                        }),
+                    )
+                })?
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect::<Vec<_>>();
+            
+            if urls.is_empty() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "urls array cannot be empty".to_string(),
+                    }),
+                ));
+            }
+            
+            let max_concurrent = request.arguments
+                .get("max_concurrent")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize)
+                .unwrap_or(10);
+            
+            let max_chars = request.arguments
+                .get("max_chars")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize);
+            
+            match batch_scrape::scrape_batch(&state, urls, max_concurrent, max_chars).await {
+                Ok(response) => {
+                    let json_str = serde_json::to_string_pretty(&response)
+                        .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
+                    Ok(Json(McpCallResponse {
+                        content: vec![McpContent {
+                            content_type: "text".to_string(),
+                            text: json_str,
+                        }],
+                        is_error: false,
+                    }))
+                }
+                Err(e) => {
+                    error!("Batch scrape tool error: {}", e);
+                    Ok(Json(McpCallResponse {
+                        content: vec![McpContent {
+                            content_type: "text".to_string(),
+                            text: format!("Batch scrape failed: {}", e),
+                        }],
+                        is_error: true,
+                    }))
+                }
+            }
+        }
+        "extract_structured" => {
+            let url = request.arguments
+                .get("url")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse {
+                            error: "Missing required parameter: url".to_string(),
+                        }),
+                    )
+                })?;
+            
+            let schema = request.arguments.get("schema")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter().filter_map(|item| {
+                        let obj = item.as_object()?;
+                        let name = obj.get("name")?.as_str()?.to_string();
+                        let description = obj.get("description")?.as_str()?.to_string();
+                        let field_type = obj.get("field_type").and_then(|v| v.as_str()).map(|s| s.to_string());
+                        let required = obj.get("required").and_then(|v| v.as_bool());
+                        Some(ExtractField {
+                            name,
+                            description,
+                            field_type,
+                            required,
+                        })
+                    }).collect()
+                });
+            
+            let prompt = request.arguments
+                .get("prompt")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            
+            let max_chars = request.arguments
+                .get("max_chars")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize);
+            
+            match extract::extract_structured(&state, url, schema, prompt, max_chars).await {
+                Ok(response) => {
+                    let json_str = serde_json::to_string_pretty(&response)
+                        .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
+                    Ok(Json(McpCallResponse {
+                        content: vec![McpContent {
+                            content_type: "text".to_string(),
+                            text: json_str,
+                        }],
+                        is_error: false,
+                    }))
+                }
+                Err(e) => {
+                    error!("Extract tool error: {}", e);
+                    Ok(Json(McpCallResponse {
+                        content: vec![McpContent {
+                            content_type: "text".to_string(),
+                            text: format!("Extract failed: {}", e),
                         }],
                         is_error: true,
                     }))

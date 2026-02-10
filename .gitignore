@@ -1,12 +1,11 @@
 # Node
- 
+.env
 *.log
 
 # Rust
 mcp-server/target/
 
- 
-
+.mimicflow
 # Scrapy
 scrapy-service/webspider/httpcache/
 scrapy-service/webspider/.scrapy/

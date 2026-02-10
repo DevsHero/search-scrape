@@ -125,7 +125,7 @@ async fn chat_handler(
 ) -> Result<Json<ChatResponse>, (StatusCode, Json<ErrorResponse>)> {
     info!("Processing chat request: {}", request.query);
     
-    // Step 1: Search for relevant URLs
+ 
     let search_results = match search::search_web(&state, &request.query).await {
         Ok((results, _extras)) => results,
         Err(e) => {
