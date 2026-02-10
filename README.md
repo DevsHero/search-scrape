@@ -1,4 +1,4 @@
-[![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=ff69b4&style=flat-square)](https://github.com/sponsors/DevsHero)
+
 # 🔍 Search-Scrape MCP
 
 **The ultimate 100% Free, Privacy-First, AI-Native Web Search & Scraping Engine.**  
@@ -8,7 +8,7 @@ No API keys. No subscriptions. Just the open web, structured for your AI agents.
 [![Docker](https://img.shields.io/badge/Docker-Supported-blue.svg)](docs/DOCKER_DEPLOYMENT.md)
 [![Version](https://img.shields.io/badge/Version-0.3.0-brightgreen.svg)]()
 [![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen.svg)]()
-
+[![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=ff69b4&style=flat-square)](https://github.com/sponsors/DevsHero)
 ---
 
 ## 📸 Snapshot & Samples
