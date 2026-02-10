@@ -1,7 +1,7 @@
 use crate::types::*;
+use crate::antibot;
 use anyhow::{anyhow, Result};
 use chrono::Utc;
-use rand::Rng;
 use readability::extractor;
 use regex::Regex;
 use reqwest::Client;
@@ -12,17 +12,7 @@ use tracing::{info, warn};
 use url::Url;
 use whatlang::{detect, Lang};
 
-/// User agents for rotation
-const USER_AGENTS: &[&str] = &[
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0",
-];
-
-/// Enhanced Rust-native web scraper
+/// Enhanced Rust-native web scraper with anti-bot protection
 pub struct RustScraper {
     client: Client,
 }
@@ -38,14 +28,7 @@ impl RustScraper {
         Self { client }
     }
 
-    /// Get a random User-Agent string
-    fn get_random_user_agent(&self) -> &'static str {
-        let mut rng = rand::thread_rng();
-        let index = rng.gen_range(0..USER_AGENTS.len());
-        USER_AGENTS[index]
-    }
-
-    /// Scrape a URL with enhanced content extraction
+    /// Scrape a URL with enhanced content extraction and anti-bot protection
     pub async fn scrape_url(&self, url: &str) -> Result<ScrapeResponse> {
         info!("Scraping URL with Rust-native scraper: {}", url);
 
@@ -57,18 +40,19 @@ impl RustScraper {
             return Err(anyhow!("URL must use HTTP or HTTPS protocol"));
         }
 
-        // Make HTTP request with random User-Agent
-        let user_agent = self.get_random_user_agent();
-        let response = self
+        // Make HTTP request with anti-bot protection (random User-Agent + stealth headers)
+        let user_agent = antibot::get_random_user_agent();
+        let mut request_builder = self
             .client
             .get(url)
-            .header("User-Agent", user_agent)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-            .header("Accept-Language", "en-US,en;q=0.5")
-            // Rely on reqwest automatic decompression; remove manual Accept-Encoding to avoid serving compressed body as text
-            .header("DNT", "1")
-            .header("Connection", "keep-alive")
-            .header("Upgrade-Insecure-Requests", "1")
+            .header("User-Agent", user_agent);
+        
+        // Apply stealth headers to avoid bot detection
+        for (header_name, header_value) in antibot::get_stealth_headers() {
+            request_builder = request_builder.header(header_name, header_value);
+        }
+        
+        let response = request_builder
             .send()
             .await
             .map_err(|e| anyhow!("Failed to fetch URL: {}", e))?;

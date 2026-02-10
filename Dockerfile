@@ -20,6 +20,11 @@ RUN cargo build --release
 RUN rm -rf src
 
 # Copy source code from mcp-server directory (including subdirectories)
+# Source includes optimizations:
+# - Parallel scraping with concurrent limiting (batch_scrape.rs)
+# - Markdown content cleaner (rust_scraper.rs)
+# - Semantic reranking of search results (rerank.rs)
+# - Anti-bot protection with stealth headers (antibot.rs)
 COPY mcp-server/src/ ./src/
 
 # Build application

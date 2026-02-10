@@ -9,6 +9,8 @@ pub mod rust_scraper;
 pub mod stdio_service;
 pub mod history;
 pub mod query_rewriter;
+pub mod rerank;
+pub mod antibot;
 
 #[derive(Clone)]
 pub struct AppState {

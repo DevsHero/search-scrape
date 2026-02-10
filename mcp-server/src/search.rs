@@ -1,6 +1,7 @@
 use crate::types::*;
 use crate::AppState;
 use crate::query_rewriter::{QueryRewriter, QueryRewriteResult};
+use crate::rerank::Reranker;
 use anyhow::{anyhow, Result};
 use backoff::future::retry;
 use backoff::ExponentialBackoffBuilder;
@@ -216,19 +217,26 @@ pub async fn search_web_with_params(
     }
     
     debug!("Converted {} results", results.len());
-    // Fill cache with composite key
-    state.search_cache.insert(cache_key, results.clone()).await;
+    
+    // Apply semantic reranking to improve relevance
+    let reranker = Reranker::new(query);
+    let reranked_results = reranker.rerank_top(results, 50); // Keep top 50 reranked results
+    
+    info!("Reranked {} results by relevance", reranked_results.len());
+    
+    // Fill cache with reranked results
+    state.search_cache.insert(cache_key, reranked_results.clone()).await;
     
     // Auto-log to history if memory is enabled (Phase 1)
     if let Some(memory) = &state.memory {
-        let result_json = serde_json::to_value(&results).unwrap_or_default();
+        let result_json = serde_json::to_value(&reranked_results).unwrap_or_default();
         
-        if let Err(e) = memory.log_search(query.to_string(), &result_json, results.len()).await {
+        if let Err(e) = memory.log_search(query.to_string(), &result_json, reranked_results.len()).await {
             tracing::warn!("Failed to log search to history: {}", e);
         }
     }
     
-    Ok((results, extras))
+    Ok((reranked_results, extras))
 }
 
 /// Classify search result by domain and source type (Priority 2)
