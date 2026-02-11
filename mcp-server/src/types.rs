@@ -10,7 +10,7 @@ pub struct SearchResponse {
     pub results: Vec<SearchResult>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct SearchResult {
     pub url: String,
     pub title: String,

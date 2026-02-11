@@ -103,7 +103,7 @@ Production Ready: ✓ Approved for Deployment
 
 ## 🐳 Quick Start (The Docker Way) - **Easiest**
 
-The simplest way to get up and running is using Docker Compose. It sets up SearXNG, Qdrant, and the MCP server automatically.
+The simplest way to get up and running is using Docker Compose. It pulls the latest pre-built image from **GitHub Container Registry (GHCR)** and sets up SearXNG, Qdrant, and the MCP server automatically.
 
 1. **Clone & Spin Up**
    ```bash
@@ -113,16 +113,16 @@ The simplest way to get up and running is using Docker Compose. It sets up SearX
    ```
 
 2. **Verify Connectivity**
-   - **SearXNG UI**: `http://localhost:8888`
-   - **MCP API**: `http://localhost:5001/mcp/tools` (Should return JSON)
+   - **SearXNG UI**: `http://localhost:8890`
+   - **MCP API**: `http://localhost:5001/tools` (Should return JSON)
 
 3. **Configure your AI Client** (Cursor/VS Code/Claude Desktop)
    Add the following as a command-line MCP:
    ```bash
-   # Absolute path to the pre-built binary
+   # Use the remote image via npx (coming soon) or point to the local binary
    /Users/YOUR_USER/path/to/search-scrape/mcp-server/target/release/search-scrape-mcp
    ```
-   *Note: Ensure `SEARXNG_URL=http://localhost:8888` is set in your environment.*
+   *Note: Ensure `SEARXNG_URL=http://localhost:8890` is set in your environment.*
 
 4. **Verify You're Running v0.3.0**
    ```bash
@@ -177,11 +177,21 @@ We keep the root folder clean by organizing documentation in the [**`docs/`**](d
 
 ---
 
-## 🙏 Acknowledgments
+## 🙏 Acknowledgments & Support
 
-Built by the community for the community. Special thanks to:
-- **[@lutfi238](https://github.com/lutfi238)** for the extended crawling & batch scraping capabilities.
+Built with ❤️ by a **Solo Developer** for the open-source community.
+
+I'm actively maintaining this project to provide the best free search & scraping infrastructure for AI agents.
+- **Found a bug?** I'm happy to fix it! Please [Open an Issue](https://github.com/DevsHero/search-scrape/issues).
+- **Want a new feature?** Feature requests are welcome! Let me know what you need.
+- **Love the project?** Start the repo ⭐ or buy me a coffee to support development!
+
+[![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=ff69b4&style=for-the-badge)](https://github.com/sponsors/DevsHero)
+
+Special thanks to:
 - **SearXNG Project** for the incredible privacy-respecting search infrastructure.
+- **Qdrant** for the vector search engine.
+- **Rust Community** for the amazing tooling.
 
 ---
 

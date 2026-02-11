@@ -27,10 +27,7 @@ services:
     restart: unless-stopped
 
   mcp-server:
-    build: 
-      context: .
-      dockerfile: Dockerfile
-    image: search-scrape-mcp:latest
+    image: ghcr.io/devshero/search-scrape:latest
     container_name: search-scrape-mcp
     ports:
       - "5001:5000"
