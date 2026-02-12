@@ -52,12 +52,13 @@ graph TD
    A -->|HTTP| C[search-scrape HTTP]
    B --> D[MCP Tool Handlers]
    C --> D
-   D --> E[tools::* (search/scrape/crawl/extract/batch)]
-   D --> F[features::* (history/proxy/antibot)]
+   D --> E[tools module - search, scrape, batch, crawl, extract]
+   D --> F[features module - history, proxies, antibot]
    E --> G[SearXNG]
-   E --> H[scraping::rust_scraper]
-   F --> I[Qdrant (optional)]
-   F --> J[Proxy registry (optional)]
+   E --> H[Rust scraper]
+   H --> K[Browserless optional]
+   F --> I[Qdrant optional]
+   F --> J[ip.txt proxy list]
 ```
 
 Code layout (after refactor):
