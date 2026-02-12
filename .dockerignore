@@ -1,0 +1,5 @@
+**
+!Dockerfile
+!mcp-server/Cargo.toml
+!mcp-server/Cargo.lock
+!mcp-server/src/**
