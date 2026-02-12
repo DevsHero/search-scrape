@@ -1,181 +1,238 @@
 
-# 🔍 Search-Scrape MCP
+# Search-Scrape MCP
 
-**The ultimate 100% Free, Privacy-First, AI-Native Web Search & Scraping Engine.**  
-No API keys. No subscriptions. Just the open web, structured for your AI agents.
+Self-hosted MCP server for web search, scraping, crawling, structured extraction, and optional research memory.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Docker](https://img.shields.io/badge/Docker-Supported-blue.svg)](docs/DOCKER_DEPLOYMENT.md)
-[![Version](https://img.shields.io/badge/Version-0.3.0-brightgreen.svg)]()
-[![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen.svg)]()
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-async-orange.svg)](mcp-server/Cargo.toml)
+[![MCP](https://img.shields.io/badge/protocol-MCP-blue.svg)](mcp-server/src/mcp/stdio.rs)
+[![Status](https://img.shields.io/badge/status-v1.0.0-green.svg)](docs/RELEASE_READINESS_2026-02-12.json)
 [![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=ff69b4&style=flat-square)](https://github.com/sponsors/DevsHero)
----
+## Why this project
 
-## 📸 Snapshot & Samples
+Search-Scrape is built for AI agent workflows that need:
+- Reliable multi-source web search
+- Fast content extraction and website crawling
+- Structured data extraction from messy pages
+- Memory-aware research history with semantic recall
+- MCP-native usage over stdio and HTTP
 
-Experience what your AI sees. Below are real-world captures of our tools in action.
+If you want something you can run inside your own infra (Docker) and wire directly into Cursor/Claude via MCP, this repo is the “batteries included” baseline.
 
-| Search (`search_web`) | Scraping (`scrape_url`) |
-| :---: | :---: |
-| ![Search Web Screenshot](screenshot/search_web.png) | ![Scrape URL Screenshot](screenshot/scrape_url.png) |
-| 📄 [View Search Sample](sample-results/search_web.txt) | 📄 [View Scrape Sample](sample-results/scrape_url.txt) |
+## Current release status
 
-| Structured JSON | Research History |
-| :---: | :---: |
-| ![Scrape URL JSON Screenshot](screenshot/scrape_url_json.png) | ![History Screenshot](screenshot/history.png) |
-| 📄 [View JSON Sample](sample-results/scrape_url_json.txt) | 📄 [View History Sample](sample-results/history.txt) |
+- Runtime version: `v1.0.0`
+- Release validation: [docs/RELEASE_READINESS_2026-02-12.json](docs/RELEASE_READINESS_2026-02-12.json)
+- Service health endpoint: `GET /health`
+- Tool catalog endpoint: `GET /mcp/tools`
+- Tool call endpoint: `POST /mcp/call`
 
----
+## Tool catalog (v1.0++)
 
-## 🏗️ Architecture
+The platform currently exposes 8 MCP tools:
 
-Our stack is designed for speed, modularity, and zero-configuration. We've moved technical depth to the `docs/` folder to keep the root clean.
+1. `search_web` — federated web search
+2. `search_structured` — search + top result scraping
+3. `scrape_url` — single URL extraction
+4. `scrape_batch` — multi-URL parallel scraping
+5. `crawl_website` — bounded recursive crawling
+6. `extract_structured` — schema-driven extraction
+7. `research_history` — semantic recall from prior runs
+8. `proxy_manager` — proxy list/status/switch/test/grab operations
+
+Tip: all tools are available via both transports:
+- HTTP: `GET /mcp/tools`, `POST /mcp/call`
+- MCP stdio: `search-scrape-mcp`
+
+## Architecture
 
 ```mermaid
 graph TD
-    A[AI Client/MCP Host] -->|gRPC/Stdio| B[search-scrape-mcp]
-    B -->|HTTP/API| C[mcp-server]
-    C -->|Fetch| D[SearXNG]
-    C -->|Embed/Query| E[(Qdrant Memory)]
-    C -->|Scrape| F[Rust Scraper]
-    D -->|Aggregates| G[Web Results]
+   A[MCP Client / Agent] -->|stdio| B[search-scrape-mcp]
+   A -->|HTTP| C[search-scrape HTTP]
+   B --> D[MCP Tool Handlers]
+   C --> D
+   D --> E[tools::* (search/scrape/crawl/extract/batch)]
+   D --> F[features::* (history/proxy/antibot)]
+   E --> G[SearXNG]
+   E --> H[scraping::rust_scraper]
+   F --> I[Qdrant (optional)]
+   F --> J[Proxy registry (optional)]
 ```
 
-### 📁 Clean Folder Structure
-- `mcp-server/`: High-performance Rust backend & MCP implementation.
-- [**`docs/`**](docs/): Technical guides, deployment strategies, and analysis.
-- `searxng/`: Configuration for the federated search engine.
-- `screenshot/`: UI/UX captures of tool outputs.
-- `sample-results/`: Raw JSON/Text outputs for testing.
+Code layout (after refactor):
+- `mcp-server/src/core` — `AppState`, shared types
+- `mcp-server/src/tools` — search/scrape/crawl/extract/batch implementations
+- `mcp-server/src/features` — history (Qdrant), proxies, antibot helpers
+- `mcp-server/src/nlp` — query rewriting + rerank
+- `mcp-server/src/mcp` — HTTP/stdio transports + per-tool handlers + tool catalog
+- `mcp-server/src/scraping` — RustScraper and its internals
 
----
+## Quick start (Docker)
 
-## 🛠️ Toolbelt
+1. Start stack
 
-| Tool | Capability | Best Used For... |
+```bash
+docker compose -f docker-compose-local.yml up -d --build
+```
+
+2. Check health
+
+```bash
+curl -s http://localhost:5001/health
+```
+
+3. Check tool surface
+
+```bash
+curl -s http://localhost:5001/mcp/tools
+```
+
+## Quick start (local Rust)
+
+Run HTTP server:
+
+```bash
+cd mcp-server
+cargo run --release
+```
+
+Run MCP stdio:
+
+```bash
+cd mcp-server
+cargo run --release --bin search-scrape-mcp
+```
+
+## Proxy configuration (ip.txt + proxy_source.json)
+
+This project uses **`ip.txt` as the primary proxy list**.
+
+- `ip.txt` (one proxy per line)
+   - Examples:
+      - `http://1.2.3.4:8080`
+      - `https://1.2.3.4:8443`
+      - `socks5://1.2.3.4:1080`
+- `proxy_source.json` (public sources that `proxy_manager` can fetch from)
+
+With `docker-compose-local.yml`, the defaults are already wired:
+
+- `IP_LIST_PATH=/home/appuser/ip.txt`
+- `PROXY_SOURCE_PATH=/home/appuser/proxy_source.json`
+
+And mounted from your repo root:
+
+- `./ip.txt:/home/appuser/ip.txt`
+- `./proxy_source.json:/home/appuser/proxy_source.json`
+
+### Using the proxy_manager tool
+
+The `proxy_manager` MCP tool supports actions:
+
+- `grab` — fetch proxy lists from sources in `proxy_source.json`
+- `list` — list proxies currently in `ip.txt`
+- `status` — proxy manager stats (requires `IP_LIST_PATH` to exist)
+- `switch` — select best proxy
+- `test` — test a proxy against a target URL
+
+## MCP client configuration (stdio)
+
+Use this in your VS Code/Cursor `mcp.json`:
+
+```json
+{
+   "servers": {
+      "search-scrape": {
+         "command": "docker",
+         "args": [
+            "compose",
+            "-f",
+            "/absolute/path/to/search-scrape/docker-compose-local.yml",
+            "exec",
+            "-i",
+            "-T",
+            "search-scrape",
+            "search-scrape-mcp"
+         ],
+         "type": "stdio"
+      }
+   }
+}
+```
+
+## Sample results
+
+Real tool outputs (copy/paste examples):
+
+- [sample-results/search_web.txt](sample-results/search_web.txt)
+- [sample-results/search_structured_json.txt](sample-results/search_structured_json.txt)
+- [sample-results/scrape_url.txt](sample-results/scrape_url.txt)
+- [sample-results/scrape_url_json.txt](sample-results/scrape_url_json.txt)
+- [sample-results/scrape_batch_json.txt](sample-results/scrape_batch_json.txt)
+- [sample-results/crawl_website_json.txt](sample-results/crawl_website_json.txt)
+- [sample-results/extract_structured_json.txt](sample-results/extract_structured_json.txt)
+- [sample-results/research_history_json.txt](sample-results/research_history_json.txt)
+- [sample-results/proxy_manager_json.txt](sample-results/proxy_manager_json.txt)
+
+## What changed from v0.3.x to v1.0++
+
+- Introduced production MCP surface with unified HTTP + stdio tool behavior
+- Added and validated `proxy_manager` operational workflow
+- Expanded tooling to full 8-tool set with end-to-end readiness checks
+- Improved server lifecycle handling for stdio MCP reliability
+- Centralized tool schema/catalog definitions to reduce drift
+- Added release validation artifacts and readiness reporting
+
+Detailed notes: [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md)
+
+## Key environment variables
+
+| Variable | Purpose | Default |
 | --- | --- | --- |
-| `search_web` | Global search via 70+ engines | Discovering URLs, instant facts, and query suggestions. |
-| `scrape_url` | Content-aware markdown extraction | Deep-reading articles with citations and metadata. |
-| `crawl_website` | Recursive multi-depth crawler | Mapping out entire documentation sites or blogs. |
-| `scrape_batch` | Concurrent high-speed scraping | Fetching data from dozens of URLs in seconds. |
-| `extract_structured` | Schema-based data extraction | Pulling emails, prices, dates, or custom fields. |
-| `research_history` | Semantic vector search memory | Finding related past searches and maintaining context with Qdrant embeddings. |
+| `SEARXNG_URL` | search backend URL | `http://searxng:8080` |
+| `QDRANT_URL` | semantic memory backend | unset |
+| `BROWSERLESS_URL` | browser rendering backend | unset |
+| `HTTP_TIMEOUT_SECS` | outbound timeout | `30` |
+| `HTTP_CONNECT_TIMEOUT_SECS` | connect timeout | `10` |
+| `OUTBOUND_LIMIT` | concurrency limiter | `32` |
+| `IP_LIST_PATH` | proxy ip list path | `ip.txt` |
+| `PROXY_SOURCE_PATH` | proxy source list path | `proxy_source.json` |
 
----
+Proxy config templates:
+- `docs/examples/proxy_source.example.json`
+NOTE: `ip.txt` is tracked in the repo root and is the canonical proxy list.
 
-## 🚀 v0.3.0 Performance Optimizations
+## Comparison (quick decision guide)
 
-**What's New:** Semantic ranking, anti-bot protection, and parallel processing make this a powerhouse.
+This project is meant to be self-hosted infrastructure. A rough mental model:
 
-### Performance Improvements (Tested)
+| If you use… | You may prefer Search-Scrape when… |
+| --- | --- |
+| Firecrawl / other hosted scraping APIs | You want local control (cost, privacy, networking), MCP-native integration, and can run Docker. |
+| Jina Reader / “reader mode” services | You need more than reader conversion: crawling, batch mode, structured extraction, and a single MCP tool surface. |
+| Browserless (alone) | You want Browserless as an optional backend, but with a full tool suite (search/crawl/extract/proxy/history) around it. |
+| Bright Data / proxy networks | You already have proxy sources, and want a Rust/MCP orchestration layer + rotation/health logic on top (this repo does not ship a proxy network). |
 
-| Metric | v0.2.0 | v0.3.0 | Improvement |
-| --- | --- | --- | --- |
-| **Search Relevance** | Browser domain ranking | Semantic TF-IDF ranking | **+180%** ✅ |
-| **Anti-Bot Bypass** | Basic headers | 20+ user agents + stealth headers | **+150%** ✅ |
-| **Batch Scraping Speed** | Sequential (1 URL/s) | Parallel with buffer_unordered | **+400%** ✅ |
-| **Data Extraction Quality** | Regex-based | Prompt-based NLP | **+200%** ✅ |
-| **Crawl Concurrency** | 1 worker | 5-20 workers | **+500%** ✅ |
-| **Overall System Quality** | Baseline | All optimizations combined | **+225%** ✅ |
+## Production checklist
 
-### Real Benchmark Results (Feb 10, 2026)
+- [x] Build passes (`cargo check`)
+- [x] Release build passes (`cargo build --release`)
+- [x] MCP tool surface is discoverable (`/mcp/tools`)
+- [x] Core tools return expected payloads
+- [x] Proxy manager commands operational
+- [x] Health endpoint stable
+- [x] Release validation artifact generated
 
-```
-✓ search_web          2,639ms → 87 results with semantic reranking
-✓ scrape_url          143ms   → 0.98/1.0 quality score (100% bypass)
-✓ scrape_batch        1,747ms → 5 URLs = 2.86 URLs/sec (2x faster)
-✓ crawl_website       16ms    → 5 concurrent workers
-✓ extract_structured  19ms    → >95% accuracy with ML prompts
+Operational checklist document: [docs/GA_REFACTOR_READINESS_2026-02-12.md](docs/GA_REFACTOR_READINESS_2026-02-12.md)
 
-Total Test Suite: 100% success rate | 4,564ms total runtime
-Production Ready: ✓ Approved for Deployment
-```
+## Repository map
 
-### Key Features
-
-🔍 **Semantic Search Ranking** - Official documentation now ranks first (verified with "rust async programming")  
-🛡️ **Anti-Bot Protection** - 100% bypass success on all test URLs (zero blocks detected)  
-⚡ **Parallel Scraping** - 5 URLs in 1.7s instead of sequential (2x speedup)  
-🧠 **Smart Extraction** - Prompt-based NLP for >95% extraction accuracy  
-🔄 **Concurrent Crawling** - Multi-worker crawling (configurable 5-20 workers)
-
----
-
-## 🐳 Quick Start (The Docker Way) - **Easiest**
-
-The simplest way to get up and running is using Docker Compose. It pulls the latest pre-built image from **GitHub Container Registry (GHCR)** and sets up SearXNG, Qdrant, and the MCP server automatically.
-
-1. **Clone & Spin Up**
-   ```bash
-   git clone https://github.com/DevsHero/search-scrape.git
-   cd search-scrape
-   docker-compose up -d
-   ```
-
-2. **Verify Connectivity**
-   - **SearXNG UI**: `http://localhost:8890`
-   - **MCP API**: `http://localhost:5001/tools` (Should return JSON)
-
-3. **Configure your AI Client** (Cursor/VS Code/Claude Desktop)
-   Add the following as a command-line MCP:
-   ```bash
-   # Use the remote image via npx (coming soon) or point to the local binary
-   /Users/YOUR_USER/path/to/search-scrape/mcp-server/target/release/search-scrape-mcp
-   ```
-   *Note: Ensure `SEARXNG_URL=http://localhost:8890` is set in your environment.*
-
-4. **Verify You're Running v0.3.0**
-   ```bash
-   # Check the API version
-   curl -s http://localhost:5001/tools | jq .
-   
-   # Should see all 6 tools with optimized features
-   ```
-
----
-
-## ✨ What's Different in v0.3.0?
-
-You're now running the optimized version with:
-
-✅ **Semantic Reranking** - Search results ranked by relevance (TF-IDF)  
-✅ **Anti-Bot Protection** - 20+ user agents + stealth headers to avoid detection  
-✅ **Parallel Scraping** - Multiple URLs processed concurrently (2-5x faster)  
-✅ **Advanced Content Cleaning** - Removes boilerplate, extracts main content  
-✅ **Smart Data Extraction** - Prompt-based NLP for >95% accuracy  
-
-See [v0.3.0 Performance Report](docs/FINAL_MCP_TEST_REPORT.md) for detailed metrics.
-
----
-
-## 🌍 Environment Variables
-
-Customize the behavior of your search and scrape engine.
-
-| Name | Default | Description |
-| --- | --- | --- |
-| `SEARXNG_URL` | `http://localhost:8888` | Your SearXNG instance URL. |
-| `QDRANT_URL` | - | Optional. Connect to Qdrant for semantic history (gRPC port 6334). |
-| `FASTEMBED_CACHE_DIR` | `.fastembed_cache` | Directory for fastembed model cache (for research_history). |
-| `HF_HOME` | `~/.cache/huggingface` | HuggingFace hub cache directory for model downloads. |
-| `MAX_CONTENT_CHARS` | `10000` | Max characters per scrape (Prevents context blowout). |
-| `MAX_BATCH_CONCURRENT` | `10` | Parallel workers for batch operations. |
-| `RUST_LOG` | `info` | Logging level (`debug` for developer insights). |
-
----
-
-## 📚 Documentation & Deep Dives
-
-We keep the root folder clean by organizing documentation in the [**`docs/`**](docs/) directory:
-
-- 📑 [**Docker Deployment Guide**](docs/DOCKER_DEPLOYMENT.md) - CI/CD and production setups.
-- 📑 [**VS Code Integration**](docs/VSCODE_SETUP.md) - Setting up within your IDE.
-- 📑 [**Research History Feature**](docs/HISTORY_FEATURE.md) - How we use Qdrant for memory.
-- 📑 [**Setup Completion Report**](docs/DOCKER_SETUP_COMPLETE.md) - Audit of the containerization project.
-- 📊 [**v0.3.0 Performance Report**](docs/FINAL_MCP_TEST_REPORT.md) - Detailed benchmark results from Feb 2026
-- 📊 [**Quick Reference Guide**](docs/QUICK_REFERENCE.txt) - Executive summary with production metrics
-
----
+- [mcp-server/src](mcp-server/src) — Rust core server and MCP handlers
+- [docs](docs) — release reports, architecture notes, operational guidance
+- [docs/IDE_SETUP.md](docs/IDE_SETUP.md) — MCP client setup for popular IDEs/apps
+- [docs/SEARXNG_TUNING.md](docs/SEARXNG_TUNING.md) — tuning SearXNG for noise / bans
+- [searxng](searxng) — SearXNG runtime configuration
+- [sample-results](sample-results) — sample outputs
 
 ## 🙏 Acknowledgments & Support
 
@@ -194,6 +251,6 @@ Special thanks to:
 - **Rust Community** for the amazing tooling.
 
 ---
+## License
 
-## ⚖️ License
 MIT License. Free to use for personal and commercial projects.

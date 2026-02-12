@@ -40,7 +40,7 @@ jobs:
       - name: Get version from Cargo.toml
         id: version
         run: |
-          VERSION=$(grep '^version' mcp-server/Cargo.toml | head -1 | sed 's/version = "//' | sed 's/".*//')
+          VERSION=$(grep '^version' search-scrape/Cargo.toml | head -1 | sed 's/version = "//' | sed 's/".*//')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 

@@ -1,0 +1,70 @@
+--INPUT--
+
+{
+  "action": "list",
+  "limit": 5,
+  "show_proxy_type": true
+}
+
+
+--OUTPUT--
+
+{
+  "action": "list",
+  "ip_list_path": "/home/appuser/ip.txt",
+  "limit": 5,
+  "proxies": [
+    {
+      "proxy": "http://43.134.238.25:443",
+      "proxy_type": "http"
+    },
+    {
+      "proxy": "http://103.174.122.232:8080",
+      "proxy_type": "http"
+    },
+    {
+      "proxy": "http://173.245.49.48:80",
+      "proxy_type": "http"
+    },
+    {
+      "proxy": "http://211.171.114.154:3128",
+      "proxy_type": "http"
+    },
+    {
+      "proxy": "http://104.143.226.40:5643",
+      "proxy_type": "http"
+    }
+  ],
+  "proxy_type": null,
+  "random": false,
+  "returned": 5,
+  "show_proxy_type": true,
+  "total": 5
+}
+
+
+--INPUT--
+
+{ "action": "status" }
+
+
+--OUTPUT--
+
+{
+  "total_proxies": 5,
+  "enabled_proxies": 3,
+  "current_proxy": "http://43.134.238.25:443",
+  "best_proxy": {
+    "url": "http://104.143.226.40:5643",
+    "type": "http",
+    "priority": 4,
+    "latency_ms": 0,
+    "last_success_timestamp": 0,
+    "last_test_timestamp": 1770874079,
+    "failure_count": 2,
+    "enabled": true,
+    "provider": "ip_list",
+    "notes": "source=ip_list"
+  },
+  "current_ip": null
+}

@@ -3,9 +3,13 @@
 *.log
 
 # Rust
-mcp-server/target/
-
+mcp-server/target
 .mimicflow
+
+# (Optional) Local-only files
+# If you create a private proxies.yaml with credentials, keep it untracked.
+proxies.yaml
+
 # Scrapy
 scrapy-service/webspider/httpcache/
 scrapy-service/webspider/.scrapy/

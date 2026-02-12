@@ -1,0 +1,40 @@
+--INPUT--
+
+{
+  "url": "https://docs.docker.com/get-started/",
+  "max_chars": 5000,
+  "prompt": "Extract fields as JSON.\n\nFields:\n- product (text, required)\n- prerequisites (list)\n- getting_started_steps (list)\n\nReturn null if not found."
+}
+
+
+--OUTPUT--
+
+{
+  "url": "https://docs.docker.com/get-started/",
+  "title": "Get started | Docker Docs",
+  "extracted_data": {
+    "_published_at": "2026-01-07 23:36:33 -0800 -0800",
+    "_title": "Get started | Docker Docs",
+    "_url": "https://docs.docker.com/get-started/",
+    "_word_count": 148,
+    "description": "Get started with Docker",
+    "product_name": "Get started",
+    "table_of_contents": [
+      "Get started",
+      "Foundations of Docker",
+      "Ask me about Docker",
+      "Get Docker",
+      "What is Docker?",
+      "Introduction",
+      "Docker concepts",
+      "Docker workshop"
+    ],
+    "title": "Get started | Docker Docs"
+  },
+  "raw_content_preview": "[Get started](https://docs.docker.com/get-started/) * [Guides](/guides/) * [Manuals](/manuals/) * [Reference](/reference/) Get started ========== --- If you're new to Docker, this section guides you through the essential resources to get started. Follow the guides to help you get started and learn how Docker can optimize your development workflows. For more advanced concepts and scenarios in Docker, see[Guides](/guides/). [Foundations of Docker](#foundations-of-docker) ---------- Install Docker and jump into discovering what Docker is. [ ### Get Docker ### Choose the best installation path for your setup. ](/get-started/get-docker/) [ ### What is Docker? ### Learn about the Docker platform. ](/get-started/docker-overview/) Learn the foundational concepts and workflows of Docker. [ ### Introduction ### Get started with the basics and the benefits of containerizing your applications. ](/get-started/introduction/) [ ### Docker concepts ### Gain a better understanding of foundational Docker concepts. ](/get-started/docker-concepts/the-basics/what-is-a-container/) [ ### Docker workshop ### Get guided through a 45-minute workshop to learn about Docker. ](/get-started/workshop/)",
+  "extraction_method": "prompt_based",
+  "field_count": 8,
+  "confidence": 0.8,
+  "duration_ms": 34,
+  "warnings": []
+}

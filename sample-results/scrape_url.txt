@@ -1,82 +1,41 @@
 --INPUT--
 
 {
-  "content_links_only": true,
-  "max_chars": 15000,
-  "max_links": 30,
-  "url": "https://thenewstack.io/async-programming-in-rust-understanding-futures-and-tokio/"
+  "url": "https://doc.rust-lang.org/book/ch17-00-async-await.html",
+  "max_chars": 2500,
+  "output_format": "text"
 }
-
 
 
 --OUTPUT--
 
-**Async Programming in Rust: Understanding Futures and Tokio - The New Stack**
+Fundamentals of Asynchronous Programming: Async, Await, Futures, and Streams - The Rust Programming Language
+URL: https://doc.rust-lang.org/book/ch17-00-async-await.html
+Canonical: -
+Word Count: 1615 (9m)
+Language: en
+Site: -
+Author: -
+Published: -
 
-URL: https://thenewstack.io/async-programming-in-rust-understanding-futures-and-tokio/
-Word Count: 1274
-Language: en-US
+Description: 
+OG Image: -
 
-**Content:**
-As modern software demands ever-increasing performance and responsiveness, traditional synchronous programming can become a bottleneck. In server applications, network requests, disk operations and long-running computations often block the main thread, resulting in delays and poor scalability. Rust’s [asynchronous programming][1] model addresses this challenge by allowing developers to write nonblocking, highly concurrent code while maintaining memory safety and performance guarantees. Rust achieves this using Futures and the async/await syntax, enabling tasks to yield control when waiting for external resources and resume efficiently once ready. Combined with powerful runtime libraries like [Tokio][2], Rust can handle thousands of simultaneous operations without the overhead of traditional threads. Let’s explore [async programming in Rust][3], practical use with Tokio and key considerations for building robust, high-performance applications. ## **Why Async Matters for High-Performance Applications** Synchronous code executes sequentially. Consider a web server that processes HTTP requests: Request 1 -> Database query (2s) Request 2 -> Database query (2s) ────────────────────────────────────────────────────── Request1->Database query(2s) Request2->Database query(2s) ────────────────────────────────────────────────────── If each request waits for the database sequentially, the total processing time grows linearly. In high-traffic systems, this leads to high latency and wasted resources. Async programming solves this by allowing tasks to yield control while waiting for input/output (I/O), letting other tasks progress. Rust accomplishes this without a garbage collector, providing zero-cost abstractions that guarantee both memory [safety and predictable performance][4]. Benefits of async in Rust: * **High concurrency:** Thousands of tasks can run simultaneously. * **Low memory footprint:** No need for one OS thread per task. * **Safe execution:** Rust’s compiler enforces memory and thread safety. * **Scalability:** Ideal for I/O-bound applications, web servers, microservices and networked systems. ## **Futures, Async/Await and Executors** ### **Futures** A Future in Rust is an asynchronous computation that produces a value at some point in the future, but not necessarily immediately. Instead of blocking, a Future exposes a poll method that lets the executor check whether it’s ready. When poll returns `Poll::Pending`, the Future isn’t ready to make progress and yields control back to the executor. Crucially, the Context passed into poll carries a Waker, which the underlying I/O driver or timer clones and stores. When the external resource becomes ready, such as a socket receiving data or a timer expiring, the driver uses this Waker to notify the executor, prompting it to poll the future again. This Waker-based wake-up mechanism is the foundation of Rust’s nonblocking async runtime, ensuring tasks make progress without ever blocking a thread. use std::future::Future; use std::pin::Pin; use std::task::{Context, Poll}; struct HelloFuture; impl Future for HelloFuture { type Output = String; fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> { Poll::Ready("Hello, Future!".to_string()) } } ─────────────────────────────────────────────────────────────────────────────── usestd::task::{Context,Poll}; implFutureforHelloFuture{ fnpoll(self:Pin<&mut Self>,_cx:&mut Context<'_>)->Poll<Self::Output>{ Poll::Ready("Hello, Future!".to_string()) ─────────────────────────────────────────────────────────────────────────────── Here, poll checks if the computation is ready. If not, it yields control to the executor. ### **Async/Await Syntax** Rust provides the `async` and `await` syntax for more readable asynchronous code: async fn greet() -> String { "Hello, async world!".to_string() } #[tokio::main] async fn main() { let message = greet().await; println!("{}", message); } ────────────────────────────────────────────────────────── "Hello, async world!".to_string() letmessage=greet().await; ────────────────────────────────────────────────────────── * `greet()` returns a Future. * `.await` suspends execution until the Future resolves. This abstraction hides the low-level polling mechanism while maintaining efficiency. ### **Executors** An executor drives Futures to completion. Common executors include Tokio and `async-std`. Without an executor, async code does not run. use tokio::time::{sleep, Duration}; #[tokio::main] async fn main() { sleep(Duration::from_secs(1)).await; println!("Executed after 1 second"); } ─────────────────────────────────────────────────────────────────────────────── usetokio::time::{sleep,Duration}; sleep(Duration::from_secs(1)).await; println!("Executed after 1 second"); ─────────────────────────────────────────────────────────────────────────────── ### **Using Tokio for Asynchronous Tasks** Tokio is Rust’s most popular async runtime. Features include: * Task scheduling * Timers * Networking (TCP/UDP) * Async file I/O ## **Concurrent Tasks** use tokio::task; #[tokio::main] async fn main() { let task1 = task::spawn(async { "Task 1 completed" }); let task2 = task::spawn(async { "Task 2 completed" }); let result1 = task1.await.unwrap(); let result2 = task2.await.unwrap(); println!("{}, {}", result1, result2); } ─────────────────────────────────────────────────────────────────────────────── lettask1=task::spawn(async{"Task 1 completed"}); lettask2=task::spawn(async{"Task 2 completed"}); letresult1=task1.await.unwrap(); letresult2=task2.await.unwrap(); println!("{}, {}",result1,result2); ─────────────────────────────────────────────────────────────────────────────── `task::spawn` allows concurrent execution of tasks without blocking. ## **Streams and Channels** ### **Streams** A Stream in Rust represents an asynchronous sequence of values, similar to an async iterator. While simple in-memory streams (`tokio_stream::iter`) demonstrate the concept, real systems often deal with unbounded, event-driven streams originating from network activity. Here is a practical example using `TcpListenerStream`, which converts incoming TCP connections into an asynchronous stream: use tokio::net::TcpListener; use tokio_stream::StreamExt; #[tokio::main] async fn main() -> anyhow::Result<()> { // Bind a TCP listener to a port. let listener = TcpListener::bind("127.0.0.1:8080").await?; // Convert incoming connections into a Stream. let mut incoming = tokio_stream::wrappers::TcpListenerStream::new(listener); println!("Server listening on 127.0.0.1:8080"); // Each incoming client connection becomes the next item in the stream. while let Some(stream) = incoming.next().await { match stream { Ok(_socket) => { println!("New client connected!"); } Err(e) => { eprintln!("Connection error: {:?}", e); } } } Ok(()) } ─────────────────────────────────────────────────────────────────────────────── usetokio::net::TcpListener; usetokio_stream::StreamExt; async fnmain()->anyhow::Result<()>{ // Bind a TCP listener to a port. letlistener=TcpListener::bind("127.0.0.1:8080").await?; // Convert incoming connections into a Stream. letmutincoming=tokio_stream::wrappers::TcpListenerStream::new(listener); println!("Server listening on 127.0.0.1:8080"); // Each incoming client connection becomes the next item in the stream. whileletSome(stream)=incoming.next().await{ println!("New client connected!"); eprintln!("Connection error: {:?}",e); ─────────────────────────────────────────────────────────────────────────────── Channels enable safe communication between async tasks: use tokio::sync::mpsc; #[tokio::main] async fn main() { let (tx, mut rx) = mpsc::channel(32); tokio::spawn(async move { tx.send("Hello from task").await.unwrap(); }); while let Some(msg) = rx.recv().await { println!("{}", msg); } } ─────────────────────────────────────────────────────────────────────────────── let(tx,mutrx)=mpsc::channel(32); tx.send("Hello from task").await.unwrap(); whileletSome(msg)=rx.recv().await{ ─────────────────────────────────────────────────────────────────────────────── ### **Async I/O** Async I/O enables nonblocking file, TCP and UDP operations: use tokio::fs::File; use tokio::io::{self, AsyncReadExt}; #[tokio::main] async fn main() -> io::Result<()> { let mut file = File::open("example.txt").await?; let mut contents = String::new(); file.read_to_string(&mut contents).await?; println!("{}", contents); Ok(()) } ─────────────────────────────────────────────────────────────────────────────── usetokio::io::{self,AsyncReadExt}; async fnmain()->io::Result<()>{ letmutfile=File::open("example.txt").await?; letmutcontents=String::new(); file.read_to_string(&mut contents).await?; ─────────────────────────────────────────────────────────────────────────────── ### **Input Validation and Error Handling** Rust’s error handling integrates naturally with async code using `Result<T, E>`: async fn fetch_data() -> Result<String, reqwest::Error> { let response = reqwest::get("https://api.example.com/data").await?; let body = response.text().await?; Ok(body) } #[tokio::main] async fn main() { match fetch_data().await { Ok(data) => println!("Fetched: {}", data), Err(err) => eprintln!("Error: {}", err), } } ─────────────────────────────────────────────────────────────────────────────── async fnfetch_data()->Result<String,reqwest::Error>{ letresponse=reqwest::get("https://api.example.com/data").await?; letbody=response.text().await?; Ok(data)=>println!("Fetched: {}",data), Err(err)=>eprintln!("Error: {}",err), ─────────────────────────────────────────────────────────────────────────────── Combine multiple tasks with `tokio::try_join!`: let (res1, res2) = tokio::try_join!(fetch_data(), fetch_data())?; ──────────────────────────────────────────────────────────── let(res1,res2)=tokio::try_join!(fetch_data(),fetch_data())?; ──────────────────────────────────────────────────────────── ### **Performance Considerations** * **Minimize allocations:** Prioritize stack memory or bytes. * **Avoid blocking:** Recommend wrapping blocking operations with `spawn_blocking`. * **Tune concurrency:** Keep in mind that excessive tasks can degrade performance. * **Benchmark:** Measure latency and throughput using `tokio::time::Instant` or `criterion`. ## **Real-World Example: High-Performance HTTP Client** use reqwest::Client; use tokio::time::Instant; #[tokio::main] async fn main() { let client = Client::new(); let start = Instant::now(); let urls = vec![ "https://example.com", "https://rust-lang.org", "https://tokio.rs", ]; let handles: Vec<_> = urls .into_iter() .map(|url| { let client = client.clone(); tokio::spawn(async move { let res = client.get(url).send().await.unwrap(); res.status() }) }) .collect(); for handle in handles { println!("Status: {:?}", handle.await.unwrap()); } println!("Total time: {:?}", start.elapsed()); } ─────────────────────────────────────────────────────────────────────────────── letclient=client.clone(); letres=client.get(url).send().await.unwrap(); println!("Status: {:?}",handle.await.unwrap()); println!("Total time: {:?}",start.elapsed()); ─────────────────────────────────────────────────────────────────────────────── This demonstrates concurrent requests, nonblocking I/O and high throughput. ## **Advanced Patterns** * **Task cancellation:**`tokio::select!` allows canceling tasks under certain conditions. * **Rate limiting:** Recommend combining with `tokio::time::sleep` to throttle tasks. * **Backpressure handling:** Introduce async channels with bounded capacity to prevent flooding. ## **Parting Thoughts** Rust’s asynchronous programming model is safe, efficient and modern. Rust enables developers to write highly concurrent applications with confidence. By using Futures, `async/await` and the Tokio runtime, developers can handle thousands of concurrent tasks, perform nonblocking I/O and build scalable systems without sacrificing memory safety or performance. Mastering async Rust is essential for anyone building network services, microservices, real-time systems or high-throughput applications. By combining concurrency patterns, error handling and best practices, Rust provides a powerful foundation for building the next generation of fast, reliable software. [1]: https://thenewstack.io/async-rust-in-practice-performance-pitfalls-profilin g/ [2]: https://thenewstack.io/using-rustlangs-async-tokio-runtime-for-cpu-bound-ta sks/ [3]: https://thenewstack.io/using-rustlangs-async-tokio-runtime-for-cpu-bound-ta sks/ [4]: https://thenewstack.io/rust-vs-c-a-modern-take-on-performance-and-safety/
+Headings:
+- H1 The Rust Programming Language
+- H1 Fundamentals of Asynchronous Programming: Async, Await, Futures, and Streams
+- H2 Keyboard shortcuts
+- H2 Parallelism and Concurrency
 
-[Content truncated: 15000/15816 chars shown. Increase max_chars parameter to see more]
+Links: 4  Images: 3
 
-**Metadata:**
-- Description: Combined with powerful runtime libraries like Tokio, Rust can handle thousands of simultaneous operations without the overhead of traditional threads.
-- Keywords: 
+Preview:
+[Fundamentals of Asynchronous Programming: Async, Await, Futures, and Streams](#fundamentals-of-asynchronous-programming-async-await-futures-and-streams) ========== Many operations we ask the computer to do can take a while to finish. It would be nice if we could do something else while we’re waiting for those long-running processes to complete. Modern computers offer two techniques for working on more than one operation at a time: parallelism and concurrency. Our programs’ logic, however, is written in a mostly linear fashion. We’d like to be able to specify the operations a program should perform and points at which a function could pause and some other part of the program could run instead, without needing to specify up front exactly the order and manner in which each bit of code should run. *Asynchronous programming* is an abstraction that lets us express our code in terms of potential pausing points and eventual results that takes care of the details of coordination for us. This chapter builds on Chapter 16’s use of threads for parallelism and concurrency by introducing an alternative approach to writing code: Rust’s futures, streams, and the `async` and `await` syntax that let us express how operations could be asynchronous, and the third-party crates that implement asynchronous runtimes: code that manages and coordinates the execution of asynchronous operations. Let’s consider an example. Say you’re exporting a video you’ve created of a family celebration, an operation that could take anywhere from minutes to hours. The video export will use as much CPU and GPU power as it can. If you had only one CPU core and your operating system didn’t pause that export until it completed—that is, if it executed the export *synchronously*—you couldn’t do anything else on your computer while that task was running. That would be a pretty frustrating experience. Fortunately, your computer’s operating system can, and does, invisibly interrupt the export often enough to let you get other work done simultaneously. Now say you’re downloading a video shared by someone else, which can also take a while but does not take up as much CPU time. In this case, the CPU has to wait for data to arrive from the network. While you can start reading the data once it starts to arrive, it might take some time for all of it to show up. Even once the data is all present, if the video is quite large, it could take at least a second or two to load it all. That might not sound like much, bu
 
-**Headings:**
-- H1 Async Programming in Rust: Understanding Futures and Tokio
-- H2 Why Async Matters for High-Performance Applications
-- H2 Futures, Async/Await and Executors
-- H2 Concurrent Tasks
-- H2 Streams and Channels
-- H2 Real-World Example: High-Performance HTTP Client
-- H2 Advanced Patterns
-- H2 Parting Thoughts
-- H3 Futures
-- H3 Async/Await Syntax
-- H3 Executors
-- H3 Using Tokio for Asynchronous Tasks
-- H3 Streams
-- H3 Async I/O
-- H3 Input Validation and Error Handling
-- H3 Performance Considerations
+[Content truncated: 2500/9579 chars shown. Increase max_chars parameter to see more]
 
-**Links Found:** 244
-**Images Found:** 4
-
-**Sources:**
-[1]: https://thenewstack.io/terms-of-use/ (Terms of Use)
-[2]: https://thenewstack.io/privacy-policy/ (Privacy Policy)
-[3]: https://hachyderm.io/@TheNewStack
-[4]: https://bsky.app/profile/thenewstack.io
-[5]: https://www.threads.net/@thenewstack
-[6]: https://www.linkedin.com/company/the-new-stack
-[7]: https://twitter.com/thenewstack
-[8]: https://www.facebook.com/thenewstack/
-[9]: https://open.spotify.com/show/2nj1mpDb9jxHxi9vjZvDdk
-[10]: https://www.youtube.com/c/thenewstack?sub_confirmation=1
-[11]: https://thenewstack.io/ (the latest featured and trending stories)
-[12]: https://thenewstack.io/cloud-native/ (Cloud Native Ecosystem)
-[13]: https://thenewstack.io/containers/ (Containers)
-[14]: https://thenewstack.io/databases/ (Databases)
-[15]: https://thenewstack.io/edge-computing/ (Edge Computing)
-[16]: https://thenewstack.io/infrastructure-as-code/ (Infrastructure as Code)
-[17]: https://thenewstack.io/linux/ (Linux)
-[18]: https://thenewstack.io/microservices/ (Microservices)
-[19]: https://thenewstack.io/open-source/ (Open Source)
-[20]: https://thenewstack.io/networking/ (Networking)
-[21]: https://thenewstack.io/storage/ (Storage)
-[22]: https://thenewstack.io/ai/ (AI)
-[23]: https://thenewstack.io/ai-engineering/ (AI Engineering)
-[24]: https://thenewstack.io/api-management/ (API Management)
-[25]: https://thenewstack.io/backend-development/ (Backend development)
-[26]: https://thenewstack.io/data/ (Data)
-[27]: https://thenewstack.io/frontend-development/ (Frontend Development)
-[28]: https://thenewstack.io/llm/ (Large Language Models)
-[29]: https://thenewstack.io/security/ (Security)
-[30]: https://thenewstack.io/software-development/ (Software Development)
-
-(Showing 30 of 244 total links)
+Sources:
+[1]: https://doc.rust-lang.org/book/print.html
+[2]: https://github.com/rust-lang/book
+[3]: https://doc.rust-lang.org/book/ch16-04-extensible-concurrency-sync-and-send.html
+[4]: https://doc.rust-lang.org/book/ch17-01-futures-and-syntax.html

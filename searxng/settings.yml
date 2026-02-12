@@ -1,5 +1,5 @@
-# SearXNG Configuration
-use_default_settings: true
+# SearXNG Configuration (agent-optimized)
+use_default_settings: false
 
 general:
   debug: false
@@ -8,24 +8,39 @@ general:
   donation_url: false
   contact_url: false
   enable_metrics: false
+  open_metrics: ""
+
+brand: {}
 
 search:
   safe_search: 0
   autocomplete: ""
+  autocomplete_min: 4
+  favicon_resolver: ""
   default_lang: "en"
   ban_time_on_fail: 5
   max_ban_time_on_fail: 120
+  suspended_times:
+    SearxEngineAccessDenied: 43200
+    SearxEngineCaptcha: 86400
+    SearxEngineTooManyRequests: 3600
+    cf_SearxEngineCaptcha: 1296000
+    cf_SearxEngineAccessDenied: 86400
+    recaptcha_SearxEngineCaptcha: 604800
   formats:
     - html
     - json
+  max_page: 0
 
 server:
   port: 8080
   bind_address: "0.0.0.0"
-  secret_key: "uj468HgkMfOGqKT75lLz82vKHZi9jC"  # Change this in production
-  base_url: /
+  base_url: false
+  limiter: false
+  public_instance: false
+  secret_key: "GENERATE_A_NEW_ONE_HERE"
   image_proxy: false
-  http_protocol_version: "1.0"
+  http_protocol_version: "1.1"
   method: "POST"
   default_http_headers:
     X-Content-Type-Options: nosniff
@@ -34,84 +49,103 @@ server:
     X-Robots-Tag: noindex, nofollow
     Referrer-Policy: no-referrer
 
-# Disable Redis - not needed for our use case
-# redis:
-#   url: redis://redis:6379/0
+redis:
+  url: false
+
+valkey:
+  url: redis://redis:6379/0
 
 ui:
-  static_use_hash: false
+  static_path: ""
+  templates_path: ""
+  default_theme: simple
   default_locale: ""
-  query_in_title: false
-  infinite_scroll: false
   center_alignment: false
-  # cache_url: redis://redis:6379/1
+  results_on_new_tab: false
+  query_in_title: false
+  search_on_category_select: true
+  hotkeys: default
+  url_formatting: pretty
+  theme_args:
+    simple_style: auto
 
-# Disable bot detection to allow API access
-botdetection:
-  ip_limit:
-    filter_link_local: false
-    link_token: false
-  ip_lists:
-    pass_searxng_org: false
+preferences:
+  lock: []
 
-# Enable engines for web search
-# Phase 2: Optimized for developer queries with weighted priorities
+doi_resolvers:
+  oadoi.org: "https://oadoi.org/"
+  doi.org: "https://doi.org/"
+  sci-hub.se: "https://sci-hub.se/"
+  sci-hub.st: "https://sci-hub.st/"
+  sci-hub.ru: "https://sci-hub.ru/"
+
+default_doi_resolver: "oadoi.org"
+
+outgoing:
+  request_timeout: 3.0
+  max_request_timeout: 6.0
+  useragent_suffix: ""
+  pool_connections: 100
+  pool_maxsize: 10
+  keepalive_expiry: 5.0
+  enable_http2: true
+  verify: true
+
+# Engine list: minimal, high-quality, low-block risk
 engines:
-  # High priority: Developer-focused engines
   - name: duckduckgo
     engine: duckduckgo
     shortcut: ddg
     timeout: 3.0
-    disabled: false
+    disabled: true
     categories: [general, it]
-    weight: 1.2  # Boost DDG for dev content
-    
+    weight: 1.2
+
   - name: google
     engine: google
     shortcut: go
     timeout: 3.0
-    disabled: false
-    categories: [general, it, news]
-    weight: 1.3  # Highest priority - best for docs/stackoverflow
-    
-  - name: bing
-    engine: bing
-    shortcut: bi
-    timeout: 3.0
+    use_mobile_ui: true
     disabled: false
     categories: [general, it]
-    weight: 1.1
-    
+    weight: 1.3
+
   - name: brave
     engine: brave
     shortcut: br
     timeout: 3.0
     disabled: false
     categories: [general, it]
-    weight: 1.0
-    
-  # Developer-specific engines
+    weight: 1.1
+
+  - name: startpage
+    engine: startpage
+    shortcut: sp
+    timeout: 3.0
+    disabled: true
+    categories: [general]
+    weight: 0.8
+
   - name: github
     engine: github
     shortcut: gh
     timeout: 3.0
     disabled: false
     categories: [it]
-    weight: 1.5  # Critical for code search
-    
-  - name: stackoverflow
-    engine: stackoverflow
-    shortcut: so
+    weight: 1.6
+
+  - name: reddit
+    engine: reddit
+    shortcut: rd
     timeout: 3.0
     disabled: false
-    categories: [it]
-    weight: 1.4  # Very important for dev Q&A
-    
-  # Standard engines (lower priority)
-  - name: startpage
-    engine: startpage
-    shortcut: sp
+    categories: [general, it]
+    weight: 1.0
+
+  - name: hackernews
+    engine: hackernews
+    shortcut: hn
     timeout: 3.0
     disabled: false
-    categories: [general]
-    weight: 0.9
+    categories: [general, it]
+    weight: 1.0

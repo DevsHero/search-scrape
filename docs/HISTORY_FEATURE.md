@@ -61,7 +61,7 @@ QDRANT_URL=http://localhost:6333 \
 # For HTTP server
 SEARXNG_URL=http://localhost:8888 \
 QDRANT_URL=http://localhost:6333 \
-./target/release/mcp-server
+./target/release/search-scrape
 ```
 
 ### 3. Verify Setup

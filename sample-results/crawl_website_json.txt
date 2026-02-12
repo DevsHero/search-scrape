@@ -1,0 +1,50 @@
+--INPUT--
+
+{
+  "url": "https://doc.rust-lang.org/book/",
+  "max_depth": 1,
+  "max_pages": 2,
+  "max_concurrent": 2,
+  "same_domain_only": true,
+  "max_chars_per_page": 800
+}
+
+
+--OUTPUT--
+
+{
+  "start_url": "https://doc.rust-lang.org/book/",
+  "pages_crawled": 2,
+  "pages_failed": 0,
+  "max_depth_reached": 1,
+  "total_duration_ms": 43,
+  "unique_domains": [
+    "doc.rust-lang.org"
+  ],
+  "results": [
+    {
+      "url": "https://doc.rust-lang.org/book/",
+      "depth": 0,
+      "success": true,
+      "title": "The Rust Programming Language - The Rust Programming Language",
+      "word_count": 145,
+      "links_found": 6,
+      "content_preview": "[The Rust Programming Language](#the-rust-programming-language) ========== *by Steve Klabnik, Carol Nichols, and Chris Krycho, with contributions from the Rust Community* This version of the text assumes you’re using Rust 1.90.0 (released 2025-09-18) or later with `edition = \"2024\"` in the *Cargo.toml* file of all projects to configure them to use Rust 2024 Edition idioms. See the [“Installation” section of Chapter 1](ch01-01-installation.html) for instructions on installing or updating Rust, and see [Appendix E](appendix-05-editions.html) for information on editions. The HTML format is available online at[https://doc.rust-lang.org/stable/book/](https://doc.rust-lang.org/stable/book/)and offline with installations of Rust made with `rustup`; run `rustup doc --book` to open. Several communi",
+      "duration_ms": 26
+    },
+    {
+      "url": "https://doc.rust-lang.org/book/ch01-01-installation.html",
+      "depth": 1,
+      "success": true,
+      "title": "Installation - The Rust Programming Language",
+      "word_count": 944,
+      "links_found": 5,
+      "content_preview": "[Installation](#installation) ---------- The first step is to install Rust. We’ll download Rust through `rustup`, a command line tool for managing Rust versions and associated tools. You’ll need an internet connection for the download. Note: If you prefer not to use `rustup` for some reason, please see the[Other Rust Installation Methods page](https://forge.rust-lang.org/infra/other-installation-methods.html) for more options. The following steps install the latest stable version of the Rust compiler. Rust’s stability guarantees ensure that all the examples in the book that compile will continue to compile with newer Rust versions. The output might differ slightly between versions because Rust often improves error messages and warnings. In other words, any newer, stable version of Rust you",
+      "duration_ms": 15
+    }
+  ],
+  "sitemap": [
+    "https://doc.rust-lang.org/book/",
+    "https://doc.rust-lang.org/book/ch01-01-installation.html"
+  ]
+}

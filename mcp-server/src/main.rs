@@ -11,7 +11,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn, error};
 
-use mcp_server::{search, scrape, types::*, mcp, AppState};
+use search_scrape::{search, scrape, types::*, mcp, AppState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -28,8 +28,17 @@ async fn main() -> anyhow::Result<()> {
     info!("SearXNG URL: {}", searxng_url);
 
     // Create HTTP client
+    let http_timeout = env::var("HTTP_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(30);
+    let connect_timeout = env::var("HTTP_CONNECT_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(10);
     let http_client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(http_timeout))
+        .connect_timeout(std::time::Duration::from_secs(connect_timeout))
         .build()?;
 
     // Create application state
@@ -38,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
     // Initialize memory if QDRANT_URL is set
     if let Ok(qdrant_url) = env::var("QDRANT_URL") {
         info!("Initializing memory with Qdrant at: {}", qdrant_url);
-        match mcp_server::history::MemoryManager::new(&qdrant_url).await {
+        match search_scrape::history::MemoryManager::new(&qdrant_url).await {
             Ok(memory) => {
                 state = state.with_memory(Arc::new(memory));
                 info!("Memory initialized successfully");
@@ -51,6 +60,26 @@ async fn main() -> anyhow::Result<()> {
         info!("QDRANT_URL not set. Memory feature disabled.");
     }
 
+    // Initialize proxy manager if ip.txt exists
+    let ip_list_path = env::var("IP_LIST_PATH").unwrap_or_else(|_| "ip.txt".to_string());
+
+    if tokio::fs::metadata(&ip_list_path).await.is_ok() {
+        info!("Loading proxy manager from IP list: {}", ip_list_path);
+        match search_scrape::proxy_manager::ProxyManager::new(&ip_list_path).await {
+            Ok(proxy_manager) => {
+                let status = proxy_manager.get_status().await?;
+                state = state.with_proxy_manager(Arc::new(proxy_manager));
+                info!("Proxy manager initialized: {} total proxies, {} enabled", 
+                      status.total_proxies, status.enabled_proxies);
+            }
+            Err(e) => {
+                warn!("Failed to initialize proxy manager: {}. Continuing without proxy support.", e);
+            }
+        }
+    } else {
+        info!("IP list not found at {}. Proxy feature disabled.", ip_list_path);
+    }
+
     let state = Arc::new(state);
 
     // Build router
@@ -58,6 +87,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/", get(health_check))
         .route("/health", get(health_check))
         .route("/search", post(search_web_handler))
+        .route("/search_structured", post(search_structured_handler))
         .route("/scrape", post(scrape_url_handler))
         .route("/chat", post(chat_handler))
         .route("/mcp/tools", get(mcp::list_tools))
@@ -78,8 +108,8 @@ async fn main() -> anyhow::Result<()> {
 async fn health_check() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "status": "healthy",
-        "service": "mcp-server",
-        "version": "0.1.0"
+        "service": "search-scrape",
+        "version": env!("CARGO_PKG_VERSION")
     }))
 }
 
@@ -117,6 +147,47 @@ async fn scrape_url_handler(
             ))
         }
     }
+}
+
+async fn search_structured_handler(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<SearchStructuredRequest>,
+) -> Result<Json<SearchStructuredResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let (results, _extras) = search::search_web(&state, &request.query)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Search failed: {}", e),
+                }),
+            )
+        })?;
+
+    let top_n = request.top_n.unwrap_or(3);
+    let to_scrape: Vec<String> = results.iter().take(top_n).map(|r| r.url.clone()).collect();
+
+    let mut scraped_content = Vec::new();
+    let mut tasks = Vec::new();
+    for url in to_scrape {
+        let state_cloned = Arc::clone(&state);
+        tasks.push(tokio::spawn(async move {
+            (url.clone(), scrape::scrape_url(&state_cloned, &url).await)
+        }));
+    }
+
+    for task in tasks {
+        match task.await {
+            Ok((_, Ok(content))) => scraped_content.push(content),
+            Ok((url, Err(e))) => warn!("Structured scrape failed for {}: {}", url, e),
+            Err(e) => warn!("Structured scrape task join error: {}", e),
+        }
+    }
+
+    Ok(Json(SearchStructuredResponse {
+        results,
+        scraped_content,
+    }))
 }
 
 async fn chat_handler(

@@ -1,0 +1,239 @@
+{
+  "timestamp": "2026-02-12T05:59:04Z",
+  "base_url": "http://localhost:5001",
+  "health": {
+    "status": 200,
+    "latency_sec": 0.011,
+    "error": null,
+    "body": "{\"service\":\"search-scrape\",\"status\":\"healthy\",\"version\":\"1.0.0\"}"
+  },
+  "tools": {
+    "status": 200,
+    "latency_sec": 0.002,
+    "error": null,
+    "tool_count": 8
+  },
+  "cases": [
+    {
+      "name": "search_web_dev_docs",
+      "tool": "search_web",
+      "arguments": {
+        "query": "rust async await official docs",
+        "max_results": 5
+      },
+      "http_status": 200,
+      "latency_sec": 1.439,
+      "transport_error": null,
+      "is_error": false,
+      "content_preview": "Found 10 search results for 'rust async await official docs': (showing top 5)\n\n\n1. **Fundamentals of Asynchronous Programming: Async, Await, Futures ...**\n   URL: https://doc.rust-lang.org/book/ch17-00-async-await.html\n   Snippet: How to use Rust's async and await syntax and execute asynchronous functions with a runtime; How to use the async model to solve some of the same challenges we ...\n\n2. **Futures and the Async Syntax - The Rust Programming Language**\n   URL: https://doc.rust-lang.org/book/ch17-01-futures-and-syntax.html\n   Snippet: Within an async block or async function, you can use the await keyword to await a future (that is, wait for it to become ready). Any point where you await a ...\n\n3. **A Closer Look at the Traits for Async - The Rust Programming Language**\n   URL: https://doc.rust-lang.org/book/ch17-05-traits-for-async.html\n   Snippet: To make that work, Rust looks at what data is needed between one await point and either the next await point or the end of the async block. It then creates a ...\n\n4. **await**\n   URL: https://doc.rust-lang.org/std/keyword.await.html\n   Snippet: Read the async book for details on how async / await and executors work. ... It is availa"
+    },
+    {
+      "name": "search_web_recent_news",
+      "tool": "search_web",
+      "arguments": {
+        "query": "AI model release 2026",
+        "time_range": "month",
+        "max_results": 5
+      },
+      "http_status": 200,
+      "latency_sec": 1.72,
+      "transport_error": null,
+      "is_error": false,
+      "content_preview": "Found 20 search results for 'AI model release 2026': (showing top 5)\n\n\n1. **Videogame stocks slide after Google's Project Genie AI model release**\n   URL: https://news.ycombinator.com/item?id=46828482\n   Snippet: https://www.reuters.com/business/videogame-stocks-slide-googles-ai-model-that-turns-prompts-into-playable-worlds-2026-01-30/\n\n2. **Lessons from securing AI systems at runtime (agents, MCPs, LLMs)**\n   URL: https://news.ycombinator.com/item?id=46910753\n   Snippet: Over the last year, we noticed a pattern while working with teams deploying AI in production.The hard problems weren’t model choice or prompt quality. They showed up after deployment.Agents started ca\n\n3. **Is this potential 2026 release date for the OpenAI device news or was this ...**\n   URL: https://www.reddit.com/r/OpenAI/comments/1qjv3rz/is_this_potential_2026_release_date_for_the/\n   Snippet: Basically the title; I've only in the past few months started getting into ChatGPT. I was familiar with an upcoming device but wasn't sure if a potential ...\n\n4. **I benchmarked the newest 40 AI models (Feb 2026) : r/LocalLLaMA**\n   URL: https://www.reddit.com/r/LocalLLaMA/comments/1r14bqk/i_benchmarked_the_newest_40_ai"
+    },
+    {
+      "name": "search_structured_market",
+      "tool": "search_structured",
+      "arguments": {
+        "query": "Zillow housing market trends",
+        "top_n": 2,
+        "use_proxy": false
+      },
+      "http_status": 200,
+      "latency_sec": 6.857,
+      "transport_error": null,
+      "is_error": false,
+      "content_preview": "Found 41 results for 'Zillow housing market trends'\n\nStructured scrapes: 2\n\n1. Reddit - The heart of the internet (69 words)\nURL: https://www.reddit.com/r/baltimore/comments/1nw549h/whats_up_with_the_housing_market/\n\n2. Reddit - The heart of the internet (35 words)\nURL: https://www.reddit.com/r/irvine/comments/1lvn9ad/housing_trends/\n\n"
+    },
+    {
+      "name": "scrape_url_docs_json",
+      "tool": "scrape_url",
+      "arguments": {
+        "url": "https://doc.rust-lang.org/book/ch01-02-hello-world.html",
+        "output_format": "json",
+        "max_chars": 8000
+      },
+      "http_status": 200,
+      "latency_sec": 0.727,
+      "transport_error": null,
+      "is_error": false,
+      "content_preview": "{\n  \"url\": \"https://doc.rust-lang.org/book/ch01-02-hello-world.html\",\n  \"title\": \"Hello, World! - The Rust Programming Language\",\n  \"content\": \"<!DOCTYPE HTML>\\n<html lang=\\\"en\\\" class=\\\"light sidebar-visible\\\" dir=\\\"ltr\\\">\\n    <head>\\n        <!-- Book generated using mdBook -->\\n        <meta charset=\\\"UTF-8\\\">\\n        <title>Hello, World! - The Rust Programming Language</title>\\n\\n\\n        <!-- Custom HTML head -->\\n\\n        <meta name=\\\"description\\\" content=\\\"\\\">\\n        <meta name=\\\"viewport\\\" content=\\\"width=device-width, initial-scale=1\\\">\\n        <meta name=\\\"theme-color\\\" content=\\\"#ffffff\\\">\\n\\n        <link rel=\\\"icon\\\" href=\\\"favicon-de23e50b.svg\\\">\\n        <link rel=\\\"shortcut icon\\\" href=\\\"favicon-8114d1fc.png\\\">\\n        <link rel=\\\"stylesheet\\\" href=\\\"css/variables-3865ffda.css\\\">\\n        <link rel=\\\"stylesheet\\\" href=\\\"css/general-4c35105a.css\\\">\\n        <link rel=\\\"stylesheet\\\" href=\\\"css/chrome-c0e702bf.css\\\">\\n        <link rel=\\\"stylesheet\\\" href=\\\"css/print-ad67d350.css\\\" media=\\\"print\\\">\\n\\n        <!-- Fonts -->\\n        <link rel=\\\"stylesheet\\\" href=\\\"FontAwesome/css/font-awesome-799aeb25.css\\\">\\n        <link rel=\\\"stylesheet\\\" href=\\\"fonts/fonts"
+    },
+    {
+      "name": "scrape_url_js_heavy",
+      "tool": "scrape_url",
+      "arguments": {
+        "url": "https://news.ycombinator.com/",
+        "output_format": "json",
+        "max_chars": 8000
+      },
+      "http_status": 200,
+      "latency_sec": 2.739,
+      "transport_error": null,
+      "is_error": false,
+      "content_preview": "{\n  \"url\": \"https://news.ycombinator.com/\",\n  \"title\": \"Hacker News\",\n  \"content\": \"<html lang=\\\"en\\\" op=\\\"news\\\"><head><meta name=\\\"referrer\\\" content=\\\"origin\\\"><meta name=\\\"viewport\\\" content=\\\"width=device-width, initial-scale=1.0\\\"><link rel=\\\"stylesheet\\\" type=\\\"text/css\\\" href=\\\"news.css?3OPGkc6FDaB9ivfoQqrp\\\"><link rel=\\\"icon\\\" href=\\\"y18.svg\\\"><link rel=\\\"alternate\\\" type=\\\"application/rss+xml\\\" title=\\\"RSS\\\" href=\\\"rss\\\"><title>Hacker News</title></head><body><center><table id=\\\"hnmain\\\" border=\\\"0\\\" cellpadding=\\\"0\\\" cellspacing=\\\"0\\\" width=\\\"85%\\\" bgcolor=\\\"#f6f6ef\\\"><tr><td bgcolor=\\\"#ff6600\\\"><table border=\\\"0\\\" cellpadding=\\\"0\\\" cellspacing=\\\"0\\\" width=\\\"100%\\\" style=\\\"padding:2px\\\"><tr><td style=\\\"width:18px;padding-right:4px\\\"><a href=\\\"https://news.ycombinator.com\\\"><img src=\\\"y18.svg\\\" width=\\\"18\\\" height=\\\"18\\\" style=\\\"border:1px white solid; display:block\\\"></a></td><td style=\\\"line-height:12pt; height:10px;\\\"><span class=\\\"pagetop\\\"><b class=\\\"hnname\\\"><a href=\\\"news\\\">Hacker News</a></b><a href=\\\"newest\\\">new</a> | <a href=\\\"front\\\">past</a> | <a href=\\\"newcomments\\\">comments</a> | <a href=\\\"ask\\\">ask</a> | <a href=\\\"show\\\">show</a> | <a href=\\\"jobs\\\">jobs</a"
+    },
+    {
+      "name": "scrape_batch_multi",
+      "tool": "scrape_batch",
+      "arguments": {
+        "urls": [
+          "https://example.com",
+          "https://doc.rust-lang.org/book/",
+          "https://docs.docker.com/get-started/"
+        ],
+        "max_concurrent": 3,
+        "max_chars": 5000,
+        "output_format": "json"
+      },
+      "http_status": 200,
+      "latency_sec": 1.766,
+      "transport_error": null,
+      "is_error": false,
+      "content_preview": "{\n  \"total\": 3,\n  \"successful\": 3,\n  \"failed\": 0,\n  \"total_duration_ms\": 1763,\n  \"results\": [\n    {\n      \"url\": \"https://doc.rust-lang.org/book/\",\n      \"success\": true,\n      \"data\": {\n        \"url\": \"https://doc.rust-lang.org/book/\",\n        \"title\": \"The Rust Programming Language - The Rust Programming Language\",\n        \"content\": \"<!DOCTYPE HTML>\\n<html lang=\\\"en\\\" class=\\\"light sidebar-visible\\\" dir=\\\"ltr\\\">\\n    <head>\\n        <!-- Book generated using mdBook -->\\n        <meta charset=\\\"UTF-8\\\">\\n        <title>The Rust Programming Language - The Rust Programming Language</title>\\n\\n\\n        <!-- Custom HTML head -->\\n\\n        <meta name=\\\"description\\\" content=\\\"\\\">\\n        <meta name=\\\"viewport\\\" content=\\\"width=device-width, initial-scale=1\\\">\\n        <meta name=\\\"theme-color\\\" content=\\\"#ffffff\\\">\\n\\n        <link rel=\\\"icon\\\" href=\\\"favicon-de23e50b.svg\\\">\\n        <link rel=\\\"shortcut icon\\\" href=\\\"favicon-8114d1fc.png\\\">\\n        <link rel=\\\"stylesheet\\\" href=\\\"css/variables-3865ffda.css\\\">\\n        <link rel=\\\"stylesheet\\\" href=\\\"css/general-4c35105a.css\\\">\\n        <link rel=\\\"stylesheet\\\" href=\\\"css/chrome-c0e702bf.css\\\">\\n        <link rel=\\\"stylesheet\\\" hr"
+    },
+    {
+      "name": "crawl_website_docs",
+      "tool": "crawl_website",
+      "arguments": {
+        "url": "https://doc.rust-lang.org/book/",
+        "max_depth": 1,
+        "max_pages": 3,
+        "max_concurrent": 2,
+        "same_domain_only": true,
+        "max_chars_per_page": 3000
+      },
+      "http_status": 200,
+      "latency_sec": 1.268,
+      "transport_error": null,
+      "is_error": false,
+      "content_preview": "{\n  \"start_url\": \"https://doc.rust-lang.org/book/\",\n  \"pages_crawled\": 3,\n  \"pages_failed\": 0,\n  \"max_depth_reached\": 1,\n  \"total_duration_ms\": 1264,\n  \"unique_domains\": [\n    \"doc.rust-lang.org\"\n  ],\n  \"results\": [\n    {\n      \"url\": \"https://doc.rust-lang.org/book/\",\n      \"depth\": 0,\n      \"success\": true,\n      \"title\": \"The Rust Programming Language - The Rust Programming Language\",\n      \"word_count\": 145,\n      \"links_found\": 6,\n      \"content_preview\": \"[The Rust Programming Language](#the-rust-programming-language) ========== *by Steve Klabnik, Carol Nichols, and Chris Krycho, with contributions from the Rust Community* This version of the text assumes you’re using Rust 1.90.0 (released 2025-09-18) or later with `edition = \\\"2024\\\"` in the *Cargo.toml* file of all projects to configure them to use Rust 2024 Edition idioms. See the [“Installation” section of Chapter 1](ch01-01-installation.html) for instructions on installing or updating Rust, and see [Appendix E](appendix-05-editions.html) for information on editions. The HTML format is available online at[https://doc.rust-lang.org/stable/book/](https://doc.rust-lang.org/stable/book/)and offline with installations of Rust "
+    },
+    {
+      "name": "extract_structured_schema",
+      "tool": "extract_structured",
+      "arguments": {
+        "url": "https://doc.rust-lang.org/book/ch01-02-hello-world.html",
+        "schema": [
+          {
+            "name": "language_name",
+            "description": "Programming language name",
+            "field_type": "string"
+          },
+          {
+            "name": "main_command",
+            "description": "Main command shown in the page",
+            "field_type": "string"
+          },
+          {
+            "name": "code_snippets",
+            "description": "Notable code examples",
+            "field_type": "array"
+          }
+        ],
+        "prompt": "Extract the key learning elements for beginners.",
+        "max_chars": 6000
+      },
+      "http_status": 200,
+      "latency_sec": 0.022,
+      "transport_error": null,
+      "is_error": false,
+      "content_preview": "{\n  \"url\": \"https://doc.rust-lang.org/book/ch01-02-hello-world.html\",\n  \"title\": \"Hello, World! - The Rust Programming Language\",\n  \"extracted_data\": {\n    \"_title\": \"Hello, World! - The Rust Programming Language\",\n    \"_url\": \"https://doc.rust-lang.org/book/ch01-02-hello-world.html\",\n    \"_word_count\": 1162,\n    \"code_snippets\": [\n      {\n        \"code\": \"Hello, world!\",\n        \"language\": null\n      },\n      {\n        \"code\": \"rust-analyzer\",\n        \"language\": null\n      },\n      {\n        \"code\": \"$ mkdir ~/projects\\n$ cd ~/projects\\n$ mkdir hello_world\\n$ cd hello_world\\n\",\n        \"language\": null\n      },\n      {\n        \"code\": \"$ mkdir ~/projects\\n$ cd ~/projects\\n$ mkdir hello_world\\n$ cd hello_world\\n\",\n        \"language\": \"console\"\n      },\n      {\n        \"code\": \"> mkdir \\\"%USERPROFILE%\\\\projects\\\"\\n> cd /d \\\"%USERPROFILE%\\\\projects\\\"\\n> mkdir hello_world\\n> cd hello_world\\n\",\n        \"language\": null\n      },\n      {\n        \"code\": \"> mkdir \\\"%USERPROFILE%\\\\projects\\\"\\n> cd /d \\\"%USERPROFILE%\\\\projects\\\"\\n> mkdir hello_world\\n> cd hello_world\\n\",\n        \"language\": \"cmd\"\n      },\n      {\n        \"code\": \"fn main() {\\n    println!(\\\"Hello, world!\\\");\\n}\",\n        "
+    },
+    {
+      "name": "research_history_semantic",
+      "tool": "research_history",
+      "arguments": {
+        "query": "rust docs hello world",
+        "entry_type": "scrape",
+        "limit": 5,
+        "threshold": 0.5
+      },
+      "http_status": 200,
+      "latency_sec": 0.02,
+      "transport_error": null,
+      "is_error": false,
+      "content_preview": "{\n  \"query\": \"rust docs hello world\",\n  \"results\": [\n    {\n      \"domain\": \"doc.rust-lang.org\",\n      \"entry_type\": \"Scrape\",\n      \"match_quality\": \"High Match\",\n      \"query\": \"https://doc.rust-lang.org/book/ch01-02-hello-world.html\",\n      \"similarity_score\": 0.7629153728485107,\n      \"summary\": \"Scraped: Hello, World! - The Rust Programming Language - 1162 words, 25 code blocks\",\n      \"timestamp\": \"2026-02-12T05:53:11.474683035+00:00\"\n    },\n    {\n      \"domain\": \"doc.rust-lang.org\",\n      \"entry_type\": \"Scrape\",\n      \"match_quality\": \"High Match\",\n      \"query\": \"https://doc.rust-lang.org/book/ch01-02-hello-world.html\",\n      \"similarity_score\": 0.7629153728485107,\n      \"summary\": \"Scraped: Hello, World! - The Rust Programming Language - 1162 words, 25 code blocks\",\n      \"timestamp\": \"2026-02-12T03:41:09.952870322+00:00\"\n    },\n    {\n      \"domain\": \"doc.rust-lang.org\",\n      \"entry_type\": \"Scrape\",\n      \"match_quality\": \"High Match\",\n      \"query\": \"https://doc.rust-lang.org/book/ch01-02-hello-world.html\",\n      \"similarity_score\": 0.7629153728485107,\n      \"summary\": \"Scraped: Hello, World! - The Rust Programming Language - 1162 words, 25 code blocks\",\n      \"timestamp\""
+    },
+    {
+      "name": "proxy_manager_list",
+      "tool": "proxy_manager",
+      "arguments": {
+        "action": "list",
+        "limit": 5,
+        "show_proxy_type": true
+      },
+      "http_status": 200,
+      "latency_sec": 0.003,
+      "transport_error": null,
+      "is_error": false,
+      "content_preview": "{\n  \"action\": \"list\",\n  \"ip_list_path\": \"/home/appuser/ip.txt\",\n  \"limit\": 5,\n  \"proxies\": [\n    {\n      \"proxy\": \"http://43.134.238.25:443\",\n      \"proxy_type\": \"http\"\n    },\n    {\n      \"proxy\": \"http://103.174.122.232:8080\",\n      \"proxy_type\": \"http\"\n    },\n    {\n      \"proxy\": \"http://173.245.49.48:80\",\n      \"proxy_type\": \"http\"\n    },\n    {\n      \"proxy\": \"http://211.171.114.154:3128\",\n      \"proxy_type\": \"http\"\n    },\n    {\n      \"proxy\": \"http://104.143.226.40:5643\",\n      \"proxy_type\": \"http\"\n    }\n  ],\n  \"proxy_type\": null,\n  \"random\": false,\n  \"returned\": 5,\n  \"show_proxy_type\": true,\n  \"total\": 5\n}"
+    },
+    {
+      "name": "proxy_manager_status",
+      "tool": "proxy_manager",
+      "arguments": {
+        "action": "status"
+      },
+      "http_status": 200,
+      "latency_sec": 0.002,
+      "transport_error": null,
+      "is_error": false,
+      "content_preview": "Proxy Status:\n{\n  \"best_proxy\": null,\n  \"current_ip\": null,\n  \"current_proxy\": \"http://43.134.238.25:443\",\n  \"enabled_proxies\": 5,\n  \"total_proxies\": 5\n}"
+    },
+    {
+      "name": "proxy_manager_switch",
+      "tool": "proxy_manager",
+      "arguments": {
+        "action": "switch",
+        "force_new": false
+      },
+      "http_status": 200,
+      "latency_sec": 0.001,
+      "transport_error": null,
+      "is_error": false,
+      "content_preview": "Using sticky session proxy (still valid): http://43.134.238.25:443"
+    },
+    {
+      "name": "proxy_manager_test",
+      "tool": "proxy_manager",
+      "arguments": {
+        "action": "test",
+        "proxy_url": "http://43.134.238.25:443",
+        "target_url": "https://httpbin.org/ip"
+      },
+      "http_status": 200,
+      "latency_sec": 0.035,
+      "transport_error": null,
+      "is_error": true,
+      "content_preview": "❌ Proxy connection failed: Proxy connection test failed: error sending request for url (https://httpbin.org/ip)\n\nThis proxy may be offline or blocked. Try another proxy."
+    },
+    {
+      "name": "proxy_manager_grab_sample",
+      "tool": "proxy_manager",
+      "arguments": {
+        "action": "grab",
+        "limit": 3,
+        "proxy_type": "http",
+        "store_ip_txt": false,
+        "clear_ip_txt": false,
+        "append": false
+      },
+      "http_status": 200,
+      "latency_sec": 0.305,
+      "transport_error": null,
+      "is_error": false,
+      "content_preview": "{\n  \"action\": \"grab\",\n  \"append\": false,\n  \"cleared_ip_txt\": false,\n  \"ip_list_path\": \"/home/appuser/ip.txt\",\n  \"proxies\": [\n    {\n      \"proxy\": \"http://41.220.22.7:80\",\n      \"proxy_type\": \"http\"\n    },\n    {\n      \"proxy\": \"http://124.217.66.76:8082\",\n      \"proxy_type\": \"http\"\n    },\n    {\n      \"proxy\": \"http://51.250.108.153:1080\",\n      \"proxy_type\": \"http\"\n    }\n  ],\n  \"proxy_type\": \"http\",\n  \"returned\": 3,\n  \"source_path\": \"/home/appuser/proxy_source.json\",\n  \"stored\": 0,\n  \"total_fetched\": 2562,\n  \"warnings\": []\n}"
+    }
+  ]
+}

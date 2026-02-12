@@ -1,16 +1,18 @@
 # Build stage
-FROM rustlang/rust:nightly-bookworm AS builder
+FROM rust:bookworm AS builder
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # Copy manifests from mcp-server directory
 COPY mcp-server/Cargo.toml ./
+COPY mcp-server/Cargo.lock ./
 
 # Create dummy main to cache dependencies
 RUN mkdir -p src/bin && echo "fn main() {}" > src/main.rs && echo "fn main() {}" > src/bin/mcp-stdio.rs
@@ -37,6 +39,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app user and cache directories
@@ -45,11 +48,11 @@ RUN useradd -r -s /bin/false appuser && \
     chown -R appuser:appuser /home/appuser
 
 # Copy binaries from builder stage
-COPY --from=builder /app/target/release/mcp-server /usr/local/bin/mcp-server
+COPY --from=builder /app/target/release/search-scrape /usr/local/bin/search-scrape
 COPY --from=builder /app/target/release/search-scrape-mcp /usr/local/bin/search-scrape-mcp
 
 # Change ownership
-RUN chown appuser:appuser /usr/local/bin/mcp-server /usr/local/bin/search-scrape-mcp
+RUN chown appuser:appuser /usr/local/bin/search-scrape /usr/local/bin/search-scrape-mcp
 
 # Switch to app user
 USER appuser
@@ -64,4 +67,7 @@ ENV FASTEMBED_CACHE_DIR=/home/appuser/.cache/fastembed
 ENV HF_HOME=/home/appuser/.cache/huggingface
 
 # Start the application
-CMD ["mcp-server"]
+CMD ["search-scrape"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -fsS http://localhost:5000/health || exit 1

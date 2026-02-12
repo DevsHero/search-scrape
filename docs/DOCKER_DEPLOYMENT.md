@@ -4,7 +4,7 @@
 
 ### Build Docker Image
 ```bash
-cd mcp-server
+cd search-scrape
 docker build -t search-scrape-mcp:latest .
 ```
 
@@ -30,7 +30,7 @@ docker run --rm -it \
 docker-compose up -d
 
 # Check logs
-docker-compose logs mcp-server
+docker-compose logs search-scrape
 
 # Stop all services
 docker-compose down
