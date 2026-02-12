@@ -15,6 +15,7 @@ Search-Scrape is built for AI agent workflows that need:
 - Fast content extraction and website crawling
 - Structured data extraction from messy pages
 - Memory-aware research history with semantic recall
+- Robust anti-bot & JS-heavy site support (Browserless stealth, Playwright rendering, proxy rotation)
 - MCP-native usage over stdio and HTTP
 
 If you want something you can run inside your own infra (Docker) and wire directly into Cursor/Claude via MCP, this repo is the “batteries included” baseline.
@@ -68,6 +69,28 @@ Code layout (after refactor):
 - `mcp-server/src/nlp` — query rewriting + rerank
 - `mcp-server/src/mcp` — HTTP/stdio transports + per-tool handlers + tool catalog
 - `mcp-server/src/scraping` — RustScraper and its internals
+
+## Anti-bot & JS-heavy site support
+
+If you’re evaluating paid scraping stacks, note: Search-Scrape includes the same practical building blocks—self-hosted and customizable.
+
+- **Browserless Chromium (optional, Docker)** — JS-heavy rendering with stealth defaults
+  - Included in the default stack and configurable via `BROWSERLESS_URL` and `BROWSERLESS_TOKEN`.
+  - Supports session tokens, prebooted Chrome, and ad-blocking for more stable runs.
+- **Playwright rendering & marker cleanup**
+  - Use the Playwright-based MCP tool for interactive rendering; includes JS marker cleanup (e.g., remove `window.__playwright`) to reduce detection signals.
+- **Stealth fingerprinting**
+  - Rotating user-agents, `sec-ch-ua` profiles, and stealth headers tuned for Browserless Chrome.
+- **Human-like pacing & adaptive delays**
+  - Jittered request delays (`SCRAPE_DELAY_PRESET`, `SCRAPE_DELAY_MIN_MS`, `SCRAPE_DELAY_MAX_MS`) and boss-domain post-load delay to mimic human patterns.
+- **Proxy-driven anti-bot bypass (high-security sites)**
+  - `proxy_manager` supports `grab`, `list`, `status`, `switch`, and `test` to maintain healthy proxy pools.
+  - Supports multiple schemes (`http`, `https`, `socks5`) and per-request proxy selection/rotation.
+  - Health checks and automatic switch logic help avoid blocked IPs.
+  - For heavily protected targets, we recommend premium residential/ISP proxies combined with Browserless/Playwright rendering and stealth headers.
+  - Example: use the `proxy_manager` MCP action or run a local test: `python3 scripts/proxy_manager.py test --proxy http://1.2.3.4:8080`.
+- **Combinable strategies**
+  - Mix Browserless rendering, Playwright interactions, stealth headers, pacing, and proxy rotation to maximize success on protected targets.
 
 ## Quick start (Docker)
 
