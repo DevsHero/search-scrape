@@ -1,7 +1,7 @@
 
 # Search-Scrape MCP
 
-Self-hosted MCP server for web search, scraping, crawling, structured extraction, and optional research memory.
+Self-hosted Stealth Scraping & Federated Search for AI Agents. A 100% private, free alternative to Firecrawl, Jina Reader, and Tavily. Featuring Universal Anti-bot Bypass + Semantic Research Memory, Copy-Paste setup
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-async-orange.svg)](mcp-server/Cargo.toml)
