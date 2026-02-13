@@ -34,10 +34,21 @@ RUN rm -rf src
 # - Anti-bot protection with stealth headers (antibot.rs)
 COPY mcp-server/src/ ./src/
 
+# Force source mtimes forward to avoid stale fingerprint reuse from dummy bootstrap build
+RUN find src -type f -exec touch {} +
+
+# Ensure dummy bootstrap binaries cannot leak into the runtime image
+RUN rm -f /app/target/release/shadowcrawl /app/target/release/shadowcrawl-mcp
+
 # Build application (cache registry & git)
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo build --release --locked --bin shadowcrawl --bin shadowcrawl-mcp
+
+# Guardrail: fail build if binaries are suspiciously small (dummy build output)
+RUN test -x /app/target/release/shadowcrawl && test -x /app/target/release/shadowcrawl-mcp && \
+    test "$(stat -c%s /app/target/release/shadowcrawl)" -gt 5000000 && \
+    test "$(stat -c%s /app/target/release/shadowcrawl-mcp)" -gt 5000000
 
 # Strip binaries to reduce size
 RUN strip /app/target/release/shadowcrawl /app/target/release/shadowcrawl-mcp || true
