@@ -31,3 +31,7 @@ docs/stdio_mcp_proxy_strict_test.py
 docs/stdio_probe.py
 docs/local_stdio_test.py
 advice.txt
+.smithery
+server.json
+smithery.config-schema.json
+smithery.yaml
