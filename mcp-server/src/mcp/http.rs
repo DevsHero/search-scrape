@@ -16,6 +16,8 @@ pub struct McpTool {
     pub name: String,
     pub description: String,
     pub input_schema: serde_json::Value,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub icons: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -49,6 +51,7 @@ pub async fn list_tools() -> Json<McpToolsResponse> {
             name: tool.name.to_string(),
             description: tool.description.to_string(),
             input_schema: tool.input_schema,
+            icons: tool.icons.into_iter().map(|s| s.to_string()).collect(),
         })
         .collect();
     Json(McpToolsResponse { tools })

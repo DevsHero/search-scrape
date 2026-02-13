@@ -96,8 +96,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=search-scrape
-          cache-to: type=gha,scope=search-scrape,mode=max
+          cache-from: type=gha,scope=shadowcrawl
+          cache-to: type=gha,scope=shadowcrawl,mode=max
           platforms: ${{ steps.platforms.outputs.value }}
           provenance: false
 
@@ -113,7 +113,7 @@ jobs:
             
             ### Changes
             - Build and push Docker image
-            - Search-Scrape MCP Server v${{ steps.version.outputs.version }}
+            - ShadowCrawl MCP Server v${{ steps.version.outputs.version }}
             
             ### Pull the image:
             ```bash

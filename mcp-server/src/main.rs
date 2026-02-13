@@ -11,7 +11,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn, error};
 
-use search_scrape::{search, scrape, types::*, mcp, AppState};
+use shadowcrawl::{search, scrape, types::*, mcp, AppState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -47,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
     // Initialize memory if QDRANT_URL is set
     if let Ok(qdrant_url) = env::var("QDRANT_URL") {
         info!("Initializing memory with Qdrant at: {}", qdrant_url);
-        match search_scrape::history::MemoryManager::new(&qdrant_url).await {
+        match shadowcrawl::history::MemoryManager::new(&qdrant_url).await {
             Ok(memory) => {
                 state = state.with_memory(Arc::new(memory));
                 info!("Memory initialized successfully");
@@ -65,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
 
     if tokio::fs::metadata(&ip_list_path).await.is_ok() {
         info!("Loading proxy manager from IP list: {}", ip_list_path);
-        match search_scrape::proxy_manager::ProxyManager::new(&ip_list_path).await {
+        match shadowcrawl::proxy_manager::ProxyManager::new(&ip_list_path).await {
             Ok(proxy_manager) => {
                 let status = proxy_manager.get_status().await?;
                 state = state.with_proxy_manager(Arc::new(proxy_manager));
@@ -108,7 +108,7 @@ async fn main() -> anyhow::Result<()> {
 async fn health_check() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "status": "healthy",
-        "service": "search-scrape",
+        "service": "shadowcrawl",
         "version": env!("CARGO_PKG_VERSION")
     }))
 }

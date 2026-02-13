@@ -1,4 +1,4 @@
-use search_scrape::stdio_service;
+use shadowcrawl::stdio_service;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -16,7 +16,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        tracing::info!("search-scrape-mcp (MCP stdio server); usage: search-scrape-mcp [--version|--help]");
+        tracing::info!("shadowcrawl-mcp (MCP stdio server); usage: shadowcrawl-mcp [--version|--help]");
         return Ok(());
     }
     stdio_service::run().await

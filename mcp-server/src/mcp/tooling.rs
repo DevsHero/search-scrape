@@ -7,7 +7,10 @@ pub struct ToolCatalogEntry {
     pub title: &'static str,
     pub description: &'static str,
     pub input_schema: Value,
+    pub icons: Vec<&'static str>,
 }
+
+pub const SHADOWCRAWL_ICON: &str = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgICA8ZGVmcz4KICAgICAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImNyYXdsZXJfZ3JhZCIgeDE9IjAlIiB5MT0iMjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICAgICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMWUxZTVhO3N0b3Atb3BhY2l0eToxIiAvPiA8c3RvcCBvZmZzZXQ9IjUwJSIgc3R5bGU9InN0b3AtY29sb3I6IzNhM2E5ZTtzdG9wLW9wYWNpdHk6MSIgLz4gPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMDBmMmZmO3N0b3Atb3BhY2l0eToxIiAvPiA8L2xpbmVhckdyYWRpZW50PgogICAgICAgIAogICAgICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZXllX2dsb3ciIGN4PSI1MCUiIGN5PSI1MCUiIHI9IjUwJSIgZng9IjUwJSIgZnk9IjUwJSI+CiAgICAgICAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZmZmZmY7c3RvcC1vcGFjaXR5OjEiIC8+CiAgICAgICAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3R5bGU9InN0b3AtY29sb3I6IzAwZjJmZjtzdG9wLW9wYWNpdHk6MSIgLz4KICAgICAgICA8L3JhZGlhbEdyYWRpZW50PgoKICAgICAgICA8ZmlsdGVyIGlkPSJzaGFkb3dCbHVyIiB4PSItNTAlIiB5PSItMjAlIiB3aWR0aD0iMjAwJSIgaGVpZ2h0PSIxNTAlIj4KICAgICAgICAgICAgPGZlR2F1c3NpYW5CbHVyIGluPSJTb3VyY2VHcmFwaGljIiBzdGREZXZpYXRpb249IjgiIC8+CiAgICAgICAgPC9maWx0ZXI+CiAgICA8L2RlZnM+CgogICAgPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjU2LCAyNTYpIj4KICAgICAgICA8cGF0aCBkPSJNLTEyMCA0MCBDIC0xNDAgODAsIC04MCAxNjAsIDAgMTgwIEMgODAgMTYwLCAxNDAgODAsIDEyMCA0MCBMIDAgODAgWiIgCiAgICAgICAgICAgICAgZmlsbD0idXJsKCNjcmF3bGVyX2dyYWQpIiAKICAgICAgICAgICAgICBvcGFjaXR5PSIwLjQiIAogICAgICAgICAgICAgIGZpbHRlcj0idXJsKCNzaGFkb3dCbHVyKSIKICAgICAgICAgICAgICB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwLCAtMjApIi8+CgogICAgICAgIDxwYXRoIGQ9Ik0wIC0xODAgTCAxNDAgLTYwIEwgMTAwIDYwIEwgMCAxMjAgTCAtMTAwIDYwIEwgLTE0MCAtNjAgWiIgCiAgICAgICAgICAgICAgZmlsbD0idXJsKCNjcmF3bGVyX2dyYWQpIgogICAgICAgICAgICAgIHN0cm9rZT0iIzAwZjJmZiIKICAgICAgICAgICAgICBzdHJva2Utd2lkdGg9IjQiCiAgICAgICAgICAgICAgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogICAgICAgICAgICAgIAogICAgICAgIDxwYXRoIGQ9Ik0wIC00MCBMIDQwIDAgTCAwIDQwIEwgLTQwIDAgWiIgCiAgICAgICAgICAgICAgZmlsbD0idXJsKCNleWVfZ2xvdykiCiAgICAgICAgICAgICAgZmlsdGVyPSJkcm9wLXNoYWRvdygwIDAgMTBweCAjMDBmMmZmKSIvPgogICAgICAgICAgICAgIAogICAgICAgIDxwYXRoIGQ9Ik0tMTAwIDYwIEwgLTEzMCAxNDAgTCAtOTAgMTIwIE0xMDAgNjAgTCAxMzAgMTQwIEwgOTAgMTIwIiAKICAgICAgICAgICAgICBzdHJva2U9InVybCgjY3Jhd2xlcl9ncmFkKSIgCiAgICAgICAgICAgICAgc3Ryb2tlLXdpZHRoPSIxMiIgCiAgICAgICAgICAgICAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogICAgICAgICAgICAgIGZpbGw9Im5vbmUiLz4KICAgIDwvZz4KICAgIAogICAgPC9zdmc+";
 
 pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
     vec![
@@ -29,6 +32,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                 },
                 "required": ["query"]
             }),
+            icons: vec![SHADOWCRAWL_ICON],
         },
         ToolCatalogEntry {
             name: "search_structured",
@@ -43,6 +47,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                 },
                 "required": ["query"]
             }),
+            icons: vec![SHADOWCRAWL_ICON],
         },
         ToolCatalogEntry {
             name: "scrape_url",
@@ -59,6 +64,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                 },
                 "required": ["url"]
             }),
+            icons: vec![SHADOWCRAWL_ICON],
         },
         ToolCatalogEntry {
             name: "scrape_batch",
@@ -75,6 +81,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                 },
                 "required": ["urls"]
             }),
+            icons: vec![SHADOWCRAWL_ICON],
         },
         ToolCatalogEntry {
             name: "crawl_website",
@@ -95,6 +102,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                 },
                 "required": ["url"]
             }),
+            icons: vec![SHADOWCRAWL_ICON],
         },
         ToolCatalogEntry {
             name: "extract_structured",
@@ -111,6 +119,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                 },
                 "required": ["url"]
             }),
+            icons: vec![SHADOWCRAWL_ICON],
         },
         ToolCatalogEntry {
             name: "research_history",
@@ -126,6 +135,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                 },
                 "required": ["query"]
             }),
+            icons: vec![SHADOWCRAWL_ICON],
         },
         ToolCatalogEntry {
             name: "proxy_manager",
@@ -148,6 +158,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                 },
                 "required": ["action"]
             }),
+            icons: vec![SHADOWCRAWL_ICON],
         },
     ]
 }

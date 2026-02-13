@@ -1,6 +1,6 @@
 # MCP Client Setup (IDE / Apps)
 
-This repo provides an MCP server over **stdio** (recommended) via the `search-scrape-mcp` binary.
+This repo provides an MCP server over **stdio** (recommended) via the `shadowcrawl-mcp` binary.
 
 Most clients support a config that looks like:
 
@@ -22,7 +22,7 @@ docker compose -f docker-compose-local.yml up -d --build
 The stdio server is executed inside the running container:
 
 ```bash
-docker compose -f docker-compose-local.yml exec -i -T search-scrape search-scrape-mcp
+docker compose -f docker-compose-local.yml exec -i -T shadowcrawl shadowcrawl-mcp
 ```
 
 ---
@@ -39,17 +39,17 @@ Example:
 ```json
 {
   "mcpServers": {
-    "search-scrape": {
+    "shadowcrawl": {
       "command": "docker",
       "args": [
         "compose",
         "-f",
-        "/absolute/path/to/search-scrape/docker-compose-local.yml",
+        "/absolute/path/to/shadowcrawl/docker-compose-local.yml",
         "exec",
         "-i",
         "-T",
-        "search-scrape",
-        "search-scrape-mcp"
+        "shadowcrawl",
+        "shadowcrawl-mcp"
       ]
     }
   }
@@ -70,17 +70,17 @@ Example:
 ```json
 {
   "mcpServers": {
-    "search-scrape": {
+    "shadowcrawl": {
       "command": "docker",
       "args": [
         "compose",
         "-f",
-        "/absolute/path/to/search-scrape/docker-compose-local.yml",
+        "/absolute/path/to/shadowcrawl/docker-compose-local.yml",
         "exec",
         "-i",
         "-T",
-        "search-scrape",
-        "search-scrape-mcp"
+        "shadowcrawl",
+        "shadowcrawl-mcp"
       ]
     }
   }
@@ -105,17 +105,17 @@ Example:
 ```json
 {
   "mcpServers": {
-    "search-scrape": {
+    "shadowcrawl": {
       "command": "docker",
       "args": [
         "compose",
         "-f",
-        "/absolute/path/to/search-scrape/docker-compose-local.yml",
+        "/absolute/path/to/shadowcrawl/docker-compose-local.yml",
         "exec",
         "-i",
         "-T",
-        "search-scrape",
-        "search-scrape-mcp"
+        "shadowcrawl",
+        "shadowcrawl-mcp"
       ]
     }
   }
@@ -133,25 +133,25 @@ Continue MCP config is file-based and commonly expects **YAML** MCP server defin
 
 - `.continue/mcpServers/*.yaml`
 
-Create: `.continue/mcpServers/search-scrape.yaml`
+Create: `.continue/mcpServers/shadowcrawl.yaml`
 
 ```yaml
-name: search-scrape
+name: shadowcrawl
 version: 1.0.0
 schema: v1
 
 mcpServers:
-  - name: search-scrape
+  - name: shadowcrawl
     command: docker
     args:
       - compose
       - -f
-      - /absolute/path/to/search-scrape/docker-compose-local.yml
+      - /absolute/path/to/shadowcrawl/docker-compose-local.yml
       - exec
       - -i
       - -T
-      - search-scrape
-      - search-scrape-mcp
+      - shadowcrawl
+      - shadowcrawl-mcp
 ```
 
 Notes:
@@ -163,5 +163,5 @@ Notes:
 
 ## Troubleshooting
 
-- If the client shows “no tools found”, confirm the container is running and `search-scrape-mcp` exists.
+- If the client shows "no tools found", confirm the container is running and `shadowcrawl-mcp` exists.
 - If you use proxies, ensure `ip.txt` is mounted and `IP_LIST_PATH` points to it.

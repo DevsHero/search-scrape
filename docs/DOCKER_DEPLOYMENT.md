@@ -4,8 +4,8 @@
 
 ### Build Docker Image
 ```bash
-cd search-scrape
-docker build -t search-scrape-mcp:latest .
+cd shadowcrawl
+docker build -t shadowcrawl-mcp:latest .
 ```
 
 ### Test the Image
@@ -15,13 +15,13 @@ docker run --rm \
   -e SEARXNG_URL=http://localhost:8888 \
   -e RUST_LOG=info \
   -p 5000:5000 \
-  search-scrape-mcp:latest
+  shadowcrawl-mcp:latest
 
 # Or run MCP stdio server
 docker run --rm -it \
   -e SEARXNG_URL=http://localhost:8888 \
-  search-scrape-mcp:latest \
-  search-scrape-mcp
+  shadowcrawl-mcp:latest \
+  shadowcrawl-mcp
 ```
 
 ### Run with docker-compose
@@ -30,7 +30,7 @@ docker run --rm -it \
 docker-compose up -d
 
 # Check logs
-docker-compose logs search-scrape
+docker-compose logs shadowcrawl
 
 # Stop all services
 docker-compose down
@@ -81,13 +81,13 @@ git push
 Images are published to GitHub Container Registry:
 ```bash
 # Pull the latest image
-docker pull ghcr.io/YOUR_USERNAME/search-scrape:latest
+docker pull ghcr.io/YOUR_USERNAME/shadowcrawl:latest
 
 # Pull specific version by commit SHA
-docker pull ghcr.io/YOUR_USERNAME/search-scrape:main-abc1234
+docker pull ghcr.io/YOUR_USERNAME/shadowcrawl:main-abc1234
 
 # Pull specific branch
-docker pull ghcr.io/YOUR_USERNAME/search-scrape:main
+docker pull ghcr.io/YOUR_USERNAME/shadowcrawl:main
 ```
 
 **Note:** Replace `YOUR_USERNAME` with your GitHub username (lowercase).
@@ -111,7 +111,7 @@ docker run -e SEARXNG_URL=http://searxng:8080 \
            -e QDRANT_URL=http://qdrant:6334 \
            -e RUST_LOG=info \
            -e MAX_CONTENT_CHARS=10000 \
-           ghcr.io/YOUR_USERNAME/search-scrape:latest
+           ghcr.io/YOUR_USERNAME/shadowcrawl:latest
 ```
 
 ## Troubleshooting
@@ -161,8 +161,8 @@ git push origin v1.0.0
 ### Rollback Strategy
 ```bash
 # Pull and run specific version
-docker pull ghcr.io/YOUR_USERNAME/search-scrape:main-abc1234
-docker run ghcr.io/YOUR_USERNAME/search-scrape:main-abc1234
+docker pull ghcr.io/YOUR_USERNAME/shadowcrawl:main-abc1234
+docker run ghcr.io/YOUR_USERNAME/shadowcrawl:main-abc1234
 ```
 
 ## Security Notes

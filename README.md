@@ -1,5 +1,8 @@
-
-# Search-Scrape MCP
+<div align="center">
+    <img src="media/logo.svg" alt="ShadowCrawl Logo" width="200">
+    <h1>ShadowCrawl MCP</h1>
+    <p><b>The Sovereign Stealth Intelligence Engine for AI Agents</b></p>
+</div>
 
 Self-hosted MCP server for web search, scraping, crawling, structured extraction, and optional research memory.
 
@@ -8,9 +11,8 @@ Self-hosted MCP server for web search, scraping, crawling, structured extraction
 [![MCP](https://img.shields.io/badge/protocol-MCP-blue.svg)](mcp-server/src/mcp/stdio.rs)
 [![Status](https://img.shields.io/badge/status-v1.0.0-green.svg)](docs/RELEASE_READINESS_2026-02-12.json)
 [![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=ff69b4&style=flat-square)](https://github.com/sponsors/DevsHero)
-## Why this project
 
-Search-Scrape is built for AI agent workflows that need:
+ShadowCrawl is built for AI agent workflows that need:
 - Reliable multi-source web search
 - Fast content extraction and website crawling
 - Structured data extraction from messy pages
@@ -43,14 +45,14 @@ The platform currently exposes 8 MCP tools:
 
 Tip: all tools are available via both transports:
 - HTTP: `GET /mcp/tools`, `POST /mcp/call`
-- MCP stdio: `search-scrape-mcp`
+- MCP stdio: `shadowcrawl-mcp`
 
 ## Architecture
 
 ```mermaid
 graph TD
-   A[MCP Client / Agent] -->|stdio| B[search-scrape-mcp]
-   A -->|HTTP| C[search-scrape HTTP]
+   A[MCP Client / Agent] -->|stdio| B[shadowcrawl-mcp]
+   A -->|HTTP| C[shadowcrawl HTTP]
    B --> D[MCP Tool Handlers]
    C --> D
    D --> E[tools module - search, scrape, batch, crawl, extract]
@@ -72,7 +74,7 @@ Code layout (after refactor):
 
 ## Anti-bot & JS-heavy site support
 
-If you’re evaluating paid scraping stacks, note: Search-Scrape includes the same practical building blocks—self-hosted and customizable.
+If you're evaluating paid scraping stacks, note: ShadowCrawl includes the same practical building blocks—self-hosted and customizable.
 
 - **Browserless Chromium (optional, Docker)** — JS-heavy rendering with stealth defaults
   - Included in the default stack and configurable via `BROWSERLESS_URL` and `BROWSERLESS_TOKEN`.
@@ -125,7 +127,7 @@ Run MCP stdio:
 
 ```bash
 cd mcp-server
-cargo run --release --bin search-scrape-mcp
+cargo run --release --bin shadowcrawl-mcp
 ```
 
 ## Proxy configuration (ip.txt + proxy_source.json)
@@ -166,17 +168,17 @@ Use this in your VS Code/Cursor `mcp.json`:
 ```json
 {
    "servers": {
-      "search-scrape": {
+      "shadowcrawl": {
          "command": "docker",
          "args": [
             "compose",
             "-f",
-            "/absolute/path/to/search-scrape/docker-compose-local.yml",
+            "/absolute/path/to/shadowcrawl/docker-compose-local.yml",
             "exec",
             "-i",
             "-T",
-            "search-scrape",
-            "search-scrape-mcp"
+            "shadowcrawl",
+            "shadowcrawl-mcp"
          ],
          "type": "stdio"
       }
@@ -230,7 +232,7 @@ NOTE: `ip.txt` is tracked in the repo root and is the canonical proxy list.
 
 This project is meant to be self-hosted infrastructure. A rough mental model:
 
-| If you use… | You may prefer Search-Scrape when… |
+| If you use… | You may prefer ShadowCrawl when… |
 | --- | --- |
 | Firecrawl / other hosted scraping APIs | You want local control (cost, privacy, networking), MCP-native integration, and can run Docker. |
 | Jina Reader / “reader mode” services | You need more than reader conversion: crawling, batch mode, structured extraction, and a single MCP tool surface. |
@@ -263,7 +265,7 @@ Operational checklist document: [docs/GA_REFACTOR_READINESS_2026-02-12.md](docs/
 Built with ❤️ by a **Solo Developer** for the open-source community.
 
 I'm actively maintaining this project to provide the best free search & scraping infrastructure for AI agents.
-- **Found a bug?** I'm happy to fix it! Please [Open an Issue](https://github.com/DevsHero/search-scrape/issues).
+- **Found a bug?** I'm happy to fix it! Please [Open an Issue](https://github.com/DevsHero/shadowcrawl/issues).
 - **Want a new feature?** Feature requests are welcome! Let me know what you need.
 - **Love the project?** Start the repo ⭐ or buy me a coffee to support development!
 

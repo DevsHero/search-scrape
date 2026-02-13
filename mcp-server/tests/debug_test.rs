@@ -1,5 +1,5 @@
 /// Debug Test: Deep dive into extraction failures
-use search_scrape::rust_scraper::RustScraper;
+use shadowcrawl::rust_scraper::RustScraper;
 
 #[tokio::test]
 async fn debug_wikipedia_extraction() {

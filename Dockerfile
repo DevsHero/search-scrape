@@ -23,7 +23,7 @@ RUN mkdir -p src/bin && echo "fn main() {}" > src/main.rs && echo "fn main() {}"
 # Build dependencies (cache registry & git, not target)
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --locked --bin search-scrape --bin search-scrape-mcp
+    cargo build --release --locked --bin shadowcrawl --bin shadowcrawl-mcp
 RUN rm -rf src
 
 # Copy source code from mcp-server directory (including subdirectories)
@@ -37,10 +37,10 @@ COPY mcp-server/src/ ./src/
 # Build application (cache registry & git)
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --locked --bin search-scrape --bin search-scrape-mcp
+    cargo build --release --locked --bin shadowcrawl --bin shadowcrawl-mcp
 
 # Strip binaries to reduce size
-RUN strip /app/target/release/search-scrape /app/target/release/search-scrape-mcp || true
+RUN strip /app/target/release/shadowcrawl /app/target/release/shadowcrawl-mcp || true
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -58,11 +58,11 @@ RUN useradd -r -s /bin/false appuser && \
     chown -R appuser:appuser /home/appuser
 
 # Copy binaries from builder stage
-COPY --from=builder /app/target/release/search-scrape /usr/local/bin/search-scrape
-COPY --from=builder /app/target/release/search-scrape-mcp /usr/local/bin/search-scrape-mcp
+COPY --from=builder /app/target/release/shadowcrawl /usr/local/bin/shadowcrawl
+COPY --from=builder /app/target/release/shadowcrawl-mcp /usr/local/bin/shadowcrawl-mcp
 
 # Change ownership
-RUN chown appuser:appuser /usr/local/bin/search-scrape /usr/local/bin/search-scrape-mcp
+RUN chown appuser:appuser /usr/local/bin/shadowcrawl /usr/local/bin/shadowcrawl-mcp
 
 # Switch to app user
 USER appuser
@@ -77,7 +77,7 @@ ENV FASTEMBED_CACHE_DIR=/home/appuser/.cache/fastembed
 ENV HF_HOME=/home/appuser/.cache/huggingface
 
 # Start the application
-CMD ["search-scrape"]
+CMD ["shadowcrawl"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -fsS http://localhost:5000/health || exit 1

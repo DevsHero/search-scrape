@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Research History feature provides **100% open-source semantic memory** for the search-scrape MCP server. It automatically tracks all searches and scrapes, enabling:
+The Research History feature provides **100% open-source semantic memory** for the ShadowCrawl MCP server. It automatically tracks all searches and scrapes, enabling:
 
 - 🔍 **Semantic Search**: Find related research using natural language queries
 - 🔄 **Context Continuity**: Remember research across sessions
@@ -56,12 +56,12 @@ Set the `QDRANT_URL` environment variable:
 # For MCP stdio server
 SEARXNG_URL=http://localhost:8888 \
 QDRANT_URL=http://localhost:6333 \
-./target/release/search-scrape-mcp
+./target/release/shadowcrawl-mcp
 
 # For HTTP server
 SEARXNG_URL=http://localhost:8888 \
 QDRANT_URL=http://localhost:6333 \
-./target/release/search-scrape
+./target/release/shadowcrawl
 ```
 
 ### 3. Verify Setup

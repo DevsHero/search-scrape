@@ -110,7 +110,7 @@ for case_name, payload in CASES:
         }
     )
 
-out_path = Path("/Users/hero/Documents/GitHub/search-scrape/docs/RELEASE_READINESS_2026-02-12.json")
+out_path = Path("/Users/hero/Documents/GitHub/shadowcrawl/docs/RELEASE_READINESS_2026-02-12.json")
 out_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
 print(str(out_path))
 print(f"cases={len(result['cases'])}")

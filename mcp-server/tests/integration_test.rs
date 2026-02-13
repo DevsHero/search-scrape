@@ -1,6 +1,6 @@
 /// Integration Tests: Self-Evolving SDET Suite
 /// Tests diverse web patterns to identify extraction failures
-use search_scrape::rust_scraper::RustScraper;
+use shadowcrawl::rust_scraper::RustScraper;
 
 // Initialize logging for tests
 fn init_logger() {

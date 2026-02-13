@@ -4044,43 +4044,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "search-scrape"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "axum 0.8.8",
- "backoff",
- "chromiumoxide",
- "chrono",
- "fastembed",
- "futures",
- "html2md",
- "moka",
- "percent-encoding",
- "qdrant-client",
- "rand 0.10.0",
- "readability",
- "regex",
- "reqwest 0.13.2",
- "rmcp",
- "schemars",
- "scraper",
- "select",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tower 0.5.3",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
- "whatlang",
-]
-
-[[package]]
 name = "security-framework"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4258,6 +4221,43 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
  "digest",
+]
+
+[[package]]
+name = "shadowcrawl"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "axum 0.8.8",
+ "backoff",
+ "chromiumoxide",
+ "chrono",
+ "fastembed",
+ "futures",
+ "html2md",
+ "moka",
+ "percent-encoding",
+ "qdrant-client",
+ "rand 0.10.0",
+ "readability",
+ "regex",
+ "reqwest 0.13.2",
+ "rmcp",
+ "schemars",
+ "scraper",
+ "select",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-test",
+ "tower 0.5.3",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "whatlang",
 ]
 
 [[package]]

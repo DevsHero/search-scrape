@@ -48,12 +48,12 @@ services:
     restart: unless-stopped
     mem_limit: 2g
     shm_size: 2gb
-  search-scrape:
+  shadowcrawl:
     build:
       context: .
       dockerfile: Dockerfile
-    image: search-scrape-mcp:latest
-    container_name: search-scrape-mcp
+    image: shadowcrawl-mcp:latest
+    container_name: shadowcrawl-mcp
     ports:
       - "5001:5000"
     environment:
@@ -111,8 +111,8 @@ volumes:
   # Note: MCP server runs natively for better performance and compatibility
   # To run the MCP server natively:
   # 1. Build: cargo build --release
-  # 2. HTTP server: SEARXNG_URL=http://localhost:8888 ./target/release/search-scrape
+  # 2. HTTP server: SEARXNG_URL=http://localhost:8888 ./target/release/shadowcrawl
   # 3. MCP stdio server (with history): 
-  #    SEARXNG_URL=http://localhost:8888 QDRANT_URL=http://localhost:6333 ./target/release/search-scrape-mcp
+  #    SEARXNG_URL=http://localhost:8888 QDRANT_URL=http://localhost:6333 ./target/release/shadowcrawl-mcp
   # 4. MCP stdio server (without history):
-  #    SEARXNG_URL=http://localhost:8888 ./target/release/search-scrape-mcp
+  #    SEARXNG_URL=http://localhost:8888 ./target/release/shadowcrawl-mcp

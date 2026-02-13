@@ -1,14 +1,18 @@
 [package]
-name = "search-scrape"
+name = "shadowcrawl"
 version = "1.0.0"
 edition = "2021"
 
+[lib]
+name = "shadowcrawl"
+path = "src/lib.rs"
+
 [[bin]]
-name = "search-scrape"
+name = "shadowcrawl"
 path = "src/main.rs"
 
 [[bin]]
-name = "search-scrape-mcp"
+name = "shadowcrawl-mcp"
 path = "src/bin/mcp-stdio.rs"
 
 [dependencies]

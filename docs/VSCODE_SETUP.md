@@ -16,8 +16,8 @@ Binary contains:
 ```json
 {
   "mcp.servers": {
-    "search-scrape": {
-      "command": "/Users/hero/Documents/GitHub/search-scrape/search-scrape/target/release/search-scrape-mcp",
+    "shadowcrawl": {
+      "command": "/Users/hero/Documents/GitHub/shadowcrawl/shadowcrawl/target/release/shadowcrawl-mcp",
       "args": [],
       "env": {
         "QDRANT_URL": "http://localhost:6334",
@@ -54,8 +54,8 @@ If using Claude Desktop instead of VS Code:
 ```json
 {
   "mcpServers": {
-    "search-scrape": {
-      "command": "/Users/hero/Documents/GitHub/search-scrape/search-scrape/target/release/search-scrape-mcp",
+    "shadowcrawl": {
+      "command": "/Users/hero/Documents/GitHub/shadowcrawl/shadowcrawl/target/release/shadowcrawl-mcp",
       "env": {
         "QDRANT_URL": "http://localhost:6334",
         "SEARXNG_URL": "http://localhost:8888"
@@ -94,7 +94,7 @@ Search my history for "programming tutorials"
 1. Kill all VS Code processes: `pkill -9 "Visual Studio Code"`
 2. Delete MCP cache (if exists): `rm -rf ~/.vscode/mcp-cache/`
 3. Restart VS Code
-4. Verify binary is correct: `ls -lh search-scrape/target/release/search-scrape-mcp`
+4. Verify binary is correct: `ls -lh shadowcrawl/target/release/shadowcrawl-mcp`
 
 ### "Cannot connect to Qdrant"
 
@@ -144,7 +144,7 @@ The AI should use all 3 tools automatically and show:
 ## Binary Information
 
 ```
-Path: /Users/hero/Documents/GitHub/search-scrape/search-scrape/target/release/search-scrape-mcp
+Path: /Users/hero/Documents/GitHub/shadowcrawl/shadowcrawl/target/release/shadowcrawl-mcp
 Size: ~37MB
 Built: December 28, 2025
 Features: All Phase 1, Phase 2, Priority 1 & 2
@@ -154,7 +154,7 @@ Features: All Phase 1, Phase 2, Priority 1 & 2
 
 ```bash
 # Verify all 3 tools are in binary
-strings search-scrape/target/release/search-scrape-mcp | grep -c "research_history"
+strings shadowcrawl/target/release/shadowcrawl-mcp | grep -c "research_history"
 # Should output: >0 (tool is compiled in)
 ```
 

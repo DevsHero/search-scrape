@@ -1,7 +1,7 @@
 /// Boss Level Integration Tests: The Hard Cases
 /// Tests the most challenging web scraping scenarios through the full AppState pipeline
-use search_scrape::AppState;
-use search_scrape::scrape::scrape_url;
+use shadowcrawl::AppState;
+use shadowcrawl::scrape::scrape_url;
 use std::sync::Arc;
 
 // Initialize logging for tests

@@ -5,7 +5,7 @@
     "status": 200,
     "latency_sec": 0.011,
     "error": null,
-    "body": "{\"service\":\"search-scrape\",\"status\":\"healthy\",\"version\":\"1.0.0\"}"
+    "body": "{\"service\":\"shadowcrawl\",\"status\":\"healthy\",\"version\":\"1.0.0\"}"
   },
   "tools": {
     "status": 200,
