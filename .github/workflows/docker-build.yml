@@ -80,7 +80,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/devshero/shadowcrawl
           tags: |
             type=raw,value=${{ steps.version.outputs.version }}
             type=raw,value=latest,enable={{is_default_branch}}
@@ -109,7 +109,7 @@ jobs:
           name: Release v${{ steps.version.outputs.version }}
           body: |
             ## Docker Image
-            Published to: `ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}`
+            Published to: `ghcr.io/devshero/shadowcrawl:${{ steps.version.outputs.version }}`
             
             ### Changes
             - Build and push Docker image
@@ -117,7 +117,7 @@ jobs:
             
             ### Pull the image:
             ```bash
-            docker pull ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}
+            docker pull ghcr.io/devshero/shadowcrawl:${{ steps.version.outputs.version }}
             ```
           draft: false
           prerelease: false

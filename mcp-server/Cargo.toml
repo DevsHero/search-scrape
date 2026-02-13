@@ -1,7 +1,10 @@
 [package]
 name = "shadowcrawl"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
+description = "The Sovereign Stealth Intelligence Engine for AI Agents - A self-hosted, private alternative to Firecrawl with universal anti-bot bypass and semantic research memory"
+repository = "https://github.com/DevsHero/ShadowCrawl"
+license = "MIT"
 
 [lib]
 name = "shadowcrawl"

@@ -9,7 +9,7 @@ Self-hosted Stealth Scraping & Federated Search for AI Agents. A 100% private, f
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-async-orange.svg)](mcp-server/Cargo.toml)
 [![MCP](https://img.shields.io/badge/protocol-MCP-blue.svg)](mcp-server/src/mcp/stdio.rs)
-[![Status](https://img.shields.io/badge/status-v1.0.0-green.svg)](docs/RELEASE_READINESS_2026-02-12.json)
+[![Status](https://img.shields.io/badge/status-v1.0.1-green.svg)](docs/RELEASE_READINESS_2026-02-12.json)
 [![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=ff69b4&style=flat-square)](https://github.com/sponsors/DevsHero)
 
 ShadowCrawl is built for AI agent workflows that need:
@@ -24,7 +24,7 @@ If you want something you can run inside your own infra (Docker) and wire direct
 
 ## Current release status
 
-- Runtime version: `v1.0.0`
+- Runtime version: `v1.0.1`
 - Release validation: [docs/RELEASE_READINESS_2026-02-12.json](docs/RELEASE_READINESS_2026-02-12.json)
 - Service health endpoint: `GET /health`
 - Tool catalog endpoint: `GET /mcp/tools`
