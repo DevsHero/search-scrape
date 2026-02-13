@@ -17,8 +17,8 @@ WORKDIR /app
 COPY mcp-server/Cargo.toml ./
 COPY mcp-server/Cargo.lock ./
 
-# Create dummy main to cache dependencies
-RUN mkdir -p src/bin && echo "fn main() {}" > src/main.rs && echo "fn main() {}" > src/bin/mcp-stdio.rs
+# Create dummy sources to cache dependencies
+RUN mkdir -p src/bin && echo "pub fn _dummy() {}" > src/lib.rs && echo "fn main() {}" > src/main.rs && echo "fn main() {}" > src/bin/mcp-stdio.rs
 
 # Build dependencies (cache registry & git, not target)
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
