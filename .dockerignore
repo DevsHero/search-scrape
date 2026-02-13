@@ -3,3 +3,13 @@
 !mcp-server/Cargo.toml
 !mcp-server/Cargo.lock
 !mcp-server/src/**
+server.json
+smithery.config-schema.json
+smithery.yaml
+docs
+.github
+.fastembed_cache
+.smithery
+sample-results
+LICENSE
+README.md
