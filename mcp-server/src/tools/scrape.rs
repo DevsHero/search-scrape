@@ -1,5 +1,6 @@
 use crate::types::*;
 use crate::AppState;
+use crate::rust_scraper::QualityMode;
 use anyhow::{anyhow, Result};
 use backoff::future::retry;
 use backoff::ExponentialBackoffBuilder;
@@ -9,13 +10,14 @@ use select::predicate::Predicate;
 use crate::rust_scraper::RustScraper;
 
 pub async fn scrape_url(state: &Arc<AppState>, url: &str) -> Result<ScrapeResponse> {
-    scrape_url_with_options(state, url, false).await
+    scrape_url_with_options(state, url, false, None).await
 }
 
 pub async fn scrape_url_with_options(
     state: &Arc<AppState>,
     url: &str,
     use_proxy: bool,
+    quality_mode: Option<QualityMode>,
 ) -> Result<ScrapeResponse> {
     info!("Scraping URL: {}", url);
     
@@ -59,7 +61,7 @@ pub async fn scrape_url_with_options(
     if cdp_available {
         info!("🚀 CDP available, attempting universal stealth mode");
         
-        let rust_scraper = RustScraper::new();
+        let rust_scraper = RustScraper::new_with_quality_mode(quality_mode.map(|m| m.as_str()));
         let cdp_proxy = if use_proxy {
             if let Some(proxy_manager) = &state.proxy_manager {
                 match proxy_manager.switch_to_best_proxy().await {
@@ -153,7 +155,7 @@ pub async fn scrape_url_with_options(
         }
     }
     
-    let rust_scraper = RustScraper::new();
+    let rust_scraper = RustScraper::new_with_quality_mode(quality_mode.map(|m| m.as_str()));
     let url_owned = url.to_string();
     let mut force_browserless = false;
     let mut forced_proxy: Option<String> = None;

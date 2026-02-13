@@ -5,6 +5,7 @@ use axum::http::StatusCode;
 use axum::response::Json;
 use serde_json::Value;
 use std::sync::Arc;
+use uuid::Uuid;
 
 pub async fn handle(
     state: Arc<AppState>,
@@ -77,8 +78,10 @@ pub async fn handle(
         )
     })?;
 
+    let search_id = Uuid::new_v4().to_string();
+
     let content_text = if results.is_empty() {
-        let mut text = format!("No search results found for query: '{}'\n\n", query);
+        let mut text = format!("Search ID: {}\nNo search results found for query: '{}'\n\n", search_id, query);
 
         if !extras.suggestions.is_empty() {
             text.push_str(&format!("**Suggestions:** {}\n", extras.suggestions.join(", ")));
@@ -94,10 +97,15 @@ pub async fn handle(
         }
         text
     } else {
-        let limited_results = results.iter().take(max_results);
-        let result_count = results.len();
+        let (deduped_indexes, duplicate_removed) =
+            crate::content_quality::dedupe_search_result_indexes(&results, 140);
+        let result_count = deduped_indexes.len();
+        let limited_results = deduped_indexes.iter().take(max_results);
 
-        let mut text = format!("Found {} search results for '{}':", result_count, query);
+        let mut text = format!(
+            "Search ID: {}\nFound {} search results for '{}':",
+            search_id, result_count, query
+        );
         if result_count > max_results {
             text.push_str(&format!(" (showing top {})\n", max_results));
         }
@@ -110,13 +118,34 @@ pub async fn handle(
             }
         }
 
-        for (i, result) in limited_results.enumerate() {
+        for (i, result_index) in limited_results.enumerate() {
+            let result = &results[*result_index];
+            let engine = result.engine.as_deref().unwrap_or("-");
+            let domain = result.domain.as_deref().unwrap_or("-");
+            let source_type = result.source_type.as_deref().unwrap_or("other");
+            let published = result.published_at.as_deref().unwrap_or("-");
+            let score = result
+                .score
+                .map(|s| format!("{:.3}", s))
+                .unwrap_or_else(|| "-".to_string());
             text.push_str(&format!(
-                "{}. **{}**\n   URL: {}\n   Snippet: {}\n\n",
+                "{}. **{}**\n   URL: {}\n   Engine: {} | Domain: {} | Type: {} | Published: {} | Score: {}\n   Snippet: {}\n\n",
                 i + 1,
                 result.title,
                 result.url,
+                engine,
+                domain,
+                source_type,
+                published,
+                score,
                 result.content.chars().take(200).collect::<String>()
+            ));
+        }
+
+        if duplicate_removed > 0 {
+            text.push_str(&format!(
+                "\nℹ️ De-duplicated {} near-identical result(s) to reduce noise/token usage.\n",
+                duplicate_removed
             ));
         }
 

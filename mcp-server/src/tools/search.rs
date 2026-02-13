@@ -269,6 +269,7 @@ pub async fn search_web_with_params(
                 content: result.content,
                 engine: Some(result.engine),
                 score: result.score,
+                published_at: parse_published_date(result.published_date),
                 domain,
                 source_type: Some(source_type),
             });
@@ -285,6 +286,7 @@ pub async fn search_web_with_params(
                     content: result.content,
                     engine: Some(result.engine),
                     score: result.score,
+                    published_at: parse_published_date(result.published_date),
                     domain,
                     source_type: Some(source_type),
                 });
@@ -393,6 +395,28 @@ fn classify_search_result(url_str: &str) -> (Option<String>, String) {
     };
     
     (domain, source_type)
+}
+
+fn parse_published_date(value: Option<serde_json::Value>) -> Option<String> {
+    match value {
+        Some(serde_json::Value::String(s)) if !s.trim().is_empty() => Some(s),
+        Some(serde_json::Value::Number(n)) => Some(n.to_string()),
+        Some(serde_json::Value::Bool(b)) => Some(b.to_string()),
+        Some(serde_json::Value::Object(map)) => {
+            if let Some(serde_json::Value::String(s)) = map.get("date") {
+                if !s.trim().is_empty() {
+                    return Some(s.clone());
+                }
+            }
+            if let Some(serde_json::Value::String(s)) = map.get("published") {
+                if !s.trim().is_empty() {
+                    return Some(s.clone());
+                }
+            }
+            None
+        }
+        _ => None,
+    }
 }
 
 /// PROFESSIONAL UPGRADE: Boost results with query keywords in first 200 chars

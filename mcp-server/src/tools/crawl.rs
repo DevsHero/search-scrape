@@ -1,5 +1,6 @@
 use crate::types::*;
 use crate::AppState;
+use crate::rust_scraper::QualityMode;
 use anyhow::Result;
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
@@ -19,6 +20,7 @@ pub struct CrawlConfig {
     pub include_patterns: Vec<String>,
     pub exclude_patterns: Vec<String>,
     pub max_chars_per_page: usize,
+    pub quality_mode: String,
 }
 
 impl Default for CrawlConfig {
@@ -58,6 +60,7 @@ impl Default for CrawlConfig {
                 ".webp".to_string(),
             ],
             max_chars_per_page: 5000,
+            quality_mode: "balanced".to_string(),
         }
     }
 }
@@ -156,7 +159,15 @@ pub async fn crawl_website(
                     }
 
                     // Scrape the page
-                    match crate::scrape::scrape_url_with_options(&state, &url, use_proxy).await {
+                    let quality_mode = QualityMode::parse_str(&config.quality_mode);
+                    match crate::scrape::scrape_url_with_options(
+                        &state,
+                        &url,
+                        use_proxy,
+                        quality_mode,
+                    )
+                    .await
+                    {
                         Ok(data) => {
                             // Extract domain
                             let domain = Url::parse(&url)

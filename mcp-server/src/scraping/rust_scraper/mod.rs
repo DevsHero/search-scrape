@@ -13,6 +13,7 @@ use anyhow::{anyhow, Result};
 use chrono::Utc;
 use reqwest::Client;
 use scraper::Html;
+use std::collections::HashSet;
 use std::time::Duration;
 use tracing::{info, warn};
 use url::Url;
@@ -20,6 +21,36 @@ use url::Url;
 /// Enhanced Rust-native web scraper with anti-bot protection
 pub struct RustScraper {
     client: Client,
+    quality_mode: QualityMode,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QualityMode {
+    Balanced,
+    Aggressive,
+}
+
+impl QualityMode {
+    pub fn parse_str(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "balanced" => Some(QualityMode::Balanced),
+            "aggressive" => Some(QualityMode::Aggressive),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            QualityMode::Balanced => "balanced",
+            QualityMode::Aggressive => "aggressive",
+        }
+    }
+
+    pub fn from_option(value: Option<&str>) -> Self {
+        value
+            .and_then(Self::parse_str)
+            .unwrap_or(QualityMode::Balanced)
+    }
 }
 
 pub struct PreflightCheck {
@@ -30,13 +61,24 @@ pub struct PreflightCheck {
 
 impl RustScraper {
     pub fn new() -> Self {
+        Self::new_with_quality_mode(None)
+    }
+
+    pub fn new_with_quality_mode(quality_mode: Option<&str>) -> Self {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::limited(10))
             .build()
             .expect("Failed to create HTTP client");
 
-        Self { client }
+        Self {
+            client,
+            quality_mode: QualityMode::from_option(quality_mode),
+        }
+    }
+
+    pub(super) fn is_aggressive_mode(&self) -> bool {
+        matches!(self.quality_mode, QualityMode::Aggressive)
     }
 
     pub async fn preflight_check(&self, url: &str) -> Result<PreflightCheck> {
@@ -138,15 +180,18 @@ impl RustScraper {
 
         // Extract readable content using readability
         let mut clean_content = self.extract_clean_content(&html, &parsed_url);
+        clean_content = self.normalize_markdown_fragments(&clean_content);
         clean_content = self.apply_og_description_fallback(clean_content, &og_description);
-    let word_count = self.count_words(&clean_content);
-    let reading_time_minutes = Some(((word_count as f64 / 200.0).ceil() as u32).max(1));
 
         // Extract structured data
         let headings = self.extract_headings(&document);
         // Smart link extraction: prefer content links over all document links
         let links = self.extract_content_links(&document, &parsed_url);
         let images = self.extract_images(&document, &parsed_url);
+
+        clean_content = self.append_image_context_markdown(clean_content, &images, &title);
+        let word_count = self.count_words(&clean_content);
+        let reading_time_minutes = Some(((word_count as f64 / 200.0).ceil() as u32).max(1));
 
         // Calculate extraction quality score (Priority 1 fix)
         let extraction_score = self.calculate_extraction_score(
@@ -343,23 +388,26 @@ impl RustScraper {
         // Priority order: JSON-LD > Normal extraction (universal)
         let mut clean_content = if let Some(json_content) = json_ld_content {
             info!("Using JSON-LD extraction (universal structured data)");
-            html2md::parse_html(&json_content)
+            self.normalize_markdown_fragments(&html2md::parse_html(&json_content))
         } else {
             self.extract_clean_content(&html, &parsed_url)
         };
         
+        clean_content = self.normalize_markdown_fragments(&clean_content);
         clean_content = self.apply_og_description_fallback(clean_content, &og_description);
-        let word_count = self.count_words(&clean_content);
         let language = self.detect_language(&document, &html);
         let canonical_url = self.extract_canonical(&document, &parsed_url);
         let site_name = self.extract_site_name(&document);
         let author = self.extract_author(&document);
         let published_at = self.extract_published_time(&document);
-        let reading_time_minutes = (word_count as f64 / 200.0).ceil() as usize;
         let code_blocks = self.extract_code_blocks(&document);
         let headings = self.extract_headings(&document);
         let links = self.extract_content_links(&document, &parsed_url);
         let images = self.extract_images(&document, &parsed_url);
+
+        clean_content = self.append_image_context_markdown(clean_content, &images, &title);
+        let word_count = self.count_words(&clean_content);
+        let reading_time_minutes = (word_count as f64 / 200.0).ceil() as usize;
         
         let extraction_score = self.calculate_extraction_score(
             word_count,
@@ -411,6 +459,59 @@ impl RustScraper {
             result.title, result.word_count, extraction_score
         );
         Ok(result)
+    }
+}
+
+impl RustScraper {
+    pub(super) fn append_image_context_markdown(
+        &self,
+        clean_content: String,
+        images: &[Image],
+        page_title: &str,
+    ) -> String {
+        let max_images = std::env::var("MAX_PREVIEW_IMAGE_HINTS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(3)
+            .max(1);
+
+        let mut seen = HashSet::new();
+        let mut image_lines = Vec::new();
+
+        for image in images.iter() {
+            if image.src.trim().is_empty() {
+                continue;
+            }
+            if !seen.insert(image.src.clone()) {
+                continue;
+            }
+
+            let mut label = image.alt.trim().to_string();
+            if label.is_empty() {
+                label = image.title.trim().to_string();
+            }
+            if label.is_empty() {
+                label = if page_title.trim().is_empty() {
+                    "image".to_string()
+                } else {
+                    page_title.trim().to_string()
+                };
+            }
+
+            image_lines.push(format!("![{}]({})", label, image.src));
+            if image_lines.len() >= max_images {
+                break;
+            }
+        }
+
+        if image_lines.is_empty() {
+            return clean_content;
+        }
+
+        let mut out = clean_content;
+        out.push_str("\n\n### Image Context\n");
+        out.push_str(&image_lines.join("\n"));
+        out
     }
 }
 

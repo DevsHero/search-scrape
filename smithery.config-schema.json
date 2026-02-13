@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "RUST_LOG": {
+      "type": "string",
+      "description": "Logging level",
+      "default": "info"
+    }
+  }
+}

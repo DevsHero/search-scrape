@@ -86,6 +86,8 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/", get(health_check))
         .route("/health", get(health_check))
+        .route("/.well-known/mcp/server-card.json", get(server_card))
+        .route("/mcp", post(mcp_rpc_handler))
         .route("/search", post(search_web_handler))
         .route("/search_structured", post(search_structured_handler))
         .route("/scrape", post(scrape_url_handler))
@@ -111,6 +113,71 @@ async fn health_check() -> Json<serde_json::Value> {
         "service": "shadowcrawl",
         "version": env!("CARGO_PKG_VERSION")
     }))
+}
+
+async fn server_card() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "serverInfo": {
+            "name": "ShadowCrawl",
+            "version": env!("CARGO_PKG_VERSION")
+        },
+        "tools": [
+            { "name": "search_web", "description": "Find sources on the public web." },
+            { "name": "search_structured", "description": "Search and scrape top results." },
+            { "name": "scrape_url", "description": "Extract content from a single URL." },
+            { "name": "scrape_batch", "description": "Scrape many URLs in parallel." },
+            { "name": "crawl_website", "description": "Crawl a site recursively." },
+            { "name": "extract_structured", "description": "Extract structured fields from a page." },
+            { "name": "research_history", "description": "Search prior searches/scrapes by meaning." },
+            { "name": "proxy_manager", "description": "Manage proxy lifecycle and testing." }
+        ],
+        "resources": [],
+        "prompts": []
+    }))
+}
+
+async fn mcp_rpc_handler(
+    State(_state): State<Arc<AppState>>,
+    Json(request): Json<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    let id = request.get("id").cloned().unwrap_or(serde_json::Value::Null);
+    let method = request
+        .get("method")
+        .and_then(|m| m.as_str())
+        .unwrap_or_default();
+
+    match method {
+        "initialize" => Json(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "protocolVersion": "2025-11-05",
+                "capabilities": {
+                    "tools": {}
+                },
+                "serverInfo": {
+                    "name": "ShadowCrawl",
+                    "version": env!("CARGO_PKG_VERSION")
+                }
+            }
+        })),
+        "tools/list" => {
+            let tools = mcp::list_tools().await.0;
+            Json(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": tools
+            }))
+        }
+        _ => Json(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": -32601,
+                "message": "Method not found"
+            }
+        })),
+    }
 }
 
 async fn search_web_handler(

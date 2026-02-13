@@ -1,6 +1,7 @@
 use crate::mcp::{McpCallResponse, McpContent};
 use crate::types::ErrorResponse;
 use crate::{scrape, AppState};
+use super::common::parse_quality_mode;
 use axum::http::StatusCode;
 use axum::response::Json;
 use serde_json::Value;
@@ -28,7 +29,9 @@ pub async fn handle(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    match scrape::scrape_url_with_options(&state, url, use_proxy).await {
+    let quality_mode = parse_quality_mode(arguments)?;
+
+    match scrape::scrape_url_with_options(&state, url, use_proxy, Some(quality_mode)).await {
         Ok(mut content) => {
             let max_chars = arguments
                 .get("max_chars")
@@ -37,18 +40,15 @@ pub async fn handle(
                 .or_else(|| std::env::var("MAX_CONTENT_CHARS").ok().and_then(|s| s.parse().ok()))
                 .unwrap_or(10000);
 
-            content.actual_chars = content.clean_content.len();
-            content.max_chars_limit = Some(max_chars);
-            content.truncated = content.clean_content.len() > max_chars;
-
-            if content.truncated {
-                content.warnings.push("content_truncated".to_string());
-            }
+            crate::content_quality::apply_scrape_content_limit(&mut content, max_chars, false);
             if content.word_count < 50 {
-                content.warnings.push("short_content".to_string());
+                crate::content_quality::push_warning_unique(&mut content.warnings, "short_content");
             }
             if content.extraction_score.map(|s| s < 0.4).unwrap_or(false) {
-                content.warnings.push("low_extraction_score".to_string());
+                crate::content_quality::push_warning_unique(
+                    &mut content.warnings,
+                    "low_extraction_score",
+                );
             }
 
             let output_format = arguments
@@ -57,7 +57,21 @@ pub async fn handle(
                 .unwrap_or("text");
 
             if output_format == "json" {
-                let json_str = serde_json::to_string_pretty(&content)
+                let include_raw_html = arguments
+                    .get("include_raw_html")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                let mut json_content = content.clone();
+                if !include_raw_html {
+                    json_content.content.clear();
+                    crate::content_quality::push_warning_unique(
+                        &mut json_content.warnings,
+                        "raw_html_omitted_in_scrape_url_json",
+                    );
+                }
+
+                let json_str = serde_json::to_string_pretty(&json_content)
                     .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
                 return Ok(Json(McpCallResponse {
                     content: vec![McpContent {
@@ -74,7 +88,7 @@ pub async fn handle(
                     • Page is JavaScript-heavy (requires browser execution)\n\
                     • Content is behind authentication/paywall\n\
                     • Site blocks automated access\n\n\
-                    **Suggestion:** For JS-heavy sites, try using the Playwright MCP tool instead."
+                    **Suggestion:** For JS-heavy sites, enable Browserless (`BROWSERLESS_URL`) and retry with `use_proxy: true` if needed."
                         .to_string()
                 } else if content.word_count < 10 {
                     format!(
@@ -95,6 +109,12 @@ pub async fn handle(
                         preview
                     }
                 };
+
+                let image_preview_section = crate::content_quality::build_image_markdown_hints(
+                    &content.images,
+                    &content.title,
+                    3,
+                );
 
                 let headings = content
                     .headings
@@ -130,7 +150,7 @@ pub async fn handle(
                 };
 
                 format!(
-                    "{}\nURL: {}\nCanonical: {}\nWord Count: {} ({}m)\nLanguage: {}\nSite: {}\nAuthor: {}\nPublished: {}\n\nDescription: {}\nOG Image: {}\n\nHeadings:\n{}\n\nLinks: {}  Images: {}\n\nPreview:\n{}{}",
+                    "{}\nURL: {}\nCanonical: {}\nWord Count: {} ({}m)\nLanguage: {}\nSite: {}\nAuthor: {}\nPublished: {}\n\nDescription: {}\nOG Image: {}\n\nHeadings:\n{}\n\nLinks: {}  Images: {}\n\nPreview:\n{}{}{}",
                     content.title,
                     content.url,
                     content.canonical_url.as_deref().unwrap_or("-"),
@@ -148,6 +168,7 @@ pub async fn handle(
                     content.links.len(),
                     content.images.len(),
                     content_preview,
+                    image_preview_section,
                     sources_section
                 )
             };

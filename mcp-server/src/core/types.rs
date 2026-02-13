@@ -30,6 +30,8 @@ pub struct SearchResult {
     pub content: String,
     pub engine: Option<String>,
     pub score: Option<f64>,
+    #[serde(default)]
+    pub published_at: Option<String>,
     // New Priority 2 fields for better filtering
     #[serde(default)]
     pub domain: Option<String>,

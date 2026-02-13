@@ -224,13 +224,16 @@ impl RustScraper {
         let code_blocks = self.extract_code_blocks(&document);
 
         let mut clean_content = self.extract_clean_content(html, &parsed_url);
+        clean_content = self.normalize_markdown_fragments(&clean_content);
         clean_content = self.apply_og_description_fallback(clean_content, &og_description);
-        let word_count = self.count_words(&clean_content);
-        let reading_time_minutes = Some(((word_count as f64 / 200.0).ceil() as u32).max(1));
 
         let headings = self.extract_headings(&document);
         let links = self.extract_content_links(&document, &parsed_url);
         let images = self.extract_images(&document, &parsed_url);
+
+        clean_content = self.append_image_context_markdown(clean_content, &images, &title);
+        let word_count = self.count_words(&clean_content);
+        let reading_time_minutes = Some(((word_count as f64 / 200.0).ceil() as u32).max(1));
 
         let extraction_score =
             self.calculate_extraction_score(word_count, &published_at, &code_blocks, &headings);

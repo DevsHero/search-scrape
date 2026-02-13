@@ -105,12 +105,21 @@ pub async fn handle(
             }
         }
     } else {
+        let result_json = serde_json::json!({
+            "query": query,
+            "total_results": 0,
+            "threshold": threshold,
+            "results": [],
+            "warnings": ["research_history_unavailable_memory_not_initialized"]
+        });
+
         Ok(Json(McpCallResponse {
             content: vec![McpContent {
                 content_type: "text".to_string(),
-                text: "Research history feature not available (QDRANT_URL not configured)".to_string(),
+                text: serde_json::to_string_pretty(&result_json)
+                    .unwrap_or_else(|e| format!(r#"{{"error": "Serialization failed: {}"}}"#, e)),
             }],
-            is_error: true,
+            is_error: false,
         }))
     }
 }

@@ -2,6 +2,7 @@ use crate::crawl::CrawlConfig;
 use crate::mcp::{McpCallResponse, McpContent};
 use crate::types::ErrorResponse;
 use crate::{crawl, AppState};
+use super::common::parse_quality_mode;
 use axum::http::StatusCode;
 use axum::response::Json;
 use serde_json::Value;
@@ -23,6 +24,8 @@ pub async fn handle(
                 }),
             )
         })?;
+
+    let quality_mode = parse_quality_mode(arguments)?;
 
     let config = CrawlConfig {
         max_depth: arguments
@@ -67,6 +70,7 @@ pub async fn handle(
             .and_then(|v| v.as_u64())
             .map(|n| n as usize)
             .unwrap_or(5000),
+        quality_mode: quality_mode.as_str().to_string(),
     };
 
     let use_proxy = arguments

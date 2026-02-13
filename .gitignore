@@ -18,3 +18,16 @@ scrapy-service/webspider/.scrapy/
 *.pid
 .DS_Store
 .fastembed_cache/
+
+# Secrets / registry auth
+.mcpregistry_*
+*.token
+
+# Local ad-hoc verification artifacts
+docs/FINAL_MCP_TEST_REPORT.json
+docs/final_mcp_test_runner.py
+docs/stdio_mcp_smoketest.py
+docs/stdio_mcp_proxy_strict_test.py
+docs/stdio_probe.py
+docs/local_stdio_test.py
+advice.txt

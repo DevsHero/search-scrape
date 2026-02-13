@@ -7,6 +7,7 @@ pub mod tools;
 
 // --- Primary core exports ---
 pub use core::AppState;
+pub use core::content_quality;
 pub use core::types;
 pub use core::types::*;
 

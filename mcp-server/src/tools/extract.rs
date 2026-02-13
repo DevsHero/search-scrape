@@ -6,6 +6,7 @@ use tracing::info;
 
 use crate::types::*;
 use crate::AppState;
+use crate::rust_scraper::QualityMode;
 
 /// Extract structured data from a webpage based on schema or prompt
 /// Uses pattern matching and heuristics (no external LLM required)
@@ -16,6 +17,7 @@ pub async fn extract_structured(
     prompt: Option<String>,
     max_chars: Option<usize>,
     use_proxy: bool,
+    quality_mode: Option<&str>,
 ) -> Result<ExtractResponse> {
     let start_time = Instant::now();
     let max_chars = max_chars.unwrap_or(10000);
@@ -23,7 +25,8 @@ pub async fn extract_structured(
     info!("Extracting structured data from: {}", url);
 
     // First, scrape the page
-    let scrape_result = crate::scrape::scrape_url_with_options(state, url, use_proxy).await?;
+    let mode = quality_mode.and_then(QualityMode::parse_str);
+    let scrape_result = crate::scrape::scrape_url_with_options(state, url, use_proxy, mode).await?;
 
     let mut extracted_data = serde_json::Map::new();
     let mut warnings = Vec::new();

@@ -43,7 +43,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                 "properties": {
                     "query": {"type": "string"},
                     "top_n": {"type": "integer", "minimum": 1, "default": 3},
-                    "use_proxy": {"type": "boolean", "default": false}
+                    "use_proxy": {"type": "boolean", "default": false},
+                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive"], "default": "balanced"}
                 },
                 "required": ["query"]
             }),
@@ -60,7 +61,9 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                     "max_chars": {"type": "integer"},
                     "max_links": {"type": "integer", "minimum": 1},
                     "output_format": {"type": "string", "enum": ["text", "json"], "default": "text"},
-                    "use_proxy": {"type": "boolean", "default": false}
+                    "include_raw_html": {"type": "boolean", "default": false},
+                    "use_proxy": {"type": "boolean", "default": false},
+                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive"], "default": "balanced"}
                 },
                 "required": ["url"]
             }),
@@ -77,7 +80,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                     "max_concurrent": {"type": "integer", "minimum": 1},
                     "max_chars": {"type": "integer"},
                     "output_format": {"type": "string", "enum": ["text", "json"], "default": "json"},
-                    "use_proxy": {"type": "boolean", "default": false}
+                    "use_proxy": {"type": "boolean", "default": false},
+                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive"], "default": "balanced"}
                 },
                 "required": ["urls"]
             }),
@@ -98,7 +102,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                     "exclude_patterns": {"type": "array", "items": {"type": "string"}},
                     "same_domain_only": {"type": "boolean"},
                     "max_chars_per_page": {"type": "integer", "minimum": 1},
-                    "use_proxy": {"type": "boolean", "default": false}
+                    "use_proxy": {"type": "boolean", "default": false},
+                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive"], "default": "balanced"}
                 },
                 "required": ["url"]
             }),
@@ -115,7 +120,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                     "schema": {"type": "array", "items": {"type": "object"}},
                     "prompt": {"type": "string"},
                     "max_chars": {"type": "integer"},
-                    "use_proxy": {"type": "boolean", "default": false}
+                    "use_proxy": {"type": "boolean", "default": false},
+                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive"], "default": "balanced"}
                 },
                 "required": ["url"]
             }),
@@ -153,6 +159,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                     "append": {"type": "boolean", "default": false},
                     "show_proxy_type": {"type": "boolean", "default": true},
                     "force_new": {"type": "boolean", "default": false},
+                    "strict_proxy_health": {"type": "boolean", "default": false},
                     "proxy_url": {"type": "string"},
                     "target_url": {"type": "string"}
                 },

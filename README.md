@@ -9,7 +9,7 @@ Self-hosted Stealth Scraping & Federated Search for AI Agents. A 100% private, f
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-async-orange.svg)](mcp-server/Cargo.toml)
 [![MCP](https://img.shields.io/badge/protocol-MCP-blue.svg)](mcp-server/src/mcp/stdio.rs)
-[![Status](https://img.shields.io/badge/status-v1.0.1-green.svg)](docs/RELEASE_READINESS_2026-02-12.json)
+[![Status](https://img.shields.io/badge/status-v1.1.0-green.svg)](README.md)
 [![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=ff69b4&style=flat-square)](https://github.com/sponsors/DevsHero)
 
 ShadowCrawl is built for AI agent workflows that need:
@@ -17,18 +17,26 @@ ShadowCrawl is built for AI agent workflows that need:
 - Fast content extraction and website crawling
 - Structured data extraction from messy pages
 - Memory-aware research history with semantic recall
-- Robust anti-bot & JS-heavy site support (Browserless stealth, Playwright rendering, proxy rotation)
+- Robust anti-bot & JS-heavy site support (Browserless stealth, automation-marker cleanup, proxy rotation)
 - MCP-native usage over stdio and HTTP
 
 If you want something you can run inside your own infra (Docker) and wire directly into Cursor/Claude via MCP, this repo is the “batteries included” baseline.
 
 ## Current release status
 
-- Runtime version: `v1.0.1`
-- Release validation: [docs/RELEASE_READINESS_2026-02-12.json](docs/RELEASE_READINESS_2026-02-12.json)
+- Runtime version: `v1.1.0`
+- Release validation: stdio agent-mode + HTTP tool-path checks completed for release hardening
 - Service health endpoint: `GET /health`
 - Tool catalog endpoint: `GET /mcp/tools`
 - Tool call endpoint: `POST /mcp/call`
+
+### v1.1.0 highlights
+
+- Shared quality-policy utilities are now centralized and reused across search/scrape/crawl/batch handlers.
+- `quality_mode` is available at runtime (`balanced` / `aggressive`) across major extraction tools.
+- `proxy_manager` adds `strict_proxy_health` (non-strict diagnostics vs strict hard-fail behavior).
+- `scrape_url`/`scrape_batch` JSON defaults now omit raw HTML noise unless explicitly requested.
+- MCP stdio server path is validated for real agent-mode initialize/list/call flows.
 
 ## Tool catalog (v1.0++)
 
@@ -79,20 +87,44 @@ If you're evaluating paid scraping stacks, note: ShadowCrawl includes the same p
 - **Browserless Chromium (optional, Docker)** — JS-heavy rendering with stealth defaults
   - Included in the default stack and configurable via `BROWSERLESS_URL` and `BROWSERLESS_TOKEN`.
   - Supports session tokens, prebooted Chrome, and ad-blocking for more stable runs.
-- **Playwright rendering & marker cleanup**
-  - Use the Playwright-based MCP tool for interactive rendering; includes JS marker cleanup (e.g., remove `window.__playwright`) to reduce detection signals.
-- **Stealth fingerprinting**
+- **Stealth fingerprinting and automation-marker cleanup**
   - Rotating user-agents, `sec-ch-ua` profiles, and stealth headers tuned for Browserless Chrome.
+  - JS cleanup removes common automation markers (including Playwright/Puppeteer markers such as `window.__playwright`) before final extraction.
 - **Human-like pacing & adaptive delays**
   - Jittered request delays (`SCRAPE_DELAY_PRESET`, `SCRAPE_DELAY_MIN_MS`, `SCRAPE_DELAY_MAX_MS`) and boss-domain post-load delay to mimic human patterns.
 - **Proxy-driven anti-bot bypass (high-security sites)**
   - `proxy_manager` supports `grab`, `list`, `status`, `switch`, and `test` to maintain healthy proxy pools.
   - Supports multiple schemes (`http`, `https`, `socks5`) and per-request proxy selection/rotation.
   - Health checks and automatic switch logic help avoid blocked IPs.
-  - For heavily protected targets, we recommend premium residential/ISP proxies combined with Browserless/Playwright rendering and stealth headers.
-  - Example: use the `proxy_manager` MCP action or run a local test: `python3 scripts/proxy_manager.py test --proxy http://1.2.3.4:8080`.
+  - For heavily protected targets, combine premium residential/ISP proxies with Browserless rendering and stealth headers.
 - **Combinable strategies**
-  - Mix Browserless rendering, Playwright interactions, stealth headers, pacing, and proxy rotation to maximize success on protected targets.
+  - Mix Browserless rendering, stealth headers, pacing, and proxy rotation to maximize success on protected targets.
+
+## Scrape Content Quality (Implemented)
+
+Scope applied across `scrape_url`, `scrape_batch`, `search_structured`, and `crawl_website` outputs.
+
+1. **HTML-to-Markdown conversion hardening** ✅
+   - Normalizes `<summary>` to Markdown-style section headings.
+   - Unwraps `<details>` containers while preserving inner text.
+   - Cleans residual summary/details fragments in post-conversion markdown.
+
+2. **Aggressive attribute stripping** ✅
+   - Strips non-semantic attributes before extraction (`class`, `id`, `style`, `aria-*`, `data-*`, `on*`, `role`, `tabindex`).
+   - Keeps semantic signals where needed in extracted results (`href`, `src`, `alt`, `title`).
+   - Reduces UI/noise tokens that degrade LLM comprehension.
+
+3. **Media handling in content preview** ✅
+   - Keeps OG image metadata and now injects Markdown image context (`![alt](url)`) with fallback labels.
+   - Exposes image hints directly in `scrape_url` text preview for better multimodal grounding.
+
+## Noise-Reduction Strategy (How we stay competitive)
+
+- **Layered extraction pipeline:** pre-clean HTML → readability/heuristics → fallback text-only extraction.
+- **Boilerplate suppression:** removes nav/footer/forms/ads and common noisy blocks before markdown conversion.
+- **Semantic-first output:** prioritizes main content, headings, code blocks, and canonical links over decorative markup.
+- **Anti-block resilience:** combines stealth headers, adaptive delays, Browserless rendering, and proxy rotation.
+- **Quality gates:** warnings and extraction score help detect weak/blocked content and trigger retries/fallbacks.
 
 ## Quick start (Docker)
 

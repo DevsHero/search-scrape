@@ -299,10 +299,17 @@ impl RustScraper {
             if line_trim.is_empty() {
                 continue;
             }
-            if line_trim.len() < 2 {
+            let min_len = if self.is_aggressive_mode() { 4 } else { 2 };
+            if line_trim.len() < min_len {
                 continue;
             }
             if re_garbage.is_match(line_trim) {
+                continue;
+            }
+            if self.is_aggressive_mode()
+                && self.count_words(line_trim) <= 2
+                && line_trim.len() < 24
+            {
                 continue;
             }
             kept.push(line_trim.to_string());
@@ -326,6 +333,8 @@ impl RustScraper {
     /// Preprocess HTML before readability
     fn preprocess_html(&self, html: &str) -> String {
         let mut s = html.to_string();
+
+        s = self.normalize_details_summary_html(&s);
 
         let re_block = Regex::new(
             r"(?is)<(?:script|style|noscript|svg|canvas|iframe)[^>]*?>.*?</(?:script|style|noscript|svg|canvas|iframe)>",
@@ -352,6 +361,60 @@ impl RustScraper {
         )
         .unwrap();
         s = re_ad_blocks.replace_all(&s, " ").to_string();
+
+        s = self.strip_non_semantic_attributes(&s);
+
+        s
+    }
+
+    fn normalize_details_summary_html(&self, html: &str) -> String {
+        let mut s = html.to_string();
+
+        let re_summary = Regex::new(r"(?is)<summary[^>]*>(.*?)</summary>").unwrap();
+        s = re_summary
+            .replace_all(&s, |caps: &regex::Captures| {
+                let title = caps
+                    .get(1)
+                    .map(|m| m.as_str())
+                    .unwrap_or("")
+                    .replace('\n', " ")
+                    .trim()
+                    .to_string();
+                if title.is_empty() {
+                    "<h3>Summary</h3>".to_string()
+                } else {
+                    format!("<h3>{}</h3>", title)
+                }
+            })
+            .to_string();
+
+        let re_details_open = Regex::new(r"(?is)<details[^>]*>").unwrap();
+        s = re_details_open.replace_all(&s, "<section>").to_string();
+
+        let re_details_close = Regex::new(r"(?is)</details>").unwrap();
+        s = re_details_close.replace_all(&s, "</section>").to_string();
+
+        s
+    }
+
+    fn strip_non_semantic_attributes(&self, html: &str) -> String {
+        let mut s = html.to_string();
+
+        let re_attrs = if self.is_aggressive_mode() {
+            Regex::new(
+                r#"(?i)\s(?:class|id|style|role|tabindex|aria-[\w:-]+|data-[\w:-]+|on[\w:-]+)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)"#,
+            )
+            .unwrap()
+        } else {
+            Regex::new(
+                r#"(?i)\s(?:class|id|style|aria-[\w:-]+|on[\w:-]+)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)"#,
+            )
+            .unwrap()
+        };
+        s = re_attrs.replace_all(&s, "").to_string();
+
+        let re_empty_attrs = Regex::new(r#"\s{2,}"#).unwrap();
+        s = re_empty_attrs.replace_all(&s, " ").to_string();
 
         s
     }
@@ -604,5 +667,32 @@ impl RustScraper {
 
         let combined = paragraphs.join("\n\n");
         self.clean_text(&combined)
+    }
+
+    pub(super) fn normalize_markdown_fragments(&self, text: &str) -> String {
+        let mut out = text.to_string();
+
+        let re_summary = Regex::new(r"(?is)<summary[^>]*>(.*?)</summary>").unwrap();
+        out = re_summary
+            .replace_all(&out, |caps: &regex::Captures| {
+                let title = caps
+                    .get(1)
+                    .map(|m| m.as_str())
+                    .unwrap_or("")
+                    .replace('\n', " ")
+                    .trim()
+                    .to_string();
+                if title.is_empty() {
+                    "### Summary".to_string()
+                } else {
+                    format!("### {}", title)
+                }
+            })
+            .to_string();
+
+        let re_details = Regex::new(r"(?is)</?details[^>]*>").unwrap();
+        out = re_details.replace_all(&out, "").to_string();
+
+        out
     }
 }

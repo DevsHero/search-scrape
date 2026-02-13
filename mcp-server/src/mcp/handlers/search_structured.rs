@@ -1,6 +1,7 @@
 use crate::mcp::{McpCallResponse, McpContent};
 use crate::types::ErrorResponse;
 use crate::{scrape, search, AppState};
+use super::common::parse_quality_mode;
 use axum::http::StatusCode;
 use axum::response::Json;
 use serde_json::Value;
@@ -34,6 +35,8 @@ pub async fn handle(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let quality_mode = parse_quality_mode(arguments)?;
+
     let (results, _extras) = search::search_web(&state, query).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -49,10 +52,17 @@ pub async fn handle(
 
     for url in to_scrape {
         let state_cloned = Arc::clone(&state);
+        let quality_mode_cloned = quality_mode;
         tasks.push(tokio::spawn(async move {
             (
                 url.clone(),
-                scrape::scrape_url_with_options(&state_cloned, &url, use_proxy).await,
+                scrape::scrape_url_with_options(
+                    &state_cloned,
+                    &url,
+                    use_proxy,
+                    Some(quality_mode_cloned),
+                )
+                .await,
             )
         }));
     }

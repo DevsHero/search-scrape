@@ -235,9 +235,15 @@ impl ProxyManager {
             .build()
             .map_err(|e| anyhow!("Failed to build proxy client: {}", e))?;
         
-        // Test connection
-        let response = client.head(target_url).send().await
-            .map_err(|e| anyhow!("Proxy connection test failed: {}", e))?;
+        // Test connection (HEAD first, fallback to GET for proxies/services that reject HEAD)
+        let response = match client.head(target_url).send().await {
+            Ok(resp) => resp,
+            Err(_) => client
+                .get(target_url)
+                .send()
+                .await
+                .map_err(|e| anyhow!("Proxy connection test failed: {}", e))?,
+        };
         
         let latency = start.elapsed().as_millis() as u64;
         

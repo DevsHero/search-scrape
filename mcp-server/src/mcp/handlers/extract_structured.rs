@@ -2,6 +2,7 @@ use crate::extract;
 use crate::mcp::{McpCallResponse, McpContent};
 use crate::types::{ErrorResponse, ExtractField};
 use crate::AppState;
+use super::common::parse_quality_mode;
 use axum::http::StatusCode;
 use axum::response::Json;
 use regex::Regex;
@@ -196,7 +197,19 @@ pub async fn handle(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    match extract::extract_structured(&state, url, schema, prompt, max_chars, use_proxy).await {
+    let quality_mode = parse_quality_mode(arguments)?;
+
+    match extract::extract_structured(
+        &state,
+        url,
+        schema,
+        prompt,
+        max_chars,
+        use_proxy,
+        Some(quality_mode.as_str()),
+    )
+    .await
+    {
         Ok(response) => {
             let json_str = serde_json::to_string_pretty(&response)
                 .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
