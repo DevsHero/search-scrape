@@ -578,6 +578,12 @@ async fn run_flow(
             return Err(NonRobotSearchError::BrowserClosed);
         }
 
+        // 🚀 Check if user clicked manual return button
+        if check_manual_return_triggered(&session.page).await {
+            info!("non_robot_search: 🚀 Manual return button clicked during challenge detection");
+            break;
+        }
+
         let challenged = detect_challenge_dom(&session.page).await.unwrap_or(false)
             || detect_interstitial_like(&session.page)
                 .await
@@ -607,10 +613,23 @@ async fn run_flow(
     // Final content extraction.
     log_state(NonRobotState::ResumeAndExtract);
 
-    // Wait for the page to reach a best-effort "network idle" state before we run cleanup.
-    // This is intentionally heuristic (JS polling) because chromiumoxide doesn't provide a stable
-    // cross-version NetworkIdle API surface here.
-    wait_for_network_idle_heuristic(&session.page, Duration::from_secs(20)).await;
+    // 🚀 CHECK FOR MANUAL RETURN BUTTON CLICK
+    // Poll for button click signal with short timeout
+    info!("non_robot_search: checking for manual return button click...");
+    let manual_triggered = check_manual_return_triggered(&session.page).await;
+    
+    if manual_triggered {
+        info!("non_robot_search: 🚀 MANUAL RETURN BUTTON CLICKED - Extracting immediately");
+        play_tone(Tone::Success);
+        // Skip wait steps, extract immediately
+    } else {
+        // Default auto-extraction flow
+        info!("non_robot_search: No manual trigger, proceeding with auto-extraction");
+        // Wait for the page to reach a best-effort "network idle" state before we run cleanup.
+        // This is intentionally heuristic (JS polling) because chromiumoxide doesn't provide a stable
+        // cross-version NetworkIdle API surface here.
+        wait_for_network_idle_heuristic(&session.page, Duration::from_secs(20)).await;
+    }
 
     // Janitor v2.0: more aggressive overlay cleanup + scroll unlock.
     // Runs immediately after the network-idle wait so we clear screen-locking popups early.
@@ -1187,6 +1206,17 @@ async fn wait_for_human_resolution(
             return Err(NonRobotSearchError::BrowserClosed);
         }
 
+        // 🚀 Check if user clicked manual return button
+        if check_manual_return_triggered(&session.page).await {
+            info!("non_robot_search: 🚀 Manual return button clicked during human resolution wait");
+            play_tone(Tone::Success);
+            // Remove overlay
+            let _ = session.page.evaluate(
+                r#"(() => { const el = document.getElementById('__shadowcrawl_hitl_overlay__'); if (el) el.remove(); })()"#,
+            ).await;
+            return Ok(());
+        }
+
         // Consider it resolved if verification markers are gone and the page is no longer an interstitial.
         let challenged = detect_challenge_dom(&session.page).await.unwrap_or(false)
             || detect_interstitial_like(&session.page)
@@ -1501,6 +1531,17 @@ impl BrowserSession {
         .await
         .map_err(|e| anyhow!("Failed to inject stealth script: {}", e))?;
 
+        // 🚀 INJECT MANUAL RETURN BUTTON
+        info!("non_robot_search: injecting manual return button for user control");
+        let button_script = get_manual_return_button_script();
+        page.execute(
+            chromiumoxide::cdp::browser_protocol::page::AddScriptToEvaluateOnNewDocumentParams::new(
+                button_script,
+            ),
+        )
+        .await
+        .map_err(|e| anyhow!("Failed to inject manual return button: {}", e))?;
+
         Ok(Self {
             browser,
             page,
@@ -1676,6 +1717,17 @@ impl BrowserSession {
         )
         .await
         .map_err(|e| anyhow!("Failed to inject stealth script on relaunch: {}", e))?;
+
+        // 🚀 INJECT MANUAL RETURN BUTTON (RELAUNCH)
+        info!("non_robot_search: injecting manual return button on relaunch");
+        let button_script = get_manual_return_button_script();
+        page.execute(
+            chromiumoxide::cdp::browser_protocol::page::AddScriptToEvaluateOnNewDocumentParams::new(
+                button_script,
+            ),
+        )
+        .await
+        .map_err(|e| anyhow!("Failed to inject manual return button on relaunch: {}", e))?;
 
         self.browser = browser;
         self.page = page;
@@ -2039,6 +2091,103 @@ fn find_chrome_executable() -> Option<String> {
     }
 
     None
+}
+
+#[cfg(feature = "non_robot_search")]
+fn get_manual_return_button_script() -> String {
+    r#"
+// ====== SHADOWCRAWL MANUAL RETURN BUTTON ======
+// Gives user explicit control over when to finish scraping
+
+(function() {
+    // Prevent multiple injections
+    if (window.__shadowcrawl_button_injected) return;
+    window.__shadowcrawl_button_injected = true;
+    
+    // Signal flag for Rust to detect
+    window.__shadowcrawl_manual_finish = false;
+    
+    // Create floating button
+    const btn = document.createElement('button');
+    btn.id = 'shadowcrawl-finish-btn';
+    btn.innerHTML = '🚀 SHADOWCRAWL: FINISH & RETURN';
+    btn.style.cssText = `
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        z-index: 2147483647;
+        padding: 15px 20px;
+        background: linear-gradient(135deg, #ff4757 0%, #ff6348 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: bold;
+        font-size: 14px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4);
+        transition: all 0.3s ease;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    `;
+    
+    // Hover effect
+    btn.addEventListener('mouseenter', () => {
+        btn.style.transform = 'scale(1.05)';
+        btn.style.boxShadow = '0 6px 20px rgba(255, 71, 87, 0.6)';
+    });
+    btn.addEventListener('mouseleave', () => {
+        btn.style.transform = 'scale(1)';
+        btn.style.boxShadow = '0 4px 15px rgba(255, 71, 87, 0.4)';
+    });
+    
+    // Click handler
+    btn.addEventListener('click', () => {
+        // Set signal flag
+        window.__shadowcrawl_manual_finish = true;
+        
+        // Visual feedback
+        btn.innerHTML = '✅ CAPTURING DATA...';
+        btn.style.background = 'linear-gradient(135deg, #2ecc71 0%, #27ae60 100%)';
+        btn.style.cursor = 'not-allowed';
+        btn.disabled = true;
+        
+        // Notify user
+        console.log('🚀 ShadowCrawl: Manual return triggered, extracting data now...');
+    });
+    
+    // Inject into page
+    function injectButton() {
+        if (document.body) {
+            document.body.appendChild(btn);
+            console.log('🚀 ShadowCrawl: Manual return button ready (top-right corner)');
+        } else {
+            // Retry if body not ready
+            setTimeout(injectButton, 100);
+        }
+    }
+    
+    // Wait for DOM ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', injectButton);
+    } else {
+        injectButton();
+    }
+})();
+"#
+    .to_string()
+}
+
+#[cfg(feature = "non_robot_search")]
+async fn check_manual_return_triggered(page: &chromiumoxide::Page) -> bool {
+    // Check if user clicked the manual return button
+    let check_script = "window.__shadowcrawl_manual_finish === true";
+    
+    match page.evaluate(check_script).await {
+        Ok(result) => {
+            result.into_value::<bool>().unwrap_or(false)
+        }
+        Err(_) => false,
+    }
 }
 
 #[cfg(feature = "non_robot_search")]
