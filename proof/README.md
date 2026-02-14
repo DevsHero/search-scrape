@@ -11,12 +11,60 @@ This directory contains **verified evidence** that ShadowCrawl successfully bypa
 | **Airbnb** | DataDome + Behavioral | ✅ BYPASSED | 1.8MB | 2026-02-14 20:42 | 1000+ Tokyo listings, prices, ratings, availability |
 | **Upwork** | reCAPTCHA + Fingerprinting | ✅ BYPASSED | 300KB | 2026-02-14 20:44 | 160,000+ job postings, filters, client data |
 | **Amazon** | AWS Shield + Bot Detection | ✅ BYPASSED | 814KB | 2026-02-14 20:46 | RTX 5070 Ti search results, product cards, pricing |
+| **nowsecure.nl** | Cloudflare (Testing Site) | ✅ BYPASSED | 168KB | 2026-02-14 21:00 | Manual Return Button injected & tested ✅ |
 
-**Total Evidence Collected**: 4.4MB across 5 boss-level targets
+**Total Evidence Collected**: 4.6MB across 6 boss-level targets  
+**Manual Return Button**: New feature - allows user-triggered finish & data return instead of waiting for auto-timeout
 
 ---
 
-## 📁 File Structure
+## � New Feature: Manual Return Button
+
+The **Manual Return Button** is a powerful user control feature that prevents browser hangs and gives explicit control over data capture timing.
+
+### How It Works
+
+When `fetch_web_high_fidelity` is called with `non_robot_search` enabled:
+
+1. **Automatic Injection**: A floating button is injected at page load
+   ```
+   Position: Fixed top-right corner (z-index: 999999)
+   Label: "🚀 SHADOWCRAWL: FINISH & RETURN"
+   Style: Red background, white text, shadow effect
+   ```
+
+2. **User Control**: User can click the button when:
+   - Content has been fully loaded
+   - Challenge has been solved
+   - No need to wait for auto-timeout
+   
+3. **Immediate Data Capture**:
+   - Current HTML is captured
+   - Clean text is extracted
+   - JSON embedded data is parsed
+   - Browser closes immediately
+
+4. **Fallback**: Auto-extraction still works if button isn't clicked
+   - Respects `human_timeout_seconds`
+   - Global timeout + 30s safety margin
+   - Safety Kill Switch prevents hangs
+
+### Benefits
+
+- **No More Infinite Waits**: Stop whenever you're ready
+- **Faster Scraping**: Don't wait for full page idle
+- **Better UX**: Clear visual feedback with button
+- **Reliable Cleanup**: Button trigger ensures clean shutdown
+
+### Testing
+
+✅ **Verified on nowsecure.nl** (2026-02-14 21:00):
+- Button injected successfully
+- Page content extracted: 94 chars
+- Browser closed cleanly with no zombies
+- Evidence file: `proof/nowsecure_evidence.json`
+
+---
 
 Each target has 2 evidence files:
 
