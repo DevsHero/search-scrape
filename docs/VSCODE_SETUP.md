@@ -48,6 +48,18 @@ VS Code caches tool lists. If tools don’t appear or look stale:
 - Default build: 8 tools (`search_web`, `search_structured`, `scrape_url`, `scrape_batch`, `crawl_website`, `extract_structured`, `research_history`, `proxy_manager`)
 - Optional: `non_robot_search` (HITL / visible browser) when built with `--features non_robot_search`
 
+## non_robot_search (HITL) — important
+
+`non_robot_search` opens a **local visible GUI browser** (Brave/Chrome) and may require user interaction.
+
+- ✅ Tested: macOS
+- ⚠️ Not supported via `docker compose exec ... shadowcrawl-mcp` for typical setups (no GUI browser in the container)
+
+If you want to use HITL in VS Code, run a **native** MCP stdio server built with the feature flag and point VS Code to the local binary.
+
+Full guide (Brave/profile/consent/kill-switch):
+- [docs/NON_ROBOT_SEARCH.md](docs/NON_ROBOT_SEARCH.md)
+
 ## Troubleshooting
 
 - Container logs: `docker compose -f docker-compose-local.yml logs -f shadowcrawl`

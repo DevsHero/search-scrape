@@ -98,6 +98,22 @@ If you're evaluating paid scraping stacks, note: ShadowCrawl includes the same p
 - **Combinable strategies**
   - Mix Browserless rendering, stealth headers, pacing, and proxy rotation to maximize success on protected targets.
 
+## High-fidelity renderer (non_robot_search / HITL) — core in v2
+
+`non_robot_search` is the interactive “nuclear option” for JS-heavy / anti-bot targets.
+
+- Opens a **visible** Chromium-based browser via CDP (prefers **Brave** when available)
+- May require you to complete a verification/captcha step (HITL)
+- Requires explicit consent (TTY prompt or macOS dialog)
+- Emergency abort: hold `Esc` for ~3 seconds
+
+Support note:
+- ✅ Tested: **macOS only** (this release)
+- ⚠️ Linux/Windows: not the primary test target
+- ⚠️ Docker: `non_robot_search` is designed to run **natively** (it launches a local GUI browser)
+
+Docs: [docs/NON_ROBOT_SEARCH.md](docs/NON_ROBOT_SEARCH.md)
+
 ## Scrape Content Quality (Implemented)
 
 Scope applied across `scrape_url`, `scrape_batch`, `search_structured`, and `crawl_website` outputs.
@@ -241,6 +257,10 @@ Real tool outputs (copy/paste examples):
 | `BROWSERLESS_URL` | browser rendering backend | unset |
 | `SHADOWCRAWL_TOOLS_METADATA_PATH` | map internal tool names to stable public names/titles | unset (auto-searches common paths) |
 | `MAX_CONTENT_CHARS` | default maximum characters to return for scrape outputs | `10000` |
+| `CHROME_EXECUTABLE` | override browser executable for `non_robot_search` | unset (auto-detect) |
+| `SHADOWCRAWL_RENDER_PROFILE_DIR` | default browser profile dir for `non_robot_search` | unset |
+| `SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW` | skip consent prompt for `non_robot_search` | unset |
+| `SHADOWCRAWL_NON_ROBOT_CONSENT` | consent UI: `auto` / `tty` / `dialog` | `auto` |
 | `HTTP_TIMEOUT_SECS` | outbound timeout | `30` |
 | `HTTP_CONNECT_TIMEOUT_SECS` | connect timeout | `10` |
 | `OUTBOUND_LIMIT` | concurrency limiter | `32` |

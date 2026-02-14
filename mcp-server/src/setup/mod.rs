@@ -176,6 +176,8 @@ pub async fn check_all(options: SetupOptions) -> SetupReport {
 
 fn check_chrome_installed() -> SetupCheck {
     let candidates = [
+        "brave",
+        "brave-browser",
         "google-chrome",
         "chrome",
         "chromium",
@@ -193,6 +195,7 @@ fn check_chrome_installed() -> SetupCheck {
     #[cfg(target_os = "macos")]
     {
         let app_paths = [
+            "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
             "/Applications/Chromium.app/Contents/MacOS/Chromium",
             "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
@@ -207,7 +210,7 @@ fn check_chrome_installed() -> SetupCheck {
     if !found.is_empty() {
         return SetupCheck {
             id: "chrome_installed".to_string(),
-            title: "Browser dependency (Chrome/Chromium)".to_string(),
+            title: "Browser dependency (Brave/Chrome/Chromium)".to_string(),
             status: CheckStatus::Pass,
             details: format!(
                 "Found browser executable(s):\n{}",
@@ -223,8 +226,10 @@ fn check_chrome_installed() -> SetupCheck {
     }
 
     let actions = vec![ActionRequired {
-        title: "Install Chrome/Chromium".to_string(),
+        title: "Install Brave/Chrome/Chromium".to_string(),
         steps: vec![
+            "macOS: install Brave from https://brave.com/download/ (recommended for non_robot_search)"
+                .to_string(),
             "macOS: install Google Chrome from https://www.google.com/chrome/".to_string(),
             "Ubuntu/Debian: `sudo apt-get update && sudo apt-get install -y chromium-browser`"
                 .to_string(),
@@ -232,14 +237,14 @@ fn check_chrome_installed() -> SetupCheck {
             "Arch: `sudo pacman -S chromium`".to_string(),
             "Windows: install Chrome from https://www.google.com/chrome/".to_string(),
         ],
-        open_url: Some("https://www.google.com/chrome/".to_string()),
+        open_url: Some("https://brave.com/download/".to_string()),
     }];
 
     SetupCheck {
         id: "chrome_installed".to_string(),
-        title: "Browser dependency (Chrome/Chromium)".to_string(),
+        title: "Browser dependency (Brave/Chrome/Chromium)".to_string(),
         status: CheckStatus::Fail,
-        details: "No Chrome/Chromium executable found on PATH (or common install locations)."
+        details: "No Brave/Chrome/Chromium executable found on PATH (or common install locations)."
             .to_string(),
         actions,
     }
