@@ -127,6 +127,27 @@ async fn execute_non_robot_search_impl(
     state: &Arc<AppState>,
     cfg: NonRobotSearchConfig,
 ) -> Result<ScrapeResponse, NonRobotSearchError> {
+    // Global timeout: human_timeout + 30s safety margin
+    let global_timeout = cfg.human_timeout + Duration::from_secs(30);
+    
+    match tokio::time::timeout(global_timeout, execute_non_robot_search_inner(state, cfg)).await {
+        Ok(result) => result,
+        Err(_) => {
+            warn!("non_robot_search: global timeout exceeded ({}s), force-killing browser", global_timeout.as_secs());
+            // Emergency cleanup: kill all debug browsers on port 9222
+            force_kill_all_debug_browsers(9222);
+            Err(NonRobotSearchError::AutomationFailed(
+                format!("global timeout exceeded ({}s)", global_timeout.as_secs())
+            ))
+        }
+    }
+}
+
+#[cfg(feature = "non_robot_search")]
+async fn execute_non_robot_search_inner(
+    state: &Arc<AppState>,
+    cfg: NonRobotSearchConfig,
+) -> Result<ScrapeResponse, NonRobotSearchError> {
     log_state(NonRobotState::Initial);
 
     // Ensure sequential execution of non-robot tool calls.
@@ -1330,6 +1351,22 @@ struct BrowserSession {
 }
 
 #[cfg(feature = "non_robot_search")]
+impl Drop for BrowserSession {
+    fn drop(&mut self) {
+        // Force-kill browser process on drop to prevent zombie processes
+        info!("non_robot_search: BrowserSession drop - force-killing browser on port {}", self.debugging_port);
+        force_kill_all_debug_browsers(self.debugging_port);
+        
+        // Clean up temp profile if created
+        if self.created_profile_dir {
+            if let Some(dir) = self.profile_dir.take() {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "non_robot_search")]
 impl BrowserSession {
     async fn launch(proxy: Option<&str>, user_profile_path: Option<&str>) -> anyhow::Result<Self> {
         let (profile_dir, profile_name, created_profile_dir) =
@@ -1482,6 +1519,8 @@ impl BrowserSession {
     }
 
     async fn close(&mut self) {
+        info!("non_robot_search: closing browser session (port {})", self.debugging_port);
+        
         // Close tabs first (more "human" shutdown), reducing Brave's "Restore tabs?" prompt.
         let _ = close_all_tabs_via_json(self.debugging_port).await;
 
@@ -1489,6 +1528,12 @@ impl BrowserSession {
         let _ = self.browser.close().await;
         let _ = self.browser.wait().await;
         self.handler_task.abort();
+        
+        // Wait briefly for graceful shutdown
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        
+        // Force-kill any remaining browser processes
+        force_kill_all_debug_browsers(self.debugging_port);
 
         if self.created_profile_dir {
             if let Some(dir) = self.profile_dir.take() {
@@ -1693,6 +1738,52 @@ async fn close_all_tabs_via_json(debugging_port: u16) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(feature = "non_robot_search")]
+fn force_kill_all_debug_browsers(debugging_port: u16) {
+    // Aggressively kill ALL browser processes using this debugging port
+    // Used for emergency cleanup when browser won't close gracefully
+    let marker = format!("--remote-debugging-port={}", debugging_port);
+
+    let ps = std::process::Command::new("ps")
+        .args(["-ax", "-o", "pid=,command="])
+        .output();
+
+    let Ok(out) = ps else { return };
+    let Ok(text) = String::from_utf8(out.stdout) else {
+        return;
+    };
+
+    let mut killed = 0u32;
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        let mut it = trimmed.split_whitespace();
+        let Some(pid_str) = it.next() else { continue };
+        let cmd = trimmed.get(pid_str.len()..).unwrap_or("").trim_start();
+        let Ok(pid) = pid_str.trim().parse::<i32>() else {
+            continue;
+        };
+
+        if !cmd.contains(&marker) {
+            continue;
+        }
+
+        // Immediate SIGKILL for force cleanup
+        let _ = std::process::Command::new("kill")
+            .arg("-9")
+            .arg(pid.to_string())
+            .status();
+
+        killed += 1;
+    }
+
+    if killed > 0 {
+        info!(
+            "non_robot_search: force-killed {} browser process(es) with CDP port {}",
+            killed, debugging_port
+        );
+    }
 }
 
 #[cfg(feature = "non_robot_search")]
