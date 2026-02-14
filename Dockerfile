@@ -10,6 +10,7 @@ ARG CARGO_FEATURES=
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
+    libwayland-dev \
     g++ \
     binutils \
     && rm -rf /var/lib/apt/lists/*
