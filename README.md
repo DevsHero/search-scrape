@@ -57,6 +57,7 @@ We don't just claim to bypass—we provide the receipts. All evidence below was 
 | **Airbnb** | DataDome | 1.8MB | [📄 JSON](proof/airbnb_evidence.json) · [📝 Snippet](proof/airbnb_raw_snippet.txt) | 1000+ Tokyo listings ✅ |
 | **Upwork** | reCAPTCHA | 300KB | [📄 JSON](proof/upwork_evidence.json) · [📝 Snippet](proof/upwork_raw_snippet.txt) | 160K+ job postings ✅ |
 | **Amazon** | AWS Shield | 814KB | [📄 JSON](proof/amazon_evidence.json) · [📝 Snippet](proof/amazon_raw_snippet.txt) | RTX 5070 Ti results ✅ |
+| **nowsecure.nl** | Cloudflare | 168KB | [📄 JSON](proof/nowsecure_evidence.json) · [📸 Screenshot](proof/Screenshot-nowsecure.png) | Manual button tested ✅ |
 
 > **📖 Full Documentation**: See [proof/README.md](proof/README.md) for verification steps, protection analysis, and quality metrics.
 
