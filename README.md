@@ -93,6 +93,11 @@ We don't just claim to bypass—we provide the receipts. All evidence below was 
 
 ### 1. The Docker Way (Full Stack)
 
+Docker is the fastest way to bring up the full stack (SearXNG, proxy manager, etc.).
+
+**Important:** Docker mode cannot use the HITL/GUI renderer (`non_robot_search`) because containers cannot reliably access your host's native Brave/Chrome window, keyboard hooks, and OS permissions.
+Use the **Native Rust Way** below when you want boss-level bypass.
+
 ```bash
 # Clone and Launch
 git clone https://github.com/DevsHero/shadowcrawl.git
@@ -101,21 +106,39 @@ docker compose -f docker-compose-local.yml up -d --build
 
 ```
 
-### 2. The Native Rust Way (For non_robot_search)
+### 2. The Native Rust Way (Required for non_robot_search / HITL)
 
-For the 99.99% bypass (HITL), run natively on macOS/Linux:
+For the 99.99% bypass (HITL), you must run natively (tested on macOS; Linux may work but is less battle-tested).
+
+Build the MCP stdio server with the HITL feature enabled:
 
 ```bash
 cd mcp-server
-cargo run --release --features non_robot_search
+cargo build --release --bin shadowcrawl-mcp --features non_robot_search
 
 ```
 
+This produces the local MCP binary at:
+
+- `mcp-server/target/release/shadowcrawl-mcp`
+
+Prereqs (macOS):
+
+- Install Brave Browser (recommended) or Google Chrome
+- Grant Accessibility permissions (required for the emergency ESC hold-to-abort kill switch)
+
 ---
 
-## 🧩 MCP Integration (Cursor / Claude)
+## 🧩 MCP Integration (Cursor / Claude / VS Code)
 
-Add this to your `mcp.json` to give your Agent "Sovereign Stealth" capabilities:
+ShadowCrawl can run as an MCP server in 2 modes:
+
+- **Docker MCP server**: great for normal scraping/search tools, but **cannot** do HITL/GUI (`non_robot_search`).
+- **Local MCP server (`shadowcrawl-local`)**: required for HITL tools (a visible Brave/Chrome window).
+
+### Option A: Docker MCP server (no non_robot_search)
+
+Add this to your MCP config to use the Dockerized server:
 
 ```json
 {
@@ -137,6 +160,56 @@ Add this to your `mcp.json` to give your Agent "Sovereign Stealth" capabilities:
 }
 
 ```
+
+### Option B: Local MCP server (required for non_robot_search)
+
+If you want to use HITL tools like `fetch_web_high_fidelity` / `non_robot_search`, configure a **local** MCP server that launches the native binary.
+
+VS Code MCP config example ("servers" format):
+
+```jsonc
+{
+  "servers": {
+    "shadowcrawl-local": {
+      "type": "stdio",
+      "command": "env",
+      "args": [
+        "RUST_LOG=info",
+
+        // Optional (only if you run the full stack locally):
+        "SEARXNG_URL=http://localhost:8890",
+        "BROWSERLESS_URL=http://localhost:3010",
+        "BROWSERLESS_TOKEN=mcp_stealth_session",
+        "QDRANT_URL=http://localhost:6344",
+
+        // Network + limits:
+        "HTTP_TIMEOUT_SECS=30",
+        "HTTP_CONNECT_TIMEOUT_SECS=10",
+        "OUTBOUND_LIMIT=32",
+        "MAX_CONTENT_CHARS=10000",
+        "MAX_LINKS=100",
+
+        // Optional (proxy manager):
+        "IP_LIST_PATH=/YOUR_PATH/shadowcrawl/ip.txt",
+        "PROXY_SOURCE_PATH=/YOUR_PATH/shadowcrawl/proxy_source.json",
+
+        // HITL / non_robot_search quality-of-life:
+        // "SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW=1",
+        // "SHADOWCRAWL_RENDER_PROFILE_DIR=/YOUR_PROFILE_DIR",
+        // "CHROME_EXECUTABLE=/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+
+        "/YOUR_PATH/shadowcrawl/mcp-server/target/release/shadowcrawl-mcp"
+      ]
+    }
+  }
+}
+```
+
+Notes:
+
+- The user-facing name in this README is **`non_robot_search`** (sometimes people mistype this as “non_human_search”).
+- For HITL, prefer Brave + a real profile dir (`SHADOWCRAWL_RENDER_PROFILE_DIR`) so cookies/sessions persist.
+- If you're running via Docker MCP server, HITL tools will either be unavailable or fail (no host GUI).
 
 ---
 
