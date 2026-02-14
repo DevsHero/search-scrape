@@ -4,7 +4,6 @@
 
 # Rust
 mcp-server/target
-.mimicflow
 
 # (Optional) Local-only files
 # If you create a private proxies.yaml with credentials, keep it untracked.
