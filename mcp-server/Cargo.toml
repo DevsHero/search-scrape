@@ -1,6 +1,6 @@
 [package]
 name = "shadowcrawl"
-version = "1.1.0"
+version = "2.0.0-rc"
 edition = "2021"
 description = "The Sovereign Stealth Intelligence Engine for AI Agents - A self-hosted, private alternative to Firecrawl with universal anti-bot bypass and semantic research memory"
 repository = "https://github.com/DevsHero/ShadowCrawl"
@@ -57,7 +57,31 @@ thiserror = "2.0"
 futures = "0.3"
 backoff = { version = "0.4", features = ["tokio"] }
 rand = "0.10"
-chromiumoxide = "0.5"
+chromiumoxide = "0.8"
+
+# Setup / preflight
+dirs = "6.0"
+which = "8.0"
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
+
+# --- Optional: non_robot_search (visible browser + HITL) ---
+rodio = { version = "0.21", optional = true }
+notify-rust = { version = "4.11", optional = true }
+crossterm = { version = "0.29", optional = true }
+atty = { version = "0.2", optional = true }
+rdev = { version = "0.5.3", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+is_elevated = "0.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+accessibility-sys = "0.2"
+core-foundation-sys = "0.8"
+
+[features]
+# Keep default builds lean; enable HITL "nuclear option" explicitly.
+default = []
+non_robot_search = ["dep:rodio", "dep:notify-rust", "dep:crossterm", "dep:atty", "dep:rdev"]
 
 [dev-dependencies]
 tokio-test = "0.4"

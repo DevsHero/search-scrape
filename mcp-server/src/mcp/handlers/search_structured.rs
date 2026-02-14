@@ -1,7 +1,7 @@
+use super::common::parse_quality_mode;
 use crate::mcp::{McpCallResponse, McpContent};
 use crate::types::ErrorResponse;
 use crate::{scrape, search, AppState};
-use super::common::parse_quality_mode;
 use axum::http::StatusCode;
 use axum::response::Json;
 use serde_json::Value;
@@ -76,7 +76,10 @@ pub async fn handle(
     }
 
     let mut text = format!("Found {} results for '{}'\n\n", results.len(), query);
-    text.push_str(&format!("Structured scrapes: {}\n\n", scraped_content.len()));
+    text.push_str(&format!(
+        "Structured scrapes: {}\n\n",
+        scraped_content.len()
+    ));
     for (i, item) in scraped_content.iter().enumerate() {
         text.push_str(&format!(
             "{}. {} ({} words)\nURL: {}\n\n",

@@ -52,6 +52,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        CARGO_FEATURES: ${SHADOWCRAWL_CARGO_FEATURES:-}
     image: shadowcrawl-mcp:latest
     container_name: shadowcrawl-mcp
     ports:

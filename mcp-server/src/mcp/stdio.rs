@@ -1,5 +1,5 @@
 use super::handlers;
-use super::tooling::{schema_to_object_map, tool_catalog};
+use super::tooling::schema_to_object_map;
 use crate::mcp::McpCallResponse;
 use crate::types::ErrorResponse;
 use crate::{history, AppState};
@@ -60,7 +60,16 @@ impl McpService {
             .try_init()
             .ok();
 
-        let searxng_url = env::var("SEARXNG_URL").unwrap_or_else(|_| "http://localhost:8888".to_string());
+        let searxng_url =
+            env::var("SEARXNG_URL").unwrap_or_else(|_| "http://localhost:8888".to_string());
+
+        // Pre-flight checklist (non-interactive) at startup
+        let report = crate::setup::check_all(crate::setup::SetupOptions::default()).await;
+        info!("{}", report.summarize_for_logs());
+        if report.has_failures() {
+            warn!("shadow-setup: startup checklist found failures; run shadowcrawl-mcp --setup for guided remediation");
+            report.print_action_required_blocks();
+        }
 
         info!("Starting MCP Service");
         info!("SearXNG URL: {}", searxng_url);
@@ -88,7 +97,10 @@ impl McpService {
                     state = state.with_memory(Arc::new(memory));
                     info!("Memory initialized successfully");
                 }
-                Err(e) => warn!("Failed to initialize memory: {}. Continuing without memory.", e),
+                Err(e) => warn!(
+                    "Failed to initialize memory: {}. Continuing without memory.",
+                    e
+                ),
             }
         } else {
             info!("QDRANT_URL not set. Memory feature disabled.");
@@ -126,15 +138,15 @@ impl rmcp::ServerHandler for McpService {
         ServerInfo {
             protocol_version: ProtocolVersion::LATEST,
             server_info: Implementation {
-                title: Some("Search & Scrape MCP".to_string()),
+                title: Some("Search & Sync MCP".to_string()),
                 description: Some(
-                    "A pure Rust web search and scraping service using SearXNG for federated search and a native Rust scraper for content extraction."
+                    "A pure Rust web research service using federated search plus high-integrity content synchronization for consistent downstream analysis."
                         .to_string(),
                 ),
                 ..Implementation::from_build_env()
             },
             instructions: Some(
-                "A pure Rust web search and scraping service using SearXNG for federated search and a native Rust scraper for content extraction."
+                "Use these tools to discover sources and synchronize web content into consistent, analysis-ready outputs."
                     .to_string(),
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
@@ -146,13 +158,16 @@ impl rmcp::ServerHandler for McpService {
         _page: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        let tools = tool_catalog()
+        let tools = self
+            .state
+            .tool_registry
+            .public_specs()
             .into_iter()
-            .map(|tool| Tool {
-                name: Cow::Owned(tool.name.to_string()),
-                title: Some(tool.title.to_string()),
-                description: Some(Cow::Owned(tool.description.to_string())),
-                input_schema: schema_to_object_map(&tool.input_schema),
+            .map(|spec| Tool {
+                name: Cow::Owned(spec.public_name),
+                title: Some(spec.public_title),
+                description: Some(Cow::Owned(spec.public_description)),
+                input_schema: schema_to_object_map(&spec.public_input_schema),
                 output_schema: None,
                 annotations: None,
                 execution: None,
@@ -172,7 +187,10 @@ impl rmcp::ServerHandler for McpService {
         request: CallToolRequestParams,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
-        info!("MCP tool call: {} with args: {:?}", request.name, request.arguments);
+        info!(
+            "MCP tool call: {} with args: {:?}",
+            request.name, request.arguments
+        );
 
         let args_map = request.arguments.as_ref().ok_or_else(|| {
             ErrorData::new(
@@ -182,34 +200,60 @@ impl rmcp::ServerHandler for McpService {
             )
         })?;
 
+        let internal_name = self
+            .state
+            .tool_registry
+            .resolve_incoming_tool_name(request.name.as_ref())
+            .ok_or_else(|| {
+                ErrorData::new(
+                    ErrorCode::METHOD_NOT_FOUND,
+                    format!("Unknown tool: {}", request.name),
+                    None,
+                )
+            })?;
+
+        if request.name.as_ref() != internal_name {
+            info!(
+                "tool_name_remap: public='{}' -> internal='{}'",
+                request.name, internal_name
+            );
+        }
+
         // rmcp stdio arguments are an object map; mcp_handlers expect a serde_json::Value.
         // Clone is fine here (tool inputs are small) and keeps handler API consistent across transports.
-        let args = Value::Object(args_map.clone());
+        let public_args = Value::Object(args_map.clone());
+        let internal_args = self
+            .state
+            .tool_registry
+            .map_public_arguments_to_internal(&internal_name, public_args);
 
-        match request.name.as_ref() {
+        match internal_name.as_str() {
             "search_web" => convert_http_handler_result(
-                handlers::search_web::handle(Arc::clone(&self.state), &args).await,
+                handlers::search_web::handle(Arc::clone(&self.state), &internal_args).await,
             ),
             "search_structured" => convert_http_handler_result(
-                handlers::search_structured::handle(Arc::clone(&self.state), &args).await,
+                handlers::search_structured::handle(Arc::clone(&self.state), &internal_args).await,
             ),
             "scrape_url" => convert_http_handler_result(
-                handlers::scrape_url::handle(Arc::clone(&self.state), &args).await,
+                handlers::scrape_url::handle(Arc::clone(&self.state), &internal_args).await,
             ),
             "crawl_website" => convert_http_handler_result(
-                handlers::crawl_website::handle(Arc::clone(&self.state), &args).await,
+                handlers::crawl_website::handle(Arc::clone(&self.state), &internal_args).await,
             ),
             "scrape_batch" => convert_http_handler_result(
-                handlers::scrape_batch::handle(Arc::clone(&self.state), &args).await,
+                handlers::scrape_batch::handle(Arc::clone(&self.state), &internal_args).await,
             ),
             "extract_structured" => convert_http_handler_result(
-                handlers::extract_structured::handle(Arc::clone(&self.state), &args).await,
+                handlers::extract_structured::handle(Arc::clone(&self.state), &internal_args).await,
             ),
             "research_history" => convert_http_handler_result(
-                handlers::research_history::handle(Arc::clone(&self.state), &args).await,
+                handlers::research_history::handle(Arc::clone(&self.state), &internal_args).await,
             ),
             "proxy_manager" => convert_http_handler_result(
-                handlers::proxy_manager::handle(Arc::clone(&self.state), &args).await,
+                handlers::proxy_manager::handle(Arc::clone(&self.state), &internal_args).await,
+            ),
+            "non_robot_search" => convert_http_handler_result(
+                handlers::non_robot_search::handle(Arc::clone(&self.state), &internal_args).await,
             ),
             _ => Err(ErrorData::new(
                 ErrorCode::METHOD_NOT_FOUND,

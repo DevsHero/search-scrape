@@ -9,7 +9,7 @@ Self-hosted Stealth Scraping & Federated Search for AI Agents. A 100% private, f
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-async-orange.svg)](mcp-server/Cargo.toml)
 [![MCP](https://img.shields.io/badge/protocol-MCP-blue.svg)](mcp-server/src/mcp/stdio.rs)
-[![Status](https://img.shields.io/badge/status-v1.1.0-green.svg)](README.md)
+[![Status](https://img.shields.io/badge/status-v2.0.0--rc-green.svg)](README.md)
 [![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=ff69b4&style=flat-square)](https://github.com/sponsors/DevsHero)
 
 ShadowCrawl is built for AI agent workflows that need:
@@ -24,23 +24,20 @@ If you want something you can run inside your own infra (Docker) and wire direct
 
 ## Current release status
 
-- Runtime version: `v1.1.0`
-- Release validation: stdio agent-mode + HTTP tool-path checks completed for release hardening
+- Runtime version: `v2.0.0-rc`
+- Release validation: macOS-focused manual validation (Linux/Windows may work but are not the primary test targets)
 - Service health endpoint: `GET /health`
 - Tool catalog endpoint: `GET /mcp/tools`
 - Tool call endpoint: `POST /mcp/call`
 
-### v1.1.0 highlights
+### v2.0.0-rc highlights
 
-- Shared quality-policy utilities are now centralized and reused across search/scrape/crawl/batch handlers.
-- `quality_mode` is available at runtime (`balanced` / `aggressive`) across major extraction tools.
-- `proxy_manager` adds `strict_proxy_health` (non-strict diagnostics vs strict hard-fail behavior).
-- `scrape_url`/`scrape_batch` JSON defaults now omit raw HTML noise unless explicitly requested.
-- MCP stdio server path is validated for real agent-mode initialize/list/call flows.
+- Adds the optional `non_robot_search` high-fidelity renderer (HITL) for JS-heavy/anti-bot targets.
+- Standardizes public tool naming via `tools_metadata.json` to keep MCP client UX stable.
 
-## Tool catalog (v1.0++)
+## Tool catalog
 
-The platform currently exposes 8 MCP tools:
+The platform currently exposes 9 MCP tools:
 
 1. `search_web` — federated web search
 2. `search_structured` — search + top result scraping
@@ -50,6 +47,7 @@ The platform currently exposes 8 MCP tools:
 6. `extract_structured` — schema-driven extraction
 7. `research_history` — semantic recall from prior runs
 8. `proxy_manager` — proxy list/status/switch/test/grab operations
+9. `non_robot_search` — high-fidelity visible-browser rendering (requires `--features non_robot_search`)
 
 Tip: all tools are available via both transports:
 - HTTP: `GET /mcp/tools`, `POST /mcp/call`
@@ -205,7 +203,7 @@ Use this in your VS Code/Cursor `mcp.json`:
          "args": [
             "compose",
             "-f",
-            "/absolute/path/to/shadowcrawl/docker-compose-local.yml",
+            "/absolute/path/to/search-scrape/docker-compose-local.yml",
             "exec",
             "-i",
             "-T",
@@ -216,6 +214,8 @@ Use this in your VS Code/Cursor `mcp.json`:
       }
    }
 }
+
+Tip: if you want public tool naming to match `tools_metadata.json`, set `SHADOWCRAWL_TOOLS_METADATA_PATH` to a readable path inside the container.
 ```
 
 ## Sample results
@@ -232,17 +232,6 @@ Real tool outputs (copy/paste examples):
 - [sample-results/research_history_json.txt](sample-results/research_history_json.txt)
 - [sample-results/proxy_manager_json.txt](sample-results/proxy_manager_json.txt)
 
-## What changed from v0.3.x to v1.0++
-
-- Introduced production MCP surface with unified HTTP + stdio tool behavior
-- Added and validated `proxy_manager` operational workflow
-- Expanded tooling to full 8-tool set with end-to-end readiness checks
-- Improved server lifecycle handling for stdio MCP reliability
-- Centralized tool schema/catalog definitions to reduce drift
-- Added release validation artifacts and readiness reporting
-
-Detailed notes: [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md)
-
 ## Key environment variables
 
 | Variable | Purpose | Default |
@@ -250,6 +239,8 @@ Detailed notes: [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md)
 | `SEARXNG_URL` | search backend URL | `http://searxng:8080` |
 | `QDRANT_URL` | semantic memory backend | unset |
 | `BROWSERLESS_URL` | browser rendering backend | unset |
+| `SHADOWCRAWL_TOOLS_METADATA_PATH` | map internal tool names to stable public names/titles | unset (auto-searches common paths) |
+| `MAX_CONTENT_CHARS` | default maximum characters to return for scrape outputs | `10000` |
 | `HTTP_TIMEOUT_SECS` | outbound timeout | `30` |
 | `HTTP_CONNECT_TIMEOUT_SECS` | connect timeout | `10` |
 | `OUTBOUND_LIMIT` | concurrency limiter | `32` |
@@ -279,16 +270,16 @@ This project is meant to be self-hosted infrastructure. A rough mental model:
 - [x] Core tools return expected payloads
 - [x] Proxy manager commands operational
 - [x] Health endpoint stable
-- [x] Release validation artifact generated
-
-Operational checklist document: [docs/GA_REFACTOR_READINESS_2026-02-12.md](docs/GA_REFACTOR_READINESS_2026-02-12.md)
+- [x] macOS setup preflight checked (`shadowcrawl --setup`)
 
 ## Repository map
 
 - [mcp-server/src](mcp-server/src) — Rust core server and MCP handlers
-- [docs](docs) — release reports, architecture notes, operational guidance
+- [docs](docs) — operational guidance
 - [docs/IDE_SETUP.md](docs/IDE_SETUP.md) — MCP client setup for popular IDEs/apps
+- [docs/VSCODE_SETUP.md](docs/VSCODE_SETUP.md) — VS Code-specific notes
 - [docs/SEARXNG_TUNING.md](docs/SEARXNG_TUNING.md) — tuning SearXNG for noise / bans
+- [docs/DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md) — container build/deploy notes
 - [searxng](searxng) — SearXNG runtime configuration
 - [sample-results](sample-results) — sample outputs
 

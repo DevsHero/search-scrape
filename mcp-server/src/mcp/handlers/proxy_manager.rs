@@ -57,8 +57,9 @@ pub async fn handle(
 
             match proxy_grabber::grab_proxies(&state, params).await {
                 Ok(result) => {
-                    let json_str = serde_json::to_string_pretty(&result)
-                        .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
+                    let json_str = serde_json::to_string_pretty(&result).unwrap_or_else(|e| {
+                        format!(r#"{{"error": "Failed to serialize: {}"}}"#, e)
+                    });
                     Ok(Json(McpCallResponse {
                         content: vec![McpContent {
                             content_type: "text".to_string(),
@@ -101,8 +102,9 @@ pub async fn handle(
 
             match proxy_grabber::list_proxies(params).await {
                 Ok(result) => {
-                    let json_str = serde_json::to_string_pretty(&result)
-                        .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
+                    let json_str = serde_json::to_string_pretty(&result).unwrap_or_else(|e| {
+                        format!(r#"{{"error": "Failed to serialize: {}"}}"#, e)
+                    });
                     Ok(Json(McpCallResponse {
                         content: vec![McpContent {
                             content_type: "text".to_string(),
@@ -294,7 +296,10 @@ pub async fn handle(
                 let mut failures = Vec::new();
 
                 for proxy_url in candidates {
-                    match proxy_manager.test_proxy_connection(&proxy_url, target_url).await {
+                    match proxy_manager
+                        .test_proxy_connection(&proxy_url, target_url)
+                        .await
+                    {
                         Ok(latency_ms) => {
                             if let Err(e) = proxy_manager
                                 .record_proxy_result(&proxy_url, true, Some(latency_ms))
@@ -317,7 +322,10 @@ pub async fn handle(
                             }));
                         }
                         Err(e) => {
-                            if let Err(e2) = proxy_manager.record_proxy_result(&proxy_url, false, None).await {
+                            if let Err(e2) = proxy_manager
+                                .record_proxy_result(&proxy_url, false, None)
+                                .await
+                            {
                                 warn!("Failed to record proxy failure: {}", e2);
                             }
                             failures.push(format!("{} -> {}", format_proxy_display(&proxy_url), e));

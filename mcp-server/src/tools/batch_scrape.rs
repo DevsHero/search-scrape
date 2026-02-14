@@ -1,6 +1,6 @@
+use crate::rust_scraper::QualityMode;
 use crate::types::*;
 use crate::AppState;
-use crate::rust_scraper::QualityMode;
 use anyhow::Result;
 use futures::stream::{self, StreamExt};
 use std::sync::Arc;
@@ -20,7 +20,10 @@ pub async fn scrape_batch(
     let start_time = Instant::now();
     let total_urls = urls.len();
 
-    info!("Starting batch scrape of {} URLs (concurrency: {})", total_urls, max_concurrent);
+    info!(
+        "Starting batch scrape of {} URLs (concurrency: {})",
+        total_urls, max_concurrent
+    );
 
     // Use futures stream for concurrent scraping with limited concurrency
     let results: Vec<ScrapeBatchResult> = stream::iter(urls)
@@ -30,20 +33,18 @@ pub async fn scrape_batch(
             let quality_mode = quality_mode;
             async move {
                 let url_start = Instant::now();
-               
-                match crate::scrape::scrape_url_with_options(
-                    &state,
-                    &url,
-                    use_proxy,
-                    quality_mode,
-                )
-                .await {
+
+                match crate::scrape::scrape_url_with_options(&state, &url, use_proxy, quality_mode)
+                    .await
+                {
                     Ok(mut data) => {
                         data.actual_chars = data.clean_content.len();
 
                         // Truncate content if max_chars specified
                         if let Some(max) = max_chars {
-                            crate::content_quality::apply_scrape_content_limit(&mut data, max, true);
+                            crate::content_quality::apply_scrape_content_limit(
+                                &mut data, max, true,
+                            );
                         }
 
                         // Keep batch JSON focused/clean by default (avoid huge <head>/<script> noise)
@@ -53,7 +54,7 @@ pub async fn scrape_batch(
                             &mut data.warnings,
                             "raw_html_omitted_in_batch_output",
                         );
-                        
+
                         ScrapeBatchResult {
                             url,
                             success: true,

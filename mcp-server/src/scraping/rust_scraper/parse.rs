@@ -139,7 +139,11 @@ impl RustScraper {
                         let alt = element.value().attr("alt").unwrap_or("").to_string();
                         let title = element.value().attr("title").unwrap_or("").to_string();
 
-                        images.push(Image { src: absolute_src, alt, title });
+                        images.push(Image {
+                            src: absolute_src,
+                            alt,
+                            title,
+                        });
                     }
                 }
             }

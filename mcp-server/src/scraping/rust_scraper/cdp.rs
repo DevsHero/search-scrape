@@ -1,10 +1,10 @@
 use super::RustScraper;
 use crate::types::ScrapeResponse;
 use anyhow::{anyhow, Result};
-use chrono::Utc;
 use chromiumoxide::browser::BrowserConfig;
 use chromiumoxide::handler::viewport::Viewport;
 use chromiumoxide::Browser;
+use chrono::Utc;
 use futures::StreamExt;
 use scraper::Html;
 use std::time::Duration;
@@ -13,7 +13,11 @@ use url::Url;
 
 impl RustScraper {
     /// 🚀 Direct CDP Stealth Control (universal)
-    pub async fn fetch_via_cdp(&self, url: &str, proxy_url: Option<String>) -> Result<(String, u16)> {
+    pub async fn fetch_via_cdp(
+        &self,
+        url: &str,
+        proxy_url: Option<String>,
+    ) -> Result<(String, u16)> {
         warn!("🚀 Using Direct CDP Stealth Mode for: {}", url);
 
         let browserless_url = std::env::var("BROWSERLESS_URL")
@@ -40,10 +44,13 @@ impl RustScraper {
             config = config.arg(format!("--proxy-server={}", proxy));
         }
 
-        let (mut browser, mut handler) =
-            Browser::launch(config.build().map_err(|e| anyhow!("Failed to build browser config: {}", e))?)
-                .await
-                .map_err(|e| anyhow!("Failed to launch browser: {}", e))?;
+        let (mut browser, mut handler) = Browser::launch(
+            config
+                .build()
+                .map_err(|e| anyhow!("Failed to build browser config: {}", e))?,
+        )
+        .await
+        .map_err(|e| anyhow!("Failed to launch browser: {}", e))?;
 
         let handle = tokio::spawn(async move {
             while let Some(event) = handler.next().await {
@@ -80,7 +87,10 @@ impl RustScraper {
             dist.sample(&mut rng)
         };
 
-        warn!("⏳ Initial idle time: {}ms (simulating human reading)", idle_time);
+        warn!(
+            "⏳ Initial idle time: {}ms (simulating human reading)",
+            idle_time
+        );
         tokio::time::sleep(Duration::from_millis(idle_time)).await;
 
         let scroll_actions: Vec<(u16, u64, bool, u16)> = {
@@ -103,7 +113,10 @@ impl RustScraper {
                 .collect()
         };
 
-        warn!("📜 Performing {} randomized scroll passes", scroll_actions.len());
+        warn!(
+            "📜 Performing {} randomized scroll passes",
+            scroll_actions.len()
+        );
 
         for (scroll_distance, read_pause, should_scroll_up, scroll_up) in scroll_actions {
             if let Err(e) = page
@@ -196,7 +209,10 @@ impl RustScraper {
         };
 
         for (x, y, delay) in moves {
-            if let Err(e) = page.evaluate(format!("document.elementFromPoint({}, {})", x, y)).await {
+            if let Err(e) = page
+                .evaluate(format!("document.elementFromPoint({}, {})", x, y))
+                .await
+            {
                 warn!("Mouse simulation error: {}", e);
             }
 
@@ -223,13 +239,53 @@ impl RustScraper {
 
         let code_blocks = self.extract_code_blocks(&document);
 
-        let mut clean_content = self.extract_clean_content(html, &parsed_url);
+        // JSON-LD can be the cleanest source on modern sites; prefer it when present.
+        let json_ld_content = self.extract_json_ld(&document);
+
+        let (mut clean_content, noise_reduction_ratio) =
+            if let Some(json_content) = json_ld_content.as_ref() {
+                (
+                    self.normalize_markdown_fragments(&html2md::parse_html(json_content)),
+                    0.0,
+                )
+            } else {
+                self.extract_clean_content_with_metrics(html, &parsed_url)
+            };
         clean_content = self.normalize_markdown_fragments(&clean_content);
         clean_content = self.apply_og_description_fallback(clean_content, &og_description);
+        clean_content = self.clean_noise(&clean_content);
 
         let headings = self.extract_headings(&document);
         let links = self.extract_content_links(&document, &parsed_url);
         let images = self.extract_images(&document, &parsed_url);
+
+        let mut embedded_data_sources = self.collect_embedded_data_sources(&document);
+        let mut embedded_state_json = embedded_data_sources
+            .iter()
+            .max_by_key(|s| s.content.len())
+            .map(|s| s.content.clone())
+            .or_else(|| self.extract_embedded_state_json(&document));
+
+        let mut warnings = Vec::new();
+        const MAX_STATE_JSON_CHARS: usize = 200_000;
+        for src in embedded_data_sources.iter_mut() {
+            if src.content.len() > MAX_STATE_JSON_CHARS {
+                src.content = src.content.chars().take(MAX_STATE_JSON_CHARS).collect();
+                warnings.push("embedded_data_sources_truncated".to_string());
+            }
+        }
+        if let Some(state) = embedded_state_json.as_ref() {
+            if state.len() > MAX_STATE_JSON_CHARS {
+                embedded_state_json = Some(state.chars().take(MAX_STATE_JSON_CHARS).collect());
+                warnings.push("embedded_state_json_truncated".to_string());
+            }
+        }
+
+        let hydration_status = crate::types::HydrationStatus {
+            json_found: !embedded_data_sources.is_empty() || embedded_state_json.is_some(),
+            settle_time_ms: None,
+            noise_reduction_ratio,
+        };
 
         clean_content = self.append_image_context_markdown(clean_content, &images, &title);
         let word_count = self.count_words(&clean_content);
@@ -239,13 +295,14 @@ impl RustScraper {
             self.calculate_extraction_score(word_count, &published_at, &code_blocks, &headings);
 
         let domain = parsed_url.host_str().map(|h| h.to_string());
-        let warnings = Vec::new();
-
         Ok(ScrapeResponse {
             url: url.to_string(),
             title,
             content: html.to_string(),
             clean_content,
+            embedded_state_json,
+            embedded_data_sources,
+            hydration_status,
             meta_description,
             meta_keywords,
             headings,

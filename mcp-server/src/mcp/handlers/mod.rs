@@ -1,6 +1,7 @@
 pub mod common;
 pub mod crawl_website;
 pub mod extract_structured;
+pub mod non_robot_search;
 pub mod proxy_manager;
 pub mod research_history;
 pub mod scrape_batch;

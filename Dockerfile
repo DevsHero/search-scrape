@@ -3,6 +3,9 @@
 # Build stage
 FROM rust:bookworm AS builder
 
+# Optional cargo features to enable at build time, e.g. "non_robot_search"
+ARG CARGO_FEATURES=
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
@@ -23,15 +26,14 @@ RUN mkdir -p src/bin && echo "pub fn _dummy() {}" > src/lib.rs && echo "fn main(
 # Build dependencies (cache registry & git, not target)
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --locked --bin shadowcrawl --bin shadowcrawl-mcp
+    sh -ec 'FEATURES=""; if [ -n "${CARGO_FEATURES:-}" ]; then FEATURES="--features ${CARGO_FEATURES}"; fi; cargo build --release --locked ${FEATURES} --bin shadowcrawl --bin shadowcrawl-mcp'
 RUN rm -rf src
 
 # Copy source code from mcp-server directory (including subdirectories)
 # Source includes optimizations:
-# - Parallel scraping with concurrent limiting (batch_scrape.rs)
+# - Parallel content synchronization with concurrency limiting (batch tool)
 # - Markdown content cleaner (rust_scraper.rs)
 # - Semantic reranking of search results (rerank.rs)
-# - Anti-bot protection with stealth headers (antibot.rs)
 COPY mcp-server/src/ ./src/
 
 # Force source mtimes forward to avoid stale fingerprint reuse from dummy bootstrap build
@@ -43,7 +45,7 @@ RUN rm -f /app/target/release/shadowcrawl /app/target/release/shadowcrawl-mcp
 # Build application (cache registry & git)
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --locked --bin shadowcrawl --bin shadowcrawl-mcp
+    sh -ec 'FEATURES=""; if [ -n "${CARGO_FEATURES:-}" ]; then FEATURES="--features ${CARGO_FEATURES}"; fi; cargo build --release --locked ${FEATURES} --bin shadowcrawl --bin shadowcrawl-mcp'
 
 # Guardrail: fail build if binaries are suspiciously small (dummy build output)
 RUN test -x /app/target/release/shadowcrawl && test -x /app/target/release/shadowcrawl-mcp && \
@@ -62,6 +64,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Tool metadata (sanitized names/descriptions)
+COPY tools_metadata.json /etc/shadowcrawl/tools_metadata.json
 
 # Create app user and cache directories
 RUN useradd -r -s /bin/false appuser && \

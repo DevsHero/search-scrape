@@ -45,7 +45,13 @@ pub async fn handle(
         safesearch: arguments
             .get("safesearch")
             .and_then(|v| v.as_i64())
-            .and_then(|n| if (0..=2).contains(&n) { Some(n as u8) } else { None }),
+            .and_then(|n| {
+                if (0..=2).contains(&n) {
+                    Some(n as u8)
+                } else {
+                    None
+                }
+            }),
         time_range: arguments
             .get("time_range")
             .and_then(|v| v.as_str())
@@ -81,13 +87,22 @@ pub async fn handle(
     let search_id = Uuid::new_v4().to_string();
 
     let content_text = if results.is_empty() {
-        let mut text = format!("Search ID: {}\nNo search results found for query: '{}'\n\n", search_id, query);
+        let mut text = format!(
+            "Search ID: {}\nNo search results found for query: '{}'\n\n",
+            search_id, query
+        );
 
         if !extras.suggestions.is_empty() {
-            text.push_str(&format!("**Suggestions:** {}\n", extras.suggestions.join(", ")));
+            text.push_str(&format!(
+                "**Suggestions:** {}\n",
+                extras.suggestions.join(", ")
+            ));
         }
         if !extras.corrections.is_empty() {
-            text.push_str(&format!("**Did you mean:** {}\n", extras.corrections.join(", ")));
+            text.push_str(&format!(
+                "**Did you mean:** {}\n",
+                extras.corrections.join(", ")
+            ));
         }
         if !extras.unresponsive_engines.is_empty() {
             text.push_str(&format!(
@@ -150,7 +165,10 @@ pub async fn handle(
         }
 
         if !extras.suggestions.is_empty() {
-            text.push_str(&format!("\n**Related searches:** {}\n", extras.suggestions.join(", ")));
+            text.push_str(&format!(
+                "\n**Related searches:** {}\n",
+                extras.suggestions.join(", ")
+            ));
         }
         if !extras.unresponsive_engines.is_empty() {
             text.push_str(&format!(

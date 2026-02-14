@@ -1,14 +1,14 @@
+use crate::rust_scraper::QualityMode;
 use crate::types::*;
 use crate::AppState;
-use crate::rust_scraper::QualityMode;
 use anyhow::Result;
+use futures::stream::{self, StreamExt};
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 use url::Url;
-use futures::stream::{self, StreamExt};
 
 /// Configuration for website crawling
 #[derive(Clone)]
@@ -79,8 +79,10 @@ pub async fn crawl_website(
     let base_url = Url::parse(start_url)?;
     let base_domain = base_url.host_str().unwrap_or("").to_string();
 
-    info!("Starting crawl of {} (max_depth: {}, max_pages: {})",
-          start_url, config.max_depth, config.max_pages);
+    info!(
+        "Starting crawl of {} (max_depth: {}, max_pages: {})",
+        start_url, config.max_depth, config.max_pages
+    );
 
     // Track visited URLs and discovered URLs with their depths
     let visited: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
@@ -202,11 +204,17 @@ pub async fn crawl_website(
                             }
 
                             // Truncate content to avoid large payloads (FIX for EOF errors)
-                            let content_preview = if data.clean_content.len() > config.max_chars_per_page {
-                                Some(data.clean_content.chars().take(config.max_chars_per_page).collect())
-                            } else {
-                                Some(data.clean_content.clone())
-                            };
+                            let content_preview =
+                                if data.clean_content.len() > config.max_chars_per_page {
+                                    Some(
+                                        data.clean_content
+                                            .chars()
+                                            .take(config.max_chars_per_page)
+                                            .collect(),
+                                    )
+                                } else {
+                                    Some(data.clean_content.clone())
+                                };
 
                             let result = CrawlPageResult {
                                 url: url.clone(),
@@ -270,7 +278,10 @@ pub async fn crawl_website(
 
     info!(
         "Crawl completed: {} pages crawled, {} failed, max depth {}, {}ms total",
-        pages_crawled, pages_failed, final_max_depth, start_time.elapsed().as_millis()
+        pages_crawled,
+        pages_failed,
+        final_max_depth,
+        start_time.elapsed().as_millis()
     );
 
     Ok(CrawlResponse {
@@ -351,7 +362,8 @@ fn should_crawl(url: &str, base_domain: &str, config: &CrawlConfig) -> bool {
 
     // Check include patterns (if specified, URL must match at least one)
     if !config.include_patterns.is_empty() {
-        let matches_include = config.include_patterns
+        let matches_include = config
+            .include_patterns
             .iter()
             .any(|p| url_lower.contains(&p.to_lowercase()));
         if !matches_include {

@@ -1,7 +1,7 @@
+use super::common::parse_quality_mode;
 use crate::mcp::{McpCallResponse, McpContent};
 use crate::types::ErrorResponse;
 use crate::{scrape, AppState};
-use super::common::parse_quality_mode;
 use axum::http::StatusCode;
 use axum::response::Json;
 use serde_json::Value;
@@ -37,7 +37,11 @@ pub async fn handle(
                 .get("max_chars")
                 .and_then(|v| v.as_u64())
                 .map(|n| n as usize)
-                .or_else(|| std::env::var("MAX_CONTENT_CHARS").ok().and_then(|s| s.parse().ok()))
+                .or_else(|| {
+                    std::env::var("MAX_CONTENT_CHARS")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                })
                 .unwrap_or(10000);
 
             crate::content_quality::apply_scrape_content_limit(&mut content, max_chars, false);
@@ -97,7 +101,11 @@ pub async fn handle(
                         content.word_count
                     )
                 } else {
-                    let preview = content.clean_content.chars().take(max_chars).collect::<String>();
+                    let preview = content
+                        .clean_content
+                        .chars()
+                        .take(max_chars)
+                        .collect::<String>();
                     if content.clean_content.len() > max_chars {
                         format!(
                             "{}\n\n[Content truncated: {}/{} chars shown. Increase max_chars parameter to see more]",
@@ -144,7 +152,10 @@ pub async fn handle(
                         sources.push('\n');
                     }
                     if link_count > max_sources {
-                        sources.push_str(&format!("\n(Showing {} of {} total links)\n", max_sources, link_count));
+                        sources.push_str(&format!(
+                            "\n(Showing {} of {} total links)\n",
+                            max_sources, link_count
+                        ));
                     }
                     sources
                 };

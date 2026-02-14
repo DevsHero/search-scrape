@@ -13,12 +13,14 @@ proxies.yaml
 # Scrapy
 scrapy-service/webspider/httpcache/
 scrapy-service/webspider/.scrapy/
-
+.mcpregistry_github_token
+.mcpregistry_registry_token
 # Docker
 *.pid
 .DS_Store
 .fastembed_cache/
-
+mcp-server/.mcpregistry_github_token
+mcp-server/.mcpregistry_registry_token
 # Secrets / registry auth
 .mcpregistry_*
 *.token

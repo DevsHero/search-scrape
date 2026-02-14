@@ -10,6 +10,23 @@ use tracing::{info, warn};
 use url::Url;
 
 impl RustScraper {
+    pub(super) fn extract_clean_content_with_metrics(
+        &self,
+        html: &str,
+        base_url: &Url,
+    ) -> (String, f64) {
+        let clean = self.extract_clean_content(html, base_url);
+        // Approximate "noise reduction" as percentage removed by our cleaning pipeline.
+        // This is computed relative to a whitespace-normalized raw text snapshot.
+        let raw = self.clean_text(&html2md::parse_html(html));
+        let ratio = if raw.is_empty() {
+            0.0
+        } else {
+            (raw.len().saturating_sub(clean.len())) as f64 / raw.len() as f64
+        };
+        (clean, ratio.max(0.0).min(1.0))
+    }
+
     /// Fallback to og:description when main content is missing or too small
     pub(super) fn apply_og_description_fallback(
         &self,
@@ -54,10 +71,7 @@ impl RustScraper {
         }
 
         // 1) AGGRESSIVE Pre-clean HTML to strip nav, header, footer, forms, buttons, hidden elements
-        let mut pre = self.preprocess_html(html);
-
-        // 1.5) Domain-specific aggressive cleaning
-        pre = self.domain_specific_cleaning(&pre, base_url);
+        let pre = self.preprocess_html(html);
 
         // 1a) mdBook-style extractor (e.g., Rust Book) — try focused body first
         if let Some(md_text) = self.extract_mdbook_like(&pre) {
@@ -134,7 +148,10 @@ impl RustScraper {
         }
 
         // Try #content first - this is mdBook's main content container
-        if let Some(node) = doc.find(SelName("div").and(SelAttr("id", "content"))).next() {
+        if let Some(node) = doc
+            .find(SelName("div").and(SelAttr("id", "content")))
+            .next()
+        {
             let inner = node.inner_html();
             let text = html2md::parse_html(&inner);
             let cleaned = self.clean_text(&text);
@@ -228,16 +245,59 @@ impl RustScraper {
         self.clean_text(&text)
     }
 
-    /// Recursively extract text from elements
+    /// Recursively extract text from elements.
+    ///
+    /// Includes universal anti-skeleton behavior:
+    /// - If more than 3 consecutive child nodes have identical short text, treat as placeholders and drop them.
+    /// - Skip very low text-density containers to avoid deep navigation/boilerplate.
     fn extract_text_recursive(&self, element: &scraper::ElementRef, text_parts: &mut Vec<String>) {
+        fn flush_run(
+            scraper: &RustScraper,
+            run_text: &mut Option<String>,
+            run_nodes: &mut Vec<scraper::ElementRef>,
+            text_parts: &mut Vec<String>,
+        ) {
+            if run_nodes.is_empty() {
+                *run_text = None;
+                return;
+            }
+
+            let text = run_text.as_deref().unwrap_or("");
+            let is_short = text.len() <= 120 && text.split_whitespace().count() <= 12;
+            let is_placeholder_run = is_short && run_nodes.len() > 3;
+
+            if !is_placeholder_run {
+                for el in run_nodes.drain(..) {
+                    scraper.extract_text_recursive(&el, text_parts);
+                }
+            } else {
+                run_nodes.clear();
+            }
+
+            *run_text = None;
+        }
+
+        let mut run_text: Option<String> = None;
+        let mut run_nodes: Vec<scraper::ElementRef> = Vec::new();
+
         for child in element.children() {
             if let Some(child_element) = scraper::ElementRef::wrap(child) {
                 let tag_name = child_element.value().name();
                 if matches!(
                     tag_name,
-                    "script" | "style" | "noscript" | "svg" | "canvas" | "iframe" | "form" | "header"
-                        | "footer" | "nav" | "aside"
+                    "script"
+                        | "style"
+                        | "noscript"
+                        | "svg"
+                        | "canvas"
+                        | "iframe"
+                        | "form"
+                        | "header"
+                        | "footer"
+                        | "nav"
+                        | "aside"
                 ) {
+                    flush_run(self, &mut run_text, &mut run_nodes, text_parts);
                     continue;
                 }
 
@@ -253,13 +313,104 @@ impl RustScraper {
                     }
                 }
                 if skip {
+                    flush_run(self, &mut run_text, &mut run_nodes, text_parts);
                     continue;
                 }
-                self.extract_text_recursive(&child_element, text_parts);
+
+                if self.is_low_text_density_container(&child_element) {
+                    flush_run(self, &mut run_text, &mut run_nodes, text_parts);
+                    continue;
+                }
+
+                let signature = {
+                    let raw = child_element.text().collect::<Vec<_>>().join(" ");
+                    let cleaned = self.clean_text(&raw);
+                    let trimmed = cleaned.trim();
+                    if trimmed.len() > 200 {
+                        trimmed[..200].to_string()
+                    } else {
+                        trimmed.to_string()
+                    }
+                };
+
+                if let Some(current) = &run_text {
+                    if *current == signature && !signature.is_empty() {
+                        run_nodes.push(child_element);
+                        continue;
+                    }
+
+                    flush_run(self, &mut run_text, &mut run_nodes, text_parts);
+                }
+
+                run_text = Some(signature);
+                run_nodes.push(child_element);
             } else if let Some(text_node) = child.value().as_text() {
+                flush_run(self, &mut run_text, &mut run_nodes, text_parts);
                 text_parts.push(text_node.text.to_string());
             }
         }
+
+        flush_run(self, &mut run_text, &mut run_nodes, text_parts);
+    }
+
+    fn is_low_text_density_container(&self, element: &scraper::ElementRef) -> bool {
+        let tag = element.value().name();
+        // Never drop typical content-bearing tags.
+        if matches!(tag, "p" | "li" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
+            return false;
+        }
+
+        // Only apply to common UI scaffolding containers.
+        if !matches!(tag, "div" | "section" | "span") {
+            return false;
+        }
+
+        // This heuristic targets UI scaffolding: many nodes / controls, little text.
+        // Semantic protection: keep likely "core data" containers (currency/price/location/job title).
+        let text = element.text().collect::<Vec<_>>().join(" ");
+        let text_lower = text.to_ascii_lowercase();
+        let has_currency = text.contains('$')
+            || text.contains('€')
+            || text.contains('£')
+            || text.contains('¥')
+            || text.contains('฿');
+        let has_high_value_tokens = has_currency
+            || text_lower.contains("price")
+            || text_lower.contains("location")
+            || text_lower.contains("job title")
+            || text_lower.contains("salary")
+            || text_lower.contains("per night");
+        let text_words = text.split_whitespace().count();
+        if text_words >= 25 {
+            return false;
+        }
+
+        let mut child_elements = 0usize;
+        let mut control_like = 0usize;
+        for child in element.children() {
+            let Some(el) = scraper::ElementRef::wrap(child) else {
+                continue;
+            };
+            child_elements += 1;
+            let n = el.value().name();
+            if matches!(n, "a" | "button" | "input" | "select" | "option" | "svg") {
+                control_like += 1;
+            }
+            if child_elements >= 60 {
+                break;
+            }
+        }
+
+        let mut cond_a = text_words <= 4 && control_like >= 8;
+        let mut cond_b = text_words <= 6 && child_elements >= 40;
+
+        if has_high_value_tokens {
+            // Lower rejection threshold by ~50% => require "more clearly boilerplate" to drop.
+            cond_a = text_words <= 2 && control_like >= 10;
+            cond_b = text_words <= 3 && child_elements >= 55;
+        }
+
+        cond_a || cond_b
     }
 
     /// Clean extracted text (whitespace normalization)
@@ -290,6 +441,13 @@ impl RustScraper {
             r"(?i)^comments?$",
             r"(?i)^read more$",
             r"(?i)^continue reading$",
+            r"(?i)^select categories$",
+            r"(?i)^close$",
+            r"(?i)^open$",
+            r"(?i)^menu$",
+            r"(?i)^skip to content$",
+            r"(?i)^filters?$",
+            r"(?i)^sort$",
         ];
         let re_garbage = Regex::new(&garbage.join("|")).unwrap();
 
@@ -306,9 +464,7 @@ impl RustScraper {
             if re_garbage.is_match(line_trim) {
                 continue;
             }
-            if self.is_aggressive_mode()
-                && self.count_words(line_trim) <= 2
-                && line_trim.len() < 24
+            if self.is_aggressive_mode() && self.count_words(line_trim) <= 2 && line_trim.len() < 24
             {
                 continue;
             }
@@ -317,6 +473,9 @@ impl RustScraper {
 
         kept.dedup();
         let result = kept.join("\n");
+
+        // Extra de-noising for modern SPA pages (collapse placeholder spam, consecutive dup lines, etc.)
+        let result = self.clean_noise(&result);
 
         let output_words = self.count_words(&result);
         if output_words < input_words / 2 {
@@ -328,6 +487,46 @@ impl RustScraper {
 
         let re_multi_nl = Regex::new(r"\n{3,}").unwrap();
         re_multi_nl.replace_all(&result, "\n\n").to_string()
+    }
+
+    /// Utility filter: removes consecutive identical lines and collapses repeated boilerplate phrases.
+    ///
+    /// Designed to handle SPA placeholder spam such as repeated short phrases.
+    pub(super) fn clean_noise(&self, text: &str) -> String {
+        let mut s = text.replace("==========", "\n");
+
+        // Collapse repeated short token sequences (common in skeleton/loading UIs)
+        // without relying on site-specific phrase lists.
+        s = collapse_repeated_ngram_runs(&s, 4, 5);
+        s = collapse_repeated_ngram_runs(&s, 3, 6);
+
+        let mut out_lines: Vec<String> = Vec::new();
+        let mut last_line: Option<String> = None;
+        let mut run_len: usize = 0;
+
+        for raw_line in s.lines() {
+            let line = raw_line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            if let Some(last) = &last_line {
+                if last == line {
+                    run_len += 1;
+                    // If the same short line repeats many times, collapse it.
+                    if run_len >= 4 && line.len() <= 120 {
+                        continue;
+                    }
+                    continue;
+                }
+            }
+
+            last_line = Some(line.to_string());
+            run_len = 1;
+            out_lines.push(line.to_string());
+        }
+
+        out_lines.join("\n")
     }
 
     /// Preprocess HTML before readability
@@ -342,8 +541,10 @@ impl RustScraper {
         .unwrap();
         s = re_block.replace_all(&s, " ").to_string();
 
-        let re_structural = Regex::new(r"(?is)<(?:nav|header|footer|aside)[^>]*?>.*?</(?:nav|header|footer|aside)>")
-            .unwrap();
+        let re_structural = Regex::new(
+            r"(?is)<(?:nav|header|footer|aside)[^>]*?>.*?</(?:nav|header|footer|aside)>",
+        )
+        .unwrap();
         s = re_structural.replace_all(&s, " ").to_string();
 
         let re_interactive =
@@ -419,87 +620,6 @@ impl RustScraper {
         s
     }
 
-    fn domain_specific_cleaning(&self, html: &str, base_url: &Url) -> String {
-        let mut s = html.to_string();
-        let domain = base_url.host_str().map(|h| h.to_lowercase());
-
-        if let Some(d) = domain {
-            if d.contains("amazon") {
-                let re_amazon = Regex::new(
-                    r#"(?is)<(?:div|section)[^>]*?(?:id|class)=(?:'|\")[^'\">]*(?:dp-ads|recommendations|also-bought|frequently-bought|similar-items|sponsored|detail-bullets-pricing|marketing-message|btf-content)[^'\">]*(?:'|\")[^>]*?>.*?</(?:div|section)>"#,
-                )
-                .unwrap();
-                s = re_amazon.replace_all(&s, " ").to_string();
-                info!("Applied Amazon-specific cleaning");
-            }
-
-            if d.contains("ebay") || d.contains("walmart") {
-                let re_ecommerce = Regex::new(
-                    r#"(?is)<(?:div|section)[^>]*?(?:id|class)=(?:'|\")[^'\">]*(?:recommendations|cross-sell|upsell|related-products|sponsored|carousel)[^'\">]*(?:'|\")[^>]*?>.*?</(?:div|section)>"#,
-                )
-                .unwrap();
-                s = re_ecommerce.replace_all(&s, " ").to_string();
-                info!("Applied e-commerce cleaning");
-            }
-
-            if d.contains("linkedin") {
-                let re_linkedin = Regex::new(
-                    r#"(?is)<(?:div|section)[^>]*?(?:id|class)=(?:'|\")[^'\">]*(?:login-wall|auth-wall|artdeco-modal|msg-overlay|scaffold-layout__sidebar|job-alert|global-nav)[^'\">]*(?:'|\")[^>]*?>.*?</(?:div|section)>"#,
-                )
-                .unwrap();
-                s = re_linkedin.replace_all(&s, " ").to_string();
-                info!("Applied LinkedIn-specific cleaning");
-            }
-
-            if d.contains("twitter") || d.contains("x.com") {
-                let re_twitter = Regex::new(
-                    r#"(?is)<(?:div|section)[^>]*?(?:id|class)=(?:'|\")[^'\">]*(?:login|signup|global-nav|sidebar|who-to-follow|trends|footer|modal)[^'\">]*(?:'|\")[^>]*?>.*?</(?:div|section)>"#,
-                )
-                .unwrap();
-                s = re_twitter.replace_all(&s, " ").to_string();
-                info!("Applied Twitter/X-specific cleaning");
-            }
-
-            if d.contains("zillow") || d.contains("redfin") {
-                let re_realestate = Regex::new(
-                    r#"(?is)<(?:div|section)[^>]*?(?:id|class)=(?:'|\")[^'\">]*(?:similar-homes|nearby-homes|agent-contact|mortgage-calculator|contact-form)[^'\">]*(?:'|\")[^>]*?>.*?</(?:div|section)>"#,
-                )
-                .unwrap();
-                s = re_realestate.replace_all(&s, " ").to_string();
-                info!("Applied real estate cleaning");
-            }
-
-            if d.contains("github") {
-                let re_github = Regex::new(
-                    r#"(?is)<(?:div|section)[^>]*?(?:id|class)=(?:'|\")[^'\">]*(?:file-navigation|repository-content-pjax|getting-started|trending|explore)[^'\">]*(?:'|\")[^>]*?>.*?</(?:div|section)>"#,
-                )
-                .unwrap();
-                s = re_github.replace_all(&s, " ").to_string();
-                info!("Applied GitHub-specific cleaning");
-            }
-
-            if d.contains("substack") || d.contains("medium") || d.contains("bloomberg") {
-                let re_publication = Regex::new(
-                    r#"(?is)<(?:div|section)[^>]*?(?:id|class)=(?:'|\")[^'\">]*(?:paywall-banner|subscription-widget|author-bio-bottom|related-posts|recommended-stories)[^'\">]*(?:'|\")[^>]*?>.*?</(?:div|section)>"#,
-                )
-                .unwrap();
-                s = re_publication.replace_all(&s, " ").to_string();
-                info!("Applied publication platform cleaning");
-            }
-
-            if d.contains("bloomberg") {
-                let re_bloomberg = Regex::new(
-                    r#"(?is)<(?:div|section)[^>]*?(?:id|class)=(?:'|\")[^'\">]*(?:paywall|subscribe|newsletter|modal|ad|promo|cookie|consent)[^'\">]*(?:'|\")[^>]*?>.*?</(?:div|section)>"#,
-                )
-                .unwrap();
-                s = re_bloomberg.replace_all(&s, " ").to_string();
-                info!("Applied Bloomberg-specific cleaning");
-            }
-        }
-
-        s
-    }
-
     fn is_noise_identifier(&self, ident: &str) -> bool {
         let ident = ident.to_ascii_lowercase();
         let needles = [
@@ -534,7 +654,11 @@ impl RustScraper {
         if needles.iter().any(|n| ident.contains(n)) {
             return true;
         }
-        if ident.contains("-ad") || ident.contains("ad-") || ident.contains("_ad") || ident.contains("ad_") {
+        if ident.contains("-ad")
+            || ident.contains("ad-")
+            || ident.contains("_ad")
+            || ident.contains("ad_")
+        {
             return true;
         }
         false
@@ -624,7 +748,11 @@ impl RustScraper {
         }
 
         let noise_ratio = noise_lines as f64 / lines.len() as f64;
-        let avg_line_length = if !lines.is_empty() { total_chars / lines.len() } else { 0 };
+        let avg_line_length = if !lines.is_empty() {
+            total_chars / lines.len()
+        } else {
+            0
+        };
 
         noise_ratio > 0.6 || avg_line_length < 20
     }
@@ -695,4 +823,43 @@ impl RustScraper {
 
         out
     }
+}
+
+fn collapse_repeated_ngram_runs(input: &str, n: usize, min_repeats_exclusive: usize) -> String {
+    if n == 0 {
+        return input.to_string();
+    }
+
+    let tokens: Vec<&str> = input.split_whitespace().collect();
+    if tokens.len() < n * (min_repeats_exclusive + 1) {
+        return input.to_string();
+    }
+
+    let mut out: Vec<&str> = Vec::with_capacity(tokens.len());
+    let mut i = 0usize;
+    while i < tokens.len() {
+        if i + n <= tokens.len() {
+            let base = &tokens[i..i + n];
+            let mut repeats = 1usize;
+            while i + (repeats + 1) * n <= tokens.len() {
+                let next = &tokens[i + repeats * n..i + (repeats + 1) * n];
+                if next == base {
+                    repeats += 1;
+                } else {
+                    break;
+                }
+            }
+
+            if repeats > min_repeats_exclusive {
+                out.extend_from_slice(base);
+                i += repeats * n;
+                continue;
+            }
+        }
+
+        out.push(tokens[i]);
+        i += 1;
+    }
+
+    out.join(" ")
 }

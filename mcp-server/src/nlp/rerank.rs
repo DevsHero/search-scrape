@@ -67,11 +67,7 @@ impl Reranker {
     }
 
     /// Rerank search results and optionally filter by threshold
-    pub fn rerank(
-        &self,
-        results: Vec<SearchResult>,
-        threshold: Option<f32>,
-    ) -> Vec<SearchResult> {
+    pub fn rerank(&self, results: Vec<SearchResult>, threshold: Option<f32>) -> Vec<SearchResult> {
         // Score all results
         let mut scored: Vec<(SearchResult, f32)> = results
             .into_iter()
@@ -102,11 +98,7 @@ impl Reranker {
     }
 
     /// Get top N reranked results
-    pub fn rerank_top(
-        &self,
-        results: Vec<SearchResult>,
-        top_n: usize,
-    ) -> Vec<SearchResult> {
+    pub fn rerank_top(&self, results: Vec<SearchResult>, top_n: usize) -> Vec<SearchResult> {
         let mut reranked = self.rerank(results, None);
         reranked.truncate(top_n);
         reranked

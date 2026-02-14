@@ -1,27 +1,35 @@
-# VS Code MCP Configuration - All 3 Tools Enabled
+# VS Code MCP Setup (macOS-tested)
 
-## ✅ Confirmation: All 3 Tools Are Compiled
+This repo exposes an MCP server over **stdio** via the `shadowcrawl-mcp` binary.
 
-Binary contains:
-- ✅ `search_web`
-- ✅ `scrape_url`  
-- ✅ `research_history` (NEW - Phase 1 feature)
+Recommended setup: run via Docker Compose so SearXNG/Qdrant/Browserless are already wired.
 
-## VS Code Setup Instructions
+## 1) Start the stack
 
-### Step 1: Update VS Code Settings
+```bash
+docker compose -f docker-compose-local.yml up -d --build
+```
 
-**Location:** `.vscode/settings.json` in your project root
+## 2) Configure VS Code MCP
+
+In VS Code settings (workspace `settings.json`), add an MCP server pointing at the running container:
 
 ```json
 {
   "mcp.servers": {
     "shadowcrawl": {
-      "command": "/Users/hero/Documents/GitHub/shadowcrawl/shadowcrawl/target/release/shadowcrawl-mcp",
-      "args": [],
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "/absolute/path/to/search-scrape/docker-compose-local.yml",
+        "exec",
+        "-i",
+        "-T",
+        "shadowcrawl",
+        "shadowcrawl-mcp"
+      ],
       "env": {
-        "QDRANT_URL": "http://localhost:6334",
-        "SEARXNG_URL": "http://localhost:8888",
         "RUST_LOG": "info"
       }
     }
@@ -29,135 +37,19 @@ Binary contains:
 }
 ```
 
+## 3) Restart VS Code (tool cache)
 
+VS Code caches tool lists. If tools don’t appear or look stale:
+- fully quit (Cmd+Q)
+- reopen VS Code
 
-**IMPORTANT:** VS Code caches MCP tool lists. You MUST:
+## Tool catalog
 
-1. **Quit VS Code completely** (Cmd+Q on Mac)
-2. **Start VS Code again**
-3. Wait for MCP server to initialize (~2-3 seconds)
-
-### Step 3: Verify Tools Are Loaded
-
-You should now see **3 tools** in the MCP panel:
-
-1. 🔍 **search_web** - Web search with SearXNG
-2. 📄 **scrape_url** - Content extraction  
-3. 🧠 **research_history** - Semantic history search (NEW!)
-
-## Alternative: Claude Desktop Config
-
-If using Claude Desktop instead of VS Code:
-
-**Location:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "shadowcrawl": {
-      "command": "/Users/hero/Documents/GitHub/shadowcrawl/shadowcrawl/target/release/shadowcrawl-mcp",
-      "env": {
-        "QDRANT_URL": "http://localhost:6334",
-        "SEARXNG_URL": "http://localhost:8888"
-      }
-    }
-  }
-}
-```
-
-Then **restart Claude Desktop**.
-
-## Testing All 3 Tools
-
-### Test 1: search_web
-```
-Search for "rust async programming" and show top 3 results
-```
-
-### Test 2: scrape_url
-```
-Scrape https://doc.rust-lang.org/book/ and extract code blocks
-```
-
-### Test 3: research_history (NEW!)
-```
-Search my history for "programming tutorials"
-```
+- Default build: 8 tools (`search_web`, `search_structured`, `scrape_url`, `scrape_batch`, `crawl_website`, `extract_structured`, `research_history`, `proxy_manager`)
+- Optional: `non_robot_search` (HITL / visible browser) when built with `--features non_robot_search`
 
 ## Troubleshooting
 
-### "research_history not showing"
-
-**Cause:** VS Code is using an old cached version
-
-**Fix:**
-1. Kill all VS Code processes: `pkill -9 "Visual Studio Code"`
-2. Delete MCP cache (if exists): `rm -rf ~/.vscode/mcp-cache/`
-3. Restart VS Code
-4. Verify binary is correct: `ls -lh shadowcrawl/target/release/shadowcrawl-mcp`
-
-### "Cannot connect to Qdrant"
-
-**Cause:** Qdrant not running or wrong port
-
-**Fix:**
-```bash
-# Check Qdrant is running on gRPC port 6334
-docker ps | grep qdrant
-
-# Verify port
-curl http://localhost:6333/  # HTTP port (should work)
-# MCP uses gRPC port 6334
-```
-
-**Note:** The binary uses **port 6334** (gRPC), not 6333 (HTTP)!
-
-### "research_history returns 'not available'"
-
-**Cause:** QDRANT_URL not set or Qdrant not running
-
-**Fix:**
-1. Ensure Qdrant is running: `docker-compose up -d qdrant`
-2. Verify environment variable is set in config
-3. Restart MCP server (quit and reopen VS Code)
-
-## Real Usage Example (All Features)
-
-Once configured, ask the AI assistant:
-
-```
-1. Search for "rust web scraping libraries" (uses search_web + query rewriting)
-
-2. Scrape the top result and extract code examples (uses scrape_url + code extraction)
-
-3. Check if I've researched this before (uses research_history + semantic search)
-
-4. Search again for "rust scraping" (duplicate detection should trigger)
-```
-
-The AI should use all 3 tools automatically and show:
-- ✅ Query rewriting (Phase 2)
-- ✅ Code extraction (Priority 1)
-- ✅ History search (Phase 1)
-- ✅ Duplicate warnings (Phase 2)
-
-## Binary Information
-
-```
-Path: /Users/hero/Documents/GitHub/shadowcrawl/shadowcrawl/target/release/shadowcrawl-mcp
-Size: ~37MB
-Built: December 28, 2025
-Features: All Phase 1, Phase 2, Priority 1 & 2
-```
-
-## Verification Command
-
-```bash
-# Verify all 3 tools are in binary
-strings shadowcrawl/target/release/shadowcrawl-mcp | grep -c "research_history"
-# Should output: >0 (tool is compiled in)
-```
-
----
-
-**After following these steps, you should see ALL 3 tools in VS Code!** 🎉
+- Container logs: `docker compose -f docker-compose-local.yml logs -f shadowcrawl`
+- Health check: `curl -fsS http://localhost:5001/health`
+- macOS preflight (especially for HITL): `docker compose -f docker-compose-local.yml exec -T shadowcrawl shadowcrawl --setup`

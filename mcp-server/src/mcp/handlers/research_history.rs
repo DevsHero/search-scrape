@@ -87,8 +87,9 @@ pub async fn handle(
                 Ok(Json(McpCallResponse {
                     content: vec![McpContent {
                         content_type: "text".to_string(),
-                        text: serde_json::to_string_pretty(&result_json)
-                            .unwrap_or_else(|e| format!(r#"{{"error": "Serialization failed: {}"}}"#, e)),
+                        text: serde_json::to_string_pretty(&result_json).unwrap_or_else(|e| {
+                            format!(r#"{{"error": "Serialization failed: {}"}}"#, e)
+                        }),
                     }],
                     is_error: false,
                 }))

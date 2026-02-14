@@ -26,7 +26,10 @@ pub fn apply_scrape_content_limit(
     }
 }
 
-pub fn dedupe_search_result_indexes(results: &[SearchResult], snippet_chars: usize) -> (Vec<usize>, usize) {
+pub fn dedupe_search_result_indexes(
+    results: &[SearchResult],
+    snippet_chars: usize,
+) -> (Vec<usize>, usize) {
     let mut deduped_indexes = Vec::new();
     let mut seen_signature = HashSet::new();
 
@@ -51,7 +54,11 @@ pub fn dedupe_search_result_indexes(results: &[SearchResult], snippet_chars: usi
     (deduped_indexes, duplicate_removed)
 }
 
-pub fn build_image_markdown_hints(images: &[Image], title_fallback: &str, max_images: usize) -> String {
+pub fn build_image_markdown_hints(
+    images: &[Image],
+    title_fallback: &str,
+    max_images: usize,
+) -> String {
     if images.is_empty() {
         return String::new();
     }

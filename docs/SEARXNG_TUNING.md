@@ -85,10 +85,16 @@ docker compose -f docker-compose-local.yml up -d --build
 3. Re-run release validation:
 
 ```bash
-python3 docs/run_release_validation.py
+curl -fsS http://localhost:5001/health
+curl -fsS http://localhost:5001/mcp/tools | head
 ```
 
-4. Compare changes in [docs/RELEASE_READINESS_2026-02-12.json](RELEASE_READINESS_2026-02-12.json)
+4. (Optional) Run the Rust test suite:
+
+```bash
+cd mcp-server
+cargo test
+```
 
 ## Common symptoms
 

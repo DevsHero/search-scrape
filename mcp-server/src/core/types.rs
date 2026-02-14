@@ -56,6 +56,12 @@ pub struct ScrapeResponse {
     pub title: String,
     pub content: String,
     pub clean_content: String,
+    #[serde(default)]
+    pub embedded_state_json: Option<String>,
+    #[serde(default)]
+    pub embedded_data_sources: Vec<EmbeddedDataSource>,
+    #[serde(default)]
+    pub hydration_status: HydrationStatus,
     pub meta_description: String,
     pub meta_keywords: String,
     pub headings: Vec<Heading>,
@@ -97,6 +103,22 @@ pub struct ScrapeResponse {
     pub warnings: Vec<String>,
     #[serde(default)]
     pub domain: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EmbeddedDataSource {
+    pub source_type: String,
+    pub content: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct HydrationStatus {
+    #[serde(default)]
+    pub json_found: bool,
+    #[serde(default)]
+    pub settle_time_ms: Option<u64>,
+    #[serde(default)]
+    pub noise_reduction_ratio: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -234,7 +256,7 @@ pub struct ExtractField {
     pub name: String,
     pub description: String,
     #[serde(default)]
-    pub field_type: Option<String>,  // string, number, boolean, array, object
+    pub field_type: Option<String>, // string, number, boolean, array, object
     #[serde(default)]
     pub required: Option<bool>,
 }

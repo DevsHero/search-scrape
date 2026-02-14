@@ -1,8 +1,8 @@
+use super::common::parse_quality_mode;
 use crate::extract;
 use crate::mcp::{McpCallResponse, McpContent};
 use crate::types::{ErrorResponse, ExtractField};
 use crate::AppState;
-use super::common::parse_quality_mode;
 use axum::http::StatusCode;
 use axum::response::Json;
 use regex::Regex;
@@ -76,7 +76,8 @@ fn parse_extract_schema(schema_value: Option<&serde_json::Value>) -> Option<Vec<
                         }
                         serde_json::Value::Object(field_obj) => {
                             let mut field_map = field_obj.clone();
-                            field_map.insert("name".to_string(), serde_json::Value::String(key.clone()));
+                            field_map
+                                .insert("name".to_string(), serde_json::Value::String(key.clone()));
                             if let Some(field) = parse_field(&field_map) {
                                 fields.push(field);
                             }
@@ -116,7 +117,8 @@ fn parse_schema_from_prompt(prompt: &str) -> Option<Vec<ExtractField>> {
         trimmed
     };
 
-    let json_snippet = if let (Some(start), Some(end)) = (candidate.find('['), candidate.rfind(']')) {
+    let json_snippet = if let (Some(start), Some(end)) = (candidate.find('['), candidate.rfind(']'))
+    {
         candidate.get(start..=end)
     } else if candidate.starts_with('{') && candidate.ends_with('}') {
         Some(candidate)

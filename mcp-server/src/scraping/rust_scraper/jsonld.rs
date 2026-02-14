@@ -96,8 +96,9 @@ impl RustScraper {
                     }
                     _ => {
                         if let Some(name) = self.json_ld_string(map.get("name")) {
-                            let description =
-                                self.json_ld_string(map.get("description")).unwrap_or_default();
+                            let description = self
+                                .json_ld_string(map.get("description"))
+                                .unwrap_or_default();
                             if description.is_empty() {
                                 structured_content.push(name);
                             } else {
@@ -210,10 +211,7 @@ impl RustScraper {
                     .get("addressRegion")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                let postal = map
-                    .get("postalCode")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let postal = map.get("postalCode").and_then(|v| v.as_str()).unwrap_or("");
                 let mut parts = Vec::new();
                 if !street.is_empty() {
                     parts.push(street);

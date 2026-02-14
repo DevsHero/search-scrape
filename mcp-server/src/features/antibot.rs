@@ -1,5 +1,5 @@
-use tracing::info;
 use std::env;
+use tracing::info;
 
 #[derive(Debug, Clone)]
 pub struct BrowserProfile {
@@ -17,25 +17,25 @@ pub const USER_AGENTS: &[&str] = &[
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-    
+
     // Firefox Desktop
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.2; rv:122.0) Gecko/20100101 Firefox/122.0",
     "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0",
-    
+
     // Safari Desktop
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-    
+
     // Edge Desktop
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0",
-    
+
     // Mobile Safari (iPhone)
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_1_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1",
     "Mozilla/5.0 (iPad; CPU OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
-    
+
     // Mobile Chrome (Android)
     "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
     "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36",
@@ -108,9 +108,16 @@ pub fn get_random_browser_profile() -> BrowserProfile {
 /// Additional stealth headers to avoid bot detection
 pub fn get_stealth_headers() -> Vec<(String, String)> {
     vec![
-        ("Accept".to_string(), "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8".to_string()),
+        (
+            "Accept".to_string(),
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+                .to_string(),
+        ),
         ("Accept-Language".to_string(), "en-US,en;q=0.9".to_string()),
-        ("Accept-Encoding".to_string(), "gzip, deflate, br".to_string()),
+        (
+            "Accept-Encoding".to_string(),
+            "gzip, deflate, br".to_string(),
+        ),
         ("DNT".to_string(), "1".to_string()),
         ("Connection".to_string(), "keep-alive".to_string()),
         ("Upgrade-Insecure-Requests".to_string(), "1".to_string()),
@@ -193,11 +200,11 @@ impl RequestDelay {
         use rand::prelude::*;
         let mut rng = rand::rng();
         let base_delay = rng.random_range(self.min_ms..=self.max_ms);
-        
+
         // Add ±20% jitter to avoid pattern detection
         let jitter_range = (base_delay as f64 * 0.2) as i64;
         let jitter = rng.random_range(-jitter_range..=jitter_range);
-        
+
         (base_delay as i64 + jitter).max(self.min_ms as i64) as u64
     }
 
@@ -227,7 +234,9 @@ impl RequestDelay {
 }
 
 pub fn request_delay_from_env() -> RequestDelay {
-    let preset = env::var("SCRAPE_DELAY_PRESET").ok().map(|v| v.to_lowercase());
+    let preset = env::var("SCRAPE_DELAY_PRESET")
+        .ok()
+        .map(|v| v.to_lowercase());
     let (default_min, default_max) = match preset.as_deref() {
         Some("fast") => (100, 500),
         Some("conservative") => (1000, 3000),
@@ -280,7 +289,7 @@ impl ProxyRotator {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
-        
+
         if proxies.is_empty() {
             None
         } else {
@@ -297,10 +306,13 @@ impl ProxyRotator {
         if self.proxies.is_empty() {
             return None;
         }
-        let idx = self.current_idx.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % self.proxies.len();
+        let idx = self
+            .current_idx
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            % self.proxies.len();
         Some(self.proxies[idx].clone())
     }
-    
+
     /// Get the number of available proxies
     pub fn count(&self) -> usize {
         self.proxies.len()
@@ -322,7 +334,9 @@ impl AntiBot {
             .unwrap()
             .as_millis() as u64;
 
-        let last = self.last_request_time.load(std::sync::atomic::Ordering::Relaxed);
+        let last = self
+            .last_request_time
+            .load(std::sync::atomic::Ordering::Relaxed);
         let elapsed = now.saturating_sub(last);
         let delay = self.delay_config.random_delay();
 
@@ -371,7 +385,7 @@ mod tests {
         let anti_bot = AntiBot::new(RequestDelay::new(50, 100));
         // First call initializes last_request_time
         anti_bot.wait_for_next_request().await;
-        
+
         let start = std::time::Instant::now();
         // Second call should wait for the delay
         anti_bot.wait_for_next_request().await;

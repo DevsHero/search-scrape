@@ -25,6 +25,13 @@ The stdio server is executed inside the running container:
 docker compose -f docker-compose-local.yml exec -i -T shadowcrawl shadowcrawl-mcp
 ```
 
+Optional (enable `non_robot_search` / HITL in the container build):
+
+```bash
+SHADOWCRAWL_CARGO_FEATURES=non_robot_search \
+  docker compose -f docker-compose-local.yml up -d --build
+```
+
 ---
 
 ## Claude Desktop (macOS)
@@ -44,7 +51,7 @@ Example:
       "args": [
         "compose",
         "-f",
-        "/absolute/path/to/shadowcrawl/docker-compose-local.yml",
+        "/absolute/path/to/search-scrape/docker-compose-local.yml",
         "exec",
         "-i",
         "-T",
@@ -75,7 +82,7 @@ Example:
       "args": [
         "compose",
         "-f",
-        "/absolute/path/to/shadowcrawl/docker-compose-local.yml",
+        "/absolute/path/to/search-scrape/docker-compose-local.yml",
         "exec",
         "-i",
         "-T",
@@ -110,7 +117,7 @@ Example:
       "args": [
         "compose",
         "-f",
-        "/absolute/path/to/shadowcrawl/docker-compose-local.yml",
+        "/absolute/path/to/search-scrape/docker-compose-local.yml",
         "exec",
         "-i",
         "-T",
@@ -137,7 +144,7 @@ Create: `.continue/mcpServers/shadowcrawl.yaml`
 
 ```yaml
 name: shadowcrawl
-version: 1.0.0
+version: 2.0.0-rc
 schema: v1
 
 mcpServers:
@@ -146,7 +153,7 @@ mcpServers:
     args:
       - compose
       - -f
-      - /absolute/path/to/shadowcrawl/docker-compose-local.yml
+      - /absolute/path/to/search-scrape/docker-compose-local.yml
       - exec
       - -i
       - -T

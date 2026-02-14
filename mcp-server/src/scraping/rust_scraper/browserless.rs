@@ -27,7 +27,11 @@ impl RustScraper {
             }
 
             // Publication platforms: scroll for full article
-            if d.contains("substack") || d.contains("medium") || d.contains("dev.to") || d.contains("bloomberg") {
+            if d.contains("substack")
+                || d.contains("medium")
+                || d.contains("dev.to")
+                || d.contains("bloomberg")
+            {
                 return (2000, true);
             }
 
@@ -123,7 +127,9 @@ impl RustScraper {
             if preview.contains("verify you are human") || preview.contains("please verify you") {
                 return Some("Human Verification");
             }
-            if preview.contains("access denied") || preview.contains("access to this page has been denied") {
+            if preview.contains("access denied")
+                || preview.contains("access to this page has been denied")
+            {
                 return Some("Access Denied");
             }
             if preview.contains("captcha") && preview.matches("captcha").count() > 2 {
@@ -143,10 +149,14 @@ impl RustScraper {
         if lower.contains("verify you are human") || lower.contains("please verify you") {
             return Some("Human Verification");
         }
-        if lower.contains("access denied") || lower.contains("access to this page has been denied") {
+        if lower.contains("access denied") || lower.contains("access to this page has been denied")
+        {
             return Some("Access Denied");
         }
-        if lower.contains("captcha") || lower.contains("are you human") || lower.contains("prove you're human") {
+        if lower.contains("captcha")
+            || lower.contains("are you human")
+            || lower.contains("prove you're human")
+        {
             return Some("Captcha");
         }
         if lower.contains("bot detected")
@@ -158,7 +168,9 @@ impl RustScraper {
         if lower.contains("page crashed") || lower.contains("crashed!") {
             return Some("JS Crash");
         }
-        if lower.contains("zillow group is committed to ensuring digital accessibility") && html.len() < 5000 {
+        if lower.contains("zillow group is committed to ensuring digital accessibility")
+            && html.len() < 5000
+        {
             return Some("Zillow Accessibility Block");
         }
 
@@ -201,7 +213,11 @@ impl RustScraper {
         let profile = antibot::get_random_browser_profile();
         info!(
             "Using browser profile: {} ({}x{})",
-            profile.user_agent.split_whitespace().last().unwrap_or("unknown"),
+            profile
+                .user_agent
+                .split_whitespace()
+                .last()
+                .unwrap_or("unknown"),
             profile.viewport_width,
             profile.viewport_height
         );
@@ -216,7 +232,8 @@ impl RustScraper {
 
         // Substack Strict Diet: block heavy resources to prevent crash
         if is_substack {
-            params["rejectResourceTypes"] = serde_json::json!(["image", "font", "media", "stylesheet"]);
+            params["rejectResourceTypes"] =
+                serde_json::json!(["image", "font", "media", "stylesheet"]);
         }
 
         // 🖱️ Human Motion Simulation - Adjust wait times for lazy-loaded content
@@ -249,7 +266,10 @@ impl RustScraper {
         // UNIVERSAL: Inject stealth script for ALL sites via Browserless
         warn!("💉 Injecting Universal Stealth Engine via Browserless addScriptTag");
         let stealth_script = self.get_universal_stealth_script();
-        let mut scripts = params["addScriptTag"].as_array().cloned().unwrap_or_default();
+        let mut scripts = params["addScriptTag"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
         scripts.push(serde_json::json!({ "content": stealth_script }));
         params["addScriptTag"] = serde_json::Value::Array(scripts);
 
@@ -303,26 +323,26 @@ impl RustScraper {
         // 🔀 PROXY SUPPORT: Add proxy if provided
         if let Some(proxy) = &proxy_url {
             params["proxyServer"] = serde_json::json!(proxy);
-            warn!(
-                "🔀 Using proxy for Browserless /content: {}",
-                {
-                    if let Ok(parsed) = url::Url::parse(proxy) {
-                        format!(
-                            "{}://{}@{}:{}",
-                            parsed.scheme(),
-                            parsed.username(),
-                            parsed.host_str().unwrap_or("unknown"),
-                            parsed.port().map(|p| p.to_string()).unwrap_or_default()
-                        )
-                    } else {
-                        "invalid-proxy-url".to_string()
-                    }
+            warn!("🔀 Using proxy for Browserless /content: {}", {
+                if let Ok(parsed) = url::Url::parse(proxy) {
+                    format!(
+                        "{}://{}@{}:{}",
+                        parsed.scheme(),
+                        parsed.username(),
+                        parsed.host_str().unwrap_or("unknown"),
+                        parsed.port().map(|p| p.to_string()).unwrap_or_default()
+                    )
+                } else {
+                    "invalid-proxy-url".to_string()
                 }
-            );
+            });
         }
 
         let mut extra_params_all = extra_params.to_vec();
-        if !extra_params_all.iter().any(|param| param.starts_with("wait=")) {
+        if !extra_params_all
+            .iter()
+            .any(|param| param.starts_with("wait="))
+        {
             extra_params_all.push(format!("wait={}", wait_override));
         }
 

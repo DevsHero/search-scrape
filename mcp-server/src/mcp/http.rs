@@ -1,12 +1,7 @@
 use super::handlers;
-use super::tooling::tool_catalog;
 use crate::types::*;
 use crate::AppState;
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::Json,
-};
+use axum::{extract::State, http::StatusCode, response::Json};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::info;
@@ -44,34 +39,68 @@ pub struct McpContent {
     pub text: String,
 }
 
-pub async fn list_tools() -> Json<McpToolsResponse> {
-    let tools = tool_catalog()
+pub fn list_tools_for_state(state: &AppState) -> McpToolsResponse {
+    let tools = state
+        .tool_registry
+        .public_specs()
         .into_iter()
-        .map(|tool| McpTool {
-            name: tool.name.to_string(),
-            description: tool.description.to_string(),
-            input_schema: tool.input_schema,
-            icons: tool.icons.into_iter().map(|s| s.to_string()).collect(),
+        .map(|spec| McpTool {
+            name: spec.public_name,
+            description: spec.public_description,
+            input_schema: spec.public_input_schema,
+            icons: spec.icons,
         })
         .collect();
-    Json(McpToolsResponse { tools })
+
+    McpToolsResponse { tools }
+}
+
+pub async fn list_tools(State(state): State<Arc<AppState>>) -> Json<McpToolsResponse> {
+    Json(list_tools_for_state(state.as_ref()))
 }
 
 pub async fn call_tool(
     State(state): State<Arc<AppState>>,
     Json(request): Json<McpCallRequest>,
 ) -> Result<Json<McpCallResponse>, (StatusCode, Json<ErrorResponse>)> {
-    info!("MCP tool call: {} with args: {:?}", request.name, request.arguments);
+    info!(
+        "MCP tool call: {} with args: {:?}",
+        request.name, request.arguments
+    );
 
-    match request.name.as_str() {
-        "search_web" => handlers::search_web::handle(state, &request.arguments).await,
-        "search_structured" => handlers::search_structured::handle(state, &request.arguments).await,
-        "scrape_url" => handlers::scrape_url::handle(state, &request.arguments).await,
-        "crawl_website" => handlers::crawl_website::handle(state, &request.arguments).await,
-        "scrape_batch" => handlers::scrape_batch::handle(state, &request.arguments).await,
-        "extract_structured" => handlers::extract_structured::handle(state, &request.arguments).await,
-        "research_history" => handlers::research_history::handle(state, &request.arguments).await,
-        "proxy_manager" => handlers::proxy_manager::handle(state, &request.arguments).await,
+    let internal_name = state
+        .tool_registry
+        .resolve_incoming_tool_name(&request.name)
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("Unknown tool: {}", request.name),
+                }),
+            )
+        })?;
+
+    if request.name != internal_name {
+        info!(
+            "tool_name_remap: public='{}' -> internal='{}'",
+            request.name, internal_name
+        );
+    }
+
+    let internal_args = state
+        .tool_registry
+        .map_public_arguments_to_internal(&internal_name, request.arguments);
+
+    match internal_name.as_str() {
+        "search_web" => handlers::search_web::handle(state, &internal_args).await,
+        "search_structured" => handlers::search_structured::handle(state, &internal_args).await,
+        "scrape_url" => handlers::scrape_url::handle(state, &internal_args).await,
+        "crawl_website" => handlers::crawl_website::handle(state, &internal_args).await,
+        "scrape_batch" => handlers::scrape_batch::handle(state, &internal_args).await,
+        "extract_structured" => handlers::extract_structured::handle(state, &internal_args).await,
+        "research_history" => handlers::research_history::handle(state, &internal_args).await,
+        "proxy_manager" => handlers::proxy_manager::handle(state, &internal_args).await,
+        "non_robot_search" => handlers::non_robot_search::handle(state, &internal_args).await,
         _ => Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {

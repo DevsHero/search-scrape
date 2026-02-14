@@ -18,52 +18,146 @@ impl QueryRewriter {
         Self {
             dev_keywords: vec![
                 // Programming languages
-                "rust", "python", "javascript", "typescript", "go", "java", "c++", "cpp",
-                "ruby", "php", "swift", "kotlin", "scala", "haskell", "elixir", "clojure",
+                "rust",
+                "python",
+                "javascript",
+                "typescript",
+                "go",
+                "java",
+                "c++",
+                "cpp",
+                "ruby",
+                "php",
+                "swift",
+                "kotlin",
+                "scala",
+                "haskell",
+                "elixir",
+                "clojure",
                 // Frameworks/Libraries
-                "react", "vue", "angular", "svelte", "next", "nuxt", "django", "flask",
-                "fastapi", "express", "koa", "tokio", "actix", "axum", "rocket", "warp",
-                "spring", "laravel", "rails", "phoenix",
+                "react",
+                "vue",
+                "angular",
+                "svelte",
+                "next",
+                "nuxt",
+                "django",
+                "flask",
+                "fastapi",
+                "express",
+                "koa",
+                "tokio",
+                "actix",
+                "axum",
+                "rocket",
+                "warp",
+                "spring",
+                "laravel",
+                "rails",
+                "phoenix",
                 // Concepts
-                "async", "await", "promise", "future", "mutex", "arc", "thread", "concurrency",
-                "api", "rest", "graphql", "grpc", "websocket", "http", "tcp", "udp",
-                "database", "sql", "nosql", "postgres", "mongodb", "redis", "sqlite",
-                "docker", "kubernetes", "ci", "cd", "git", "github", "gitlab",
-                "npm", "cargo", "pip", "maven", "gradle",
+                "async",
+                "await",
+                "promise",
+                "future",
+                "mutex",
+                "arc",
+                "thread",
+                "concurrency",
+                "api",
+                "rest",
+                "graphql",
+                "grpc",
+                "websocket",
+                "http",
+                "tcp",
+                "udp",
+                "database",
+                "sql",
+                "nosql",
+                "postgres",
+                "mongodb",
+                "redis",
+                "sqlite",
+                "docker",
+                "kubernetes",
+                "ci",
+                "cd",
+                "git",
+                "github",
+                "gitlab",
+                "npm",
+                "cargo",
+                "pip",
+                "maven",
+                "gradle",
                 // Dev terms
-                "tutorial", "docs", "documentation", "guide", "example", "code",
-                "install", "setup", "configure", "error", "bug", "fix", "deploy",
-                "test", "testing", "debug", "benchmark", "performance", "optimize",
+                "tutorial",
+                "docs",
+                "documentation",
+                "guide",
+                "example",
+                "code",
+                "install",
+                "setup",
+                "configure",
+                "error",
+                "bug",
+                "fix",
+                "deploy",
+                "test",
+                "testing",
+                "debug",
+                "benchmark",
+                "performance",
+                "optimize",
             ],
             site_mappings: {
                 let mut map = HashMap::new();
-                
+
                 // General dev resources
-                map.insert("docs", vec!["docs.rs", "doc.rust-lang.org", "developer.mozilla.org", "devdocs.io"]);
-                map.insert("documentation", vec!["docs.rs", "doc.rust-lang.org", "developer.mozilla.org"]);
-                
+                map.insert(
+                    "docs",
+                    vec![
+                        "docs.rs",
+                        "doc.rust-lang.org",
+                        "developer.mozilla.org",
+                        "devdocs.io",
+                    ],
+                );
+                map.insert(
+                    "documentation",
+                    vec!["docs.rs", "doc.rust-lang.org", "developer.mozilla.org"],
+                );
+
                 // Language-specific
-                map.insert("rust", vec!["doc.rust-lang.org", "docs.rs", "rust-lang.org"]);
+                map.insert(
+                    "rust",
+                    vec!["doc.rust-lang.org", "docs.rs", "rust-lang.org"],
+                );
                 map.insert("python", vec!["docs.python.org", "pypi.org"]);
-                map.insert("javascript", vec!["developer.mozilla.org", "javascript.info"]);
+                map.insert(
+                    "javascript",
+                    vec!["developer.mozilla.org", "javascript.info"],
+                );
                 map.insert("typescript", vec!["typescriptlang.org"]);
                 map.insert("go", vec!["go.dev", "pkg.go.dev"]);
-                
+
                 // Frameworks
                 map.insert("tokio", vec!["tokio.rs", "docs.rs"]);
                 map.insert("react", vec!["react.dev", "reactjs.org"]);
                 map.insert("vue", vec!["vuejs.org"]);
                 map.insert("django", vec!["docs.djangoproject.com"]);
-                
+
                 // Q&A
                 map.insert("error", vec!["stackoverflow.com", "github.com"]);
                 map.insert("bug", vec!["stackoverflow.com", "github.com"]);
                 map.insert("issue", vec!["stackoverflow.com", "github.com"]);
-                
+
                 // Packages
                 map.insert("crate", vec!["crates.io", "docs.rs"]);
                 map.insert("package", vec!["npmjs.com", "pypi.org", "crates.io"]);
-                
+
                 map
             },
         }
@@ -72,10 +166,10 @@ impl QueryRewriter {
     /// Analyze and potentially rewrite a query for better developer-focused results
     pub fn rewrite_query(&self, query: &str) -> QueryRewriteResult {
         let query_lower = query.to_lowercase();
-        
+
         // Check if this is a developer query
         let is_dev_query = self.is_developer_query(&query_lower);
-        
+
         if !is_dev_query {
             return QueryRewriteResult {
                 original: query.to_string(),
@@ -87,7 +181,8 @@ impl QueryRewriter {
         }
 
         // Detect keywords in query
-        let detected_keywords: Vec<String> = self.dev_keywords
+        let detected_keywords: Vec<String> = self
+            .dev_keywords
             .iter()
             .filter(|keyword| query_lower.contains(*keyword))
             .map(|s| s.to_string())
@@ -125,7 +220,8 @@ impl QueryRewriter {
     /// Check if query is developer-related
     fn is_developer_query(&self, query_lower: &str) -> bool {
         // Check for dev keywords
-        let has_dev_keyword = self.dev_keywords
+        let has_dev_keyword = self
+            .dev_keywords
             .iter()
             .any(|keyword| query_lower.contains(keyword));
 
@@ -152,11 +248,14 @@ impl QueryRewriter {
 
         // If query doesn't have "docs" or "tutorial", suggest adding them
         let lower = original.to_lowercase();
-        if !lower.contains("docs") && !lower.contains("documentation") && !lower.contains("tutorial")
-            && !_keywords.is_empty() {
-                suggestions.push(format!("{} documentation", original));
-                suggestions.push(format!("{} tutorial", original));
-            }
+        if !lower.contains("docs")
+            && !lower.contains("documentation")
+            && !lower.contains("tutorial")
+            && !_keywords.is_empty()
+        {
+            suggestions.push(format!("{} documentation", original));
+            suggestions.push(format!("{} tutorial", original));
+        }
 
         // Suggest site-specific searches for top 2 sites
         for site in sites.iter().take(2) {
@@ -164,10 +263,9 @@ impl QueryRewriter {
         }
 
         // If it's an error query, enhance it
-        if (lower.contains("error") || lower.contains("bug"))
-            && !lower.contains("stackoverflow") {
-                suggestions.push(format!("{} site:stackoverflow.com", original));
-            }
+        if (lower.contains("error") || lower.contains("bug")) && !lower.contains("stackoverflow") {
+            suggestions.push(format!("{} site:stackoverflow.com", original));
+        }
 
         suggestions
     }
@@ -191,7 +289,8 @@ impl QueryRewriter {
         }
 
         // Pattern 2: Error messages - add stackoverflow
-        if (lower.contains("error:") || lower.contains("error message")) && !lower.contains("site:") {
+        if (lower.contains("error:") || lower.contains("error message")) && !lower.contains("site:")
+        {
             return Some(format!("{} site:stackoverflow.com", original));
         }
 
@@ -233,7 +332,7 @@ impl QueryRewriter {
         if !tokens1.is_empty() && !tokens2.is_empty() {
             let set1: std::collections::HashSet<_> = tokens1.iter().collect();
             let set2: std::collections::HashSet<_> = tokens2.iter().collect();
-            
+
             // If one set is completely contained in the other
             if set1.is_subset(&set2) || set2.is_subset(&set1) {
                 return true;
@@ -295,12 +394,12 @@ mod tests {
     #[test]
     fn test_developer_query_detection() {
         let rewriter = QueryRewriter::new();
-        
+
         assert!(rewriter.is_developer_query("rust programming tutorial"));
         assert!(rewriter.is_developer_query("how to use tokio"));
         assert!(rewriter.is_developer_query("python api documentation"));
         assert!(rewriter.is_developer_query("javascript error handling"));
-        
+
         assert!(!rewriter.is_developer_query("coffee shops near me"));
         assert!(!rewriter.is_developer_query("weather forecast"));
     }
@@ -308,12 +407,12 @@ mod tests {
     #[test]
     fn test_query_rewriting() {
         let rewriter = QueryRewriter::new();
-        
+
         let result = rewriter.rewrite_query("rust docs");
         assert!(result.is_developer_query);
         assert!(result.was_rewritten());
         assert!(result.best_query().contains("site:"));
-        
+
         let result = rewriter.rewrite_query("coffee shops");
         assert!(!result.is_developer_query);
         assert!(!result.was_rewritten());
@@ -322,11 +421,11 @@ mod tests {
     #[test]
     fn test_similar_queries() {
         let rewriter = QueryRewriter::new();
-        
+
         assert!(rewriter.is_similar_query("rust programming", "rust"));
         assert!(rewriter.is_similar_query("how to use rust", "how to use rust async"));
         assert!(rewriter.is_similar_query("python tutorial", "python tutorial for beginners"));
-        
+
         assert!(!rewriter.is_similar_query("rust", "python"));
         assert!(!rewriter.is_similar_query("javascript", "java"));
     }

@@ -68,19 +68,28 @@ impl MemoryManager {
             .any(|c| c.name == self.collection_name);
 
         if !exists {
-            tracing::info!("Creating Qdrant collection: {} with hybrid search support (full-text + vector)", self.collection_name);
+            tracing::info!(
+                "Creating Qdrant collection: {} with hybrid search support (full-text + vector)",
+                self.collection_name
+            );
 
             // Create collection with 384-dimensional vectors (fastembed default)
-            let create_collection = qdrant_client::qdrant::CreateCollectionBuilder::new(&self.collection_name)
-                .vectors_config(qdrant_client::qdrant::VectorParamsBuilder::new(384, qdrant_client::qdrant::Distance::Cosine))
-                .build();
+            let create_collection =
+                qdrant_client::qdrant::CreateCollectionBuilder::new(&self.collection_name)
+                    .vectors_config(qdrant_client::qdrant::VectorParamsBuilder::new(
+                        384,
+                        qdrant_client::qdrant::Distance::Cosine,
+                    ))
+                    .build();
 
             self.qdrant
                 .create_collection(create_collection)
                 .await
                 .context("Failed to create collection")?;
-            
-            tracing::info!("Hybrid search collection created (Qdrant will auto-index text fields for BM25)");
+
+            tracing::info!(
+                "Hybrid search collection created (Qdrant will auto-index text fields for BM25)"
+            );
         }
 
         Ok(())
@@ -88,13 +97,14 @@ impl MemoryManager {
 
     /// Get or initialize the embedding model
     async fn get_embedding_model(&self) -> Result<Arc<TextEmbedding>> {
-        let model = self.embedding_model
+        let model = self
+            .embedding_model
             .get_or_try_init(|| async {
                 tracing::info!("Initializing fastembed model...");
                 tokio::task::spawn_blocking(|| {
                     TextEmbedding::try_new(
                         InitOptions::new(EmbeddingModel::AllMiniLML6V2)
-                            .with_show_download_progress(true)
+                            .with_show_download_progress(true),
                     )
                     .map(Arc::new)
                     .context("Failed to initialize embedding model")
@@ -109,13 +119,11 @@ impl MemoryManager {
     async fn embed_text(&self, text: &str) -> Result<Vec<f32>> {
         let model = self.get_embedding_model().await?;
         let text_owned = text.to_string();
-        
+
         // Use spawn_blocking for CPU-intensive embedding
-        let embeddings = tokio::task::spawn_blocking(move || {
-            model.embed(vec![&text_owned], None)
-        })
-        .await?
-        .context("Failed to generate embedding")?;
+        let embeddings = tokio::task::spawn_blocking(move || model.embed(vec![&text_owned], None))
+            .await?
+            .context("Failed to generate embedding")?;
 
         Ok(embeddings
             .first()
@@ -147,7 +155,7 @@ impl MemoryManager {
     pub async fn store_entry(&self, entry: HistoryEntry) -> Result<()> {
         // CONTEXT WINDOWING: Chunk large content to prevent context overflow
         let entry_to_store = self.chunk_large_content(entry);
-        
+
         // Generate embedding from summary
         let embedding = self.embed_text(&entry_to_store.summary).await?;
 
@@ -158,11 +166,8 @@ impl MemoryManager {
             .context("Failed to convert to Payload")?;
 
         // Create point for Qdrant
-        let point = qdrant_client::qdrant::PointStruct::new(
-            entry_to_store.id.clone(),
-            embedding,
-            payload,
-        );
+        let point =
+            qdrant_client::qdrant::PointStruct::new(entry_to_store.id.clone(), embedding, payload);
 
         // Upsert point using builder pattern
         use qdrant_client::qdrant::UpsertPointsBuilder;
@@ -172,7 +177,11 @@ impl MemoryManager {
             .await
             .context("Failed to store entry in Qdrant")?;
 
-        tracing::info!("Stored history entry: {} ({})", entry_to_store.id, entry_to_store.topic);
+        tracing::info!(
+            "Stored history entry: {} ({})",
+            entry_to_store.id,
+            entry_to_store.topic
+        );
         Ok(())
     }
 
@@ -180,22 +189,27 @@ impl MemoryManager {
     /// Truncates full_result if it exceeds 15,000 characters
     fn chunk_large_content(&self, mut entry: HistoryEntry) -> HistoryEntry {
         const MAX_CONTENT_CHARS: usize = 15000;
-        
+
         // Check if full_result is too large
         let content_str = entry.full_result.to_string();
         if content_str.len() > MAX_CONTENT_CHARS {
             // Truncate and add metadata about chunking
-            let truncated = content_str.chars().take(MAX_CONTENT_CHARS).collect::<String>();
-            
+            let truncated = content_str
+                .chars()
+                .take(MAX_CONTENT_CHARS)
+                .collect::<String>();
+
             // Try to parse back to JSON and add truncation notice
-            if let Ok(mut obj) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&truncated) {
+            if let Ok(mut obj) =
+                serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&truncated)
+            {
                 obj.insert(
-                    "_truncated".to_string(), 
+                    "_truncated".to_string(),
                     serde_json::json!({
                         "original_size": content_str.len(),
                         "truncated_at": MAX_CONTENT_CHARS,
                         "reason": "context_windowing"
-                    })
+                    }),
                 );
                 entry.full_result = serde_json::Value::Object(obj);
             } else {
@@ -209,7 +223,7 @@ impl MemoryManager {
                     }
                 });
             }
-            
+
             tracing::info!(
                 "Chunked large content for entry {}: {} -> {} chars",
                 entry.id,
@@ -217,11 +231,10 @@ impl MemoryManager {
                 MAX_CONTENT_CHARS
             );
         }
-        
+
         entry
     }
 
- 
     /// This provides the BEST results for agents by:
     /// 1. Using semantic vector search for conceptual matching
     /// 2. Boosting exact keyword matches in the scoring
@@ -272,7 +285,7 @@ impl MemoryManager {
         // Parse results and apply keyword boosting for better agent results
         let query_lower = query.to_lowercase();
         let query_keywords: Vec<&str> = query_lower.split_whitespace().collect();
-        
+
         let mut entries: Vec<(HistoryEntry, f32)> = results
             .result
             .into_iter()
@@ -281,27 +294,28 @@ impl MemoryManager {
                 let payload = point.payload;
                 let value = serde_json::to_value(&payload).ok()?;
                 let entry: HistoryEntry = serde_json::from_value(value).ok()?;
-                
+
                 // Boost score if exact keywords match (hybrid approach)
-                let entry_text = format!("{} {} {}", 
-                    entry.query.to_lowercase(), 
+                let entry_text = format!(
+                    "{} {} {}",
+                    entry.query.to_lowercase(),
                     entry.summary.to_lowercase(),
                     entry.topic.to_lowercase()
                 );
-                
+
                 let mut keyword_matches = 0;
                 for keyword in &query_keywords {
                     if entry_text.contains(keyword) {
                         keyword_matches += 1;
                     }
                 }
-                
+
                 // Boost score based on keyword matches (up to +15%)
                 if keyword_matches > 0 {
                     let boost = (keyword_matches as f32 / query_keywords.len() as f32) * 0.15;
                     score = (score + boost).min(1.0);
                 }
-                
+
                 Some((entry, score))
             })
             .collect();
@@ -415,24 +429,25 @@ impl MemoryManager {
 
         Ok(None)
     }
-    
+
     /// Check if URL was scraped very recently (for testing/iteration detection)
     /// Returns true if scraped within last 5 minutes (suggesting rapid iteration)
     pub async fn is_rapid_testing(&self, url: &str) -> Result<bool> {
         use chrono::Duration;
-        
+
         // Search for this exact URL in recent history
         let results = self
             .search_history(url, 3, 0.95, Some(EntryType::Scrape))
             .await?;
-        
+
         // Check if any match within last 5 minutes
         let cutoff = Utc::now() - Duration::minutes(5);
-        
-        let recent_count = results.iter()
+
+        let recent_count = results
+            .iter()
             .filter(|(entry, _)| entry.timestamp > cutoff)
             .count();
-        
+
         // If 2+ scrapes of same URL within 5 minutes, it's testing mode
         Ok(recent_count >= 2)
     }
@@ -442,9 +457,7 @@ impl MemoryManager {
         use std::collections::HashMap;
 
         // Search all entries
-        let results = self
-            .search_history("", 1000, 0.0, None)
-            .await?;
+        let results = self.search_history("", 1000, 0.0, None).await?;
 
         let mut domain_counts: HashMap<String, usize> = HashMap::new();
 

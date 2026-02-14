@@ -9,9 +9,9 @@ use std::env;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
-use shadowcrawl::{search, scrape, types::*, mcp, AppState};
+use shadowcrawl::{mcp, scrape, search, types::*, AppState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -20,12 +20,34 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
+    // Handle setup-only mode
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--setup") {
+        let mut opts = shadowcrawl::setup::SetupOptions::default();
+        opts.mode = shadowcrawl::setup::SetupRunMode::SetupFlag;
+        let report = shadowcrawl::setup::check_all(opts).await;
+        println!("{}", report);
+        report.print_action_required_blocks();
+        if report.has_failures() {
+            std::process::exit(2);
+        }
+        return Ok(());
+    }
+
     // Get configuration from environment
-    let searxng_url = env::var("SEARXNG_URL")
-        .unwrap_or_else(|_| "http://localhost:8888".to_string());
-    
+    let searxng_url =
+        env::var("SEARXNG_URL").unwrap_or_else(|_| "http://localhost:8888".to_string());
+
     info!("Starting MCP Server");
     info!("SearXNG URL: {}", searxng_url);
+
+    // Pre-flight checklist (non-interactive) at startup
+    let report = shadowcrawl::setup::check_all(shadowcrawl::setup::SetupOptions::default()).await;
+    info!("{}", report.summarize_for_logs());
+    if report.has_failures() {
+        warn!("shadow-setup: startup checklist found failures; run with --setup for guided remediation");
+        report.print_action_required_blocks();
+    }
 
     // Create HTTP client
     let http_timeout = env::var("HTTP_TIMEOUT_SECS")
@@ -53,7 +75,10 @@ async fn main() -> anyhow::Result<()> {
                 info!("Memory initialized successfully");
             }
             Err(e) => {
-                warn!("Failed to initialize memory: {}. Continuing without memory feature.", e);
+                warn!(
+                    "Failed to initialize memory: {}. Continuing without memory feature.",
+                    e
+                );
             }
         }
     } else {
@@ -69,15 +94,23 @@ async fn main() -> anyhow::Result<()> {
             Ok(proxy_manager) => {
                 let status = proxy_manager.get_status().await?;
                 state = state.with_proxy_manager(Arc::new(proxy_manager));
-                info!("Proxy manager initialized: {} total proxies, {} enabled", 
-                      status.total_proxies, status.enabled_proxies);
+                info!(
+                    "Proxy manager initialized: {} total proxies, {} enabled",
+                    status.total_proxies, status.enabled_proxies
+                );
             }
             Err(e) => {
-                warn!("Failed to initialize proxy manager: {}. Continuing without proxy support.", e);
+                warn!(
+                    "Failed to initialize proxy manager: {}. Continuing without proxy support.",
+                    e
+                );
             }
         }
     } else {
-        info!("IP list not found at {}. Proxy feature disabled.", ip_list_path);
+        info!(
+            "IP list not found at {}. Proxy feature disabled.",
+            ip_list_path
+        );
     }
 
     let state = Arc::new(state);
@@ -101,9 +134,9 @@ async fn main() -> anyhow::Result<()> {
     // Start server
     let listener = tokio::net::TcpListener::bind("0.0.0.0:5000").await?;
     info!("MCP Server listening on http://0.0.0.0:5000");
-    
+
     axum::serve(listener, app).await?;
-    
+
     Ok(())
 }
 
@@ -115,32 +148,38 @@ async fn health_check() -> Json<serde_json::Value> {
     }))
 }
 
-async fn server_card() -> Json<serde_json::Value> {
+async fn server_card(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    let tools: Vec<serde_json::Value> = state
+        .tool_registry
+        .public_specs()
+        .into_iter()
+        .map(|spec| {
+            serde_json::json!({
+                "name": spec.public_name,
+                "description": spec.public_description
+            })
+        })
+        .collect();
+
     Json(serde_json::json!({
         "serverInfo": {
             "name": "ShadowCrawl",
             "version": env!("CARGO_PKG_VERSION")
         },
-        "tools": [
-            { "name": "search_web", "description": "Find sources on the public web." },
-            { "name": "search_structured", "description": "Search and scrape top results." },
-            { "name": "scrape_url", "description": "Extract content from a single URL." },
-            { "name": "scrape_batch", "description": "Scrape many URLs in parallel." },
-            { "name": "crawl_website", "description": "Crawl a site recursively." },
-            { "name": "extract_structured", "description": "Extract structured fields from a page." },
-            { "name": "research_history", "description": "Search prior searches/scrapes by meaning." },
-            { "name": "proxy_manager", "description": "Manage proxy lifecycle and testing." }
-        ],
+        "tools": tools,
         "resources": [],
         "prompts": []
     }))
 }
 
 async fn mcp_rpc_handler(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(request): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
-    let id = request.get("id").cloned().unwrap_or(serde_json::Value::Null);
+    let id = request
+        .get("id")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     let method = request
         .get("method")
         .and_then(|m| m.as_str())
@@ -162,7 +201,7 @@ async fn mcp_rpc_handler(
             }
         })),
         "tools/list" => {
-            let tools = mcp::list_tools().await.0;
+            let tools = mcp::http::list_tools_for_state(state.as_ref());
             Json(serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -262,8 +301,7 @@ async fn chat_handler(
     Json(request): Json<ChatRequest>,
 ) -> Result<Json<ChatResponse>, (StatusCode, Json<ErrorResponse>)> {
     info!("Processing chat request: {}", request.query);
-    
- 
+
     let search_results = match search::search_web(&state, &request.query).await {
         Ok((results, _extras)) => results,
         Err(e) => {
@@ -276,12 +314,19 @@ async fn chat_handler(
             ));
         }
     };
-    
+
     info!("Found {} search results", search_results.len());
-    
+
     // Step 2: Scrape top results concurrently (limit to 5)
-    let top_n = std::env::var("CHAT_SCRAPE_TOP_N").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(5);
-    let to_scrape: Vec<String> = search_results.iter().take(top_n).map(|r| r.url.clone()).collect();
+    let top_n = std::env::var("CHAT_SCRAPE_TOP_N")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(5);
+    let to_scrape: Vec<String> = search_results
+        .iter()
+        .take(top_n)
+        .map(|r| r.url.clone())
+        .collect();
     let mut scraped_content = Vec::new();
     let mut tasks = Vec::new();
     for url in to_scrape {
@@ -302,7 +347,7 @@ async fn chat_handler(
             Err(e) => warn!("Scrape task join error: {}", e),
         }
     }
-    
+
     // Step 3: Generate response based on scraped content
     let response_text = if scraped_content.is_empty() {
         format!("I found {} search results for '{}', but couldn't scrape any content. Here are the URLs:\n{}", 
@@ -311,22 +356,28 @@ async fn chat_handler(
             search_results.iter().map(|r| format!("- {} ({})", r.title, r.url)).collect::<Vec<_>>().join("\n")
         )
     } else {
-        let content_summary = scraped_content.iter()
-            .map(|c| format!(
-                "• {} ({} words, {}m)\n  {}\n  URL: {}\n",
-                c.title,
-                c.word_count,
-                c.reading_time_minutes.unwrap_or(((c.word_count as f64 / 200.0).ceil() as u32).max(1)),
-                c.meta_description,
-                c.canonical_url.as_ref().unwrap_or(&c.url)
-            ))
+        let content_summary = scraped_content
+            .iter()
+            .map(|c| {
+                format!(
+                    "• {} ({} words, {}m)\n  {}\n  URL: {}\n",
+                    c.title,
+                    c.word_count,
+                    c.reading_time_minutes
+                        .unwrap_or(((c.word_count as f64 / 200.0).ceil() as u32).max(1)),
+                    c.meta_description,
+                    c.canonical_url.as_ref().unwrap_or(&c.url)
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n---\n");
-        
-        format!("Based on my search for '{}', I found the following information:\n\n{}", 
-            request.query, content_summary)
+
+        format!(
+            "Based on my search for '{}', I found the following information:\n\n{}",
+            request.query, content_summary
+        )
     };
-    
+
     Ok(Json(ChatResponse {
         response: response_text,
         search_results,

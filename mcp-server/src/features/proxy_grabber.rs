@@ -38,7 +38,8 @@ pub struct ListParams {
 }
 
 pub async fn grab_proxies(state: &Arc<AppState>, params: GrabParams) -> Result<serde_json::Value> {
-    let source_path = env::var("PROXY_SOURCE_PATH").unwrap_or_else(|_| "proxy_source.json".to_string());
+    let source_path =
+        env::var("PROXY_SOURCE_PATH").unwrap_or_else(|_| "proxy_source.json".to_string());
     let source_contents = tokio::fs::read_to_string(&source_path)
         .await
         .map_err(|e| anyhow!("Failed to read proxy source file {}: {}", source_path, e))?;
@@ -46,7 +47,10 @@ pub async fn grab_proxies(state: &Arc<AppState>, params: GrabParams) -> Result<s
     let mut sources: Vec<ProxySourceEntry> = serde_json::from_str(&source_contents)
         .map_err(|e| anyhow!("Failed to parse proxy source JSON: {}", e))?;
 
-    let normalized_filter = params.proxy_type.as_ref().and_then(|t| normalize_proxy_type(t));
+    let normalized_filter = params
+        .proxy_type
+        .as_ref()
+        .and_then(|t| normalize_proxy_type(t));
     if let Some(filter_type) = &normalized_filter {
         sources.retain(|s| normalize_proxy_type(&s.proxy_type).as_deref() == Some(filter_type));
     }
@@ -70,21 +74,34 @@ pub async fn grab_proxies(state: &Arc<AppState>, params: GrabParams) -> Result<s
         let source_type = match normalize_proxy_type(&source.proxy_type) {
             Some(t) => t,
             None => {
-                warnings.push(format!("Unsupported proxy_type in proxy_source.json: {}", source.proxy_type));
+                warnings.push(format!(
+                    "Unsupported proxy_type in proxy_source.json: {}",
+                    source.proxy_type
+                ));
                 continue;
             }
         };
 
         let fetch_url = to_raw_url(&source.url);
-        let response = state.http_client.get(&fetch_url).send().await
+        let response = state
+            .http_client
+            .get(&fetch_url)
+            .send()
+            .await
             .map_err(|e| anyhow!("Failed to fetch proxy source {}: {}", fetch_url, e))?;
 
         if !response.status().is_success() {
-            warnings.push(format!("Proxy source returned status {}: {}", response.status(), fetch_url));
+            warnings.push(format!(
+                "Proxy source returned status {}: {}",
+                response.status(),
+                fetch_url
+            ));
             continue;
         }
 
-        let body = response.text().await
+        let body = response
+            .text()
+            .await
             .map_err(|e| anyhow!("Failed to read proxy source body {}: {}", fetch_url, e))?;
 
         for line in parse_proxy_lines(&body) {
@@ -118,7 +135,11 @@ pub async fn grab_proxies(state: &Arc<AppState>, params: GrabParams) -> Result<s
     }
 
     if params.store_ip_txt {
-        let payload = collected.iter().map(|p| p.proxy.as_str()).collect::<Vec<_>>().join("\n");
+        let payload = collected
+            .iter()
+            .map(|p| p.proxy.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
         if params.append && !params.clear_ip_txt {
             append_ip_list(&ip_list_path, &payload).await?;
         } else {
@@ -127,7 +148,9 @@ pub async fn grab_proxies(state: &Arc<AppState>, params: GrabParams) -> Result<s
         stored_count = collected.len();
     }
 
-    if params.proxy_type.as_deref() == Some("socks4") || params.proxy_type.as_deref() == Some("sock4") {
+    if params.proxy_type.as_deref() == Some("socks4")
+        || params.proxy_type.as_deref() == Some("sock4")
+    {
         warnings.push("socks4 proxies are collected but may be skipped by the runtime (unsupported by reqwest)".to_string());
     }
 
@@ -153,7 +176,10 @@ pub async fn list_proxies(params: ListParams) -> Result<serde_json::Value> {
         .map_err(|e| anyhow!("Failed to read ip.txt {}: {}", ip_list_path, e))?;
 
     let mut entries: Vec<ProxyItem> = Vec::new();
-    let filter_type = params.proxy_type.as_ref().and_then(|t| normalize_proxy_type(t));
+    let filter_type = params
+        .proxy_type
+        .as_ref()
+        .and_then(|t| normalize_proxy_type(t));
 
     for line in content.lines() {
         let trimmed = line.trim();
@@ -278,8 +304,11 @@ fn infer_proxy_type(line: &str) -> Option<String> {
     let _ = host;
     match port {
         443 | 8443 => Some("https".to_string()),
-        1080 | 1081 | 1082 | 1085 | 1086 | 1088 | 10800 | 10808 | 10809 | 9050 | 9150 | 4145 => Some("socks5".to_string()),
-        80 | 8000 | 8008 | 8010 | 8080 | 8081 | 8082 | 8083 | 8084 | 8085 | 8111 | 8118 | 8880 | 8888 | 8889 | 3128 | 3129 => Some("http".to_string()),
+        1080 | 1081 | 1082 | 1085 | 1086 | 1088 | 10800 | 10808 | 10809 | 9050 | 9150 | 4145 => {
+            Some("socks5".to_string())
+        }
+        80 | 8000 | 8008 | 8010 | 8080 | 8081 | 8082 | 8083 | 8084 | 8085 | 8111 | 8118 | 8880
+        | 8888 | 8889 | 3128 | 3129 => Some("http".to_string()),
         _ => Some("http".to_string()),
     }
 }

@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::info;
 
+use crate::rust_scraper::QualityMode;
 use crate::types::*;
 use crate::AppState;
-use crate::rust_scraper::QualityMode;
 
 /// Extract structured data from a webpage based on schema or prompt
 /// Uses pattern matching and heuristics (no external LLM required)
@@ -69,26 +69,48 @@ pub async fn extract_structured(
     }
 
     // Add metadata fields
-    extracted_data.insert("_title".to_string(), serde_json::Value::String(scrape_result.title.clone()));
-    extracted_data.insert("_url".to_string(), serde_json::Value::String(url.to_string()));
-    extracted_data.insert("_word_count".to_string(), serde_json::Value::Number(scrape_result.word_count.into()));
+    extracted_data.insert(
+        "_title".to_string(),
+        serde_json::Value::String(scrape_result.title.clone()),
+    );
+    extracted_data.insert(
+        "_url".to_string(),
+        serde_json::Value::String(url.to_string()),
+    );
+    extracted_data.insert(
+        "_word_count".to_string(),
+        serde_json::Value::Number(scrape_result.word_count.into()),
+    );
 
     if let Some(author) = &scrape_result.author {
-        extracted_data.insert("_author".to_string(), serde_json::Value::String(author.clone()));
+        extracted_data.insert(
+            "_author".to_string(),
+            serde_json::Value::String(author.clone()),
+        );
     }
     if let Some(published) = &scrape_result.published_at {
-        extracted_data.insert("_published_at".to_string(), serde_json::Value::String(published.clone()));
+        extracted_data.insert(
+            "_published_at".to_string(),
+            serde_json::Value::String(published.clone()),
+        );
     }
 
     // HALLUCINATION PROTECTION: Count null fields and warn
     let null_count = extracted_data.values().filter(|v| v.is_null()).count();
     if null_count > 0 {
-        warnings.push(format!("Field not found warning: {} field(s) returned null (hallucination protection active)", null_count));
+        warnings.push(format!(
+            "Field not found warning: {} field(s) returned null (hallucination protection active)",
+            null_count
+        ));
         confidence -= (null_count as f64 * 0.1).min(0.3); // Cap confidence reduction at 0.3
     }
 
     let field_count = extracted_data.len();
-    let raw_preview: String = scrape_result.clean_content.chars().take(max_chars).collect();
+    let raw_preview: String = scrape_result
+        .clean_content
+        .chars()
+        .take(max_chars)
+        .collect();
 
     Ok(ExtractResponse {
         url: url.to_string(),
@@ -112,15 +134,14 @@ fn extract_field_value(scrape: &ScrapeResponse, field: &ExtractField) -> serde_j
     // Try to match based on field name and description
     match name_lower.as_str() {
         // Common field patterns
-        "title" | "name" | "headline" => {
-            serde_json::Value::String(scrape.title.clone())
-        }
+        "title" | "name" | "headline" => serde_json::Value::String(scrape.title.clone()),
         "description" | "summary" | "excerpt" => {
             if !scrape.meta_description.is_empty() {
                 serde_json::Value::String(scrape.meta_description.clone())
             } else {
                 // First paragraph
-                let first_para: String = content.lines()
+                let first_para: String = content
+                    .lines()
                     .find(|l| l.len() > 50)
                     .unwrap_or("")
                     .chars()
@@ -129,52 +150,62 @@ fn extract_field_value(scrape: &ScrapeResponse, field: &ExtractField) -> serde_j
                 serde_json::Value::String(first_para)
             }
         }
-        "author" | "writer" | "by" => {
-            scrape.author.clone()
-                .map(serde_json::Value::String)
-                .unwrap_or(serde_json::Value::Null)
-        }
-        "date" | "published" | "published_at" | "publish_date" => {
-            scrape.published_at.clone()
-                .map(serde_json::Value::String)
-                .unwrap_or_else(|| extract_date_from_content(content))
-        }
-        "price" | "cost" | "amount" => {
-            extract_price_advanced(content, &field.name)
-        }
-        "email" | "emails" => {
-            extract_emails(content)
-        }
-        "phone" | "telephone" | "phones" => {
-            extract_phones(content)
-        }
+        "author" | "writer" | "by" => scrape
+            .author
+            .clone()
+            .map(serde_json::Value::String)
+            .unwrap_or(serde_json::Value::Null),
+        "date" | "published" | "published_at" | "publish_date" => scrape
+            .published_at
+            .clone()
+            .map(serde_json::Value::String)
+            .unwrap_or_else(|| extract_date_from_content(content)),
+        "price" | "cost" | "amount" => extract_price_advanced(content, &field.name),
+        "email" | "emails" => extract_emails(content),
+        "phone" | "telephone" | "phones" => extract_phones(content),
         "links" | "urls" => {
-            let urls: Vec<serde_json::Value> = scrape.links.iter()
+            let urls: Vec<serde_json::Value> = scrape
+                .links
+                .iter()
                 .take(20)
                 .map(|l| serde_json::Value::String(l.url.clone()))
                 .collect();
             serde_json::Value::Array(urls)
         }
         "headings" | "headers" | "sections" => {
-            let headings: Vec<serde_json::Value> = scrape.headings.iter()
+            let headings: Vec<serde_json::Value> = scrape
+                .headings
+                .iter()
                 .map(|h| serde_json::Value::String(format!("{}: {}", h.level, h.text)))
                 .collect();
             serde_json::Value::Array(headings)
         }
         "code" | "code_blocks" | "code_snippets" => {
-            let blocks: Vec<serde_json::Value> = scrape.code_blocks.iter()
+            let blocks: Vec<serde_json::Value> = scrape
+                .code_blocks
+                .iter()
                 .map(|b| {
                     let mut obj = serde_json::Map::new();
-                    obj.insert("language".to_string(),
-                        b.language.clone().map(serde_json::Value::String).unwrap_or(serde_json::Value::Null));
-                    obj.insert("code".to_string(), serde_json::Value::String(b.code.clone()));
+                    obj.insert(
+                        "language".to_string(),
+                        b.language
+                            .clone()
+                            .map(serde_json::Value::String)
+                            .unwrap_or(serde_json::Value::Null),
+                    );
+                    obj.insert(
+                        "code".to_string(),
+                        serde_json::Value::String(b.code.clone()),
+                    );
                     serde_json::Value::Object(obj)
                 })
                 .collect();
             serde_json::Value::Array(blocks)
         }
         "images" => {
-            let imgs: Vec<serde_json::Value> = scrape.images.iter()
+            let imgs: Vec<serde_json::Value> = scrape
+                .images
+                .iter()
                 .take(20)
                 .map(|i| {
                     let mut obj = serde_json::Map::new();
@@ -195,7 +226,8 @@ fn extract_field_value(scrape: &ScrapeResponse, field: &ExtractField) -> serde_j
                 if !scrape.meta_description.is_empty() {
                     return serde_json::Value::String(scrape.meta_description.clone());
                 }
-                let first_para: String = content.lines()
+                let first_para: String = content
+                    .lines()
                     .find(|l| l.len() > 50)
                     .unwrap_or("")
                     .chars()
@@ -206,7 +238,9 @@ fn extract_field_value(scrape: &ScrapeResponse, field: &ExtractField) -> serde_j
                 }
             }
             if name_lower.contains("feature") {
-                let features: Vec<serde_json::Value> = scrape.headings.iter()
+                let features: Vec<serde_json::Value> = scrape
+                    .headings
+                    .iter()
                     .filter(|h| h.level == "h2" || h.level == "h3")
                     .take(8)
                     .map(|h| serde_json::Value::String(h.text.clone()))
@@ -216,7 +250,10 @@ fn extract_field_value(scrape: &ScrapeResponse, field: &ExtractField) -> serde_j
                 }
             }
             // ADVANCED HEURISTIC EXTRACTION with hallucination protection
-            if desc_lower.contains("number") || desc_lower.contains("count") || desc_lower.contains("quantity") {
+            if desc_lower.contains("number")
+                || desc_lower.contains("count")
+                || desc_lower.contains("quantity")
+            {
                 extract_number_with_hallucination_check(content, &field.name)
             } else if desc_lower.contains("list") || desc_lower.contains("array") {
                 extract_list_near_keyword_advanced(content, &field.name)
@@ -242,15 +279,24 @@ fn extract_crate_name(scrape: &ScrapeResponse) -> Option<String> {
 }
 
 /// Auto-extract common data patterns from content
-fn auto_extract(scrape: &ScrapeResponse, prompt: Option<&str>) -> serde_json::Map<String, serde_json::Value> {
+fn auto_extract(
+    scrape: &ScrapeResponse,
+    prompt: Option<&str>,
+) -> serde_json::Map<String, serde_json::Value> {
     let mut data = serde_json::Map::new();
     let content = &scrape.clean_content;
 
     // Always extract these
-    data.insert("title".to_string(), serde_json::Value::String(scrape.title.clone()));
+    data.insert(
+        "title".to_string(),
+        serde_json::Value::String(scrape.title.clone()),
+    );
 
     if !scrape.meta_description.is_empty() {
-        data.insert("description".to_string(), serde_json::Value::String(scrape.meta_description.clone()));
+        data.insert(
+            "description".to_string(),
+            serde_json::Value::String(scrape.meta_description.clone()),
+        );
     }
 
     // Extract emails if found
@@ -278,22 +324,34 @@ fn auto_extract(scrape: &ScrapeResponse, prompt: Option<&str>) -> serde_json::Ma
         if prompt_lower.contains("product") || prompt_lower.contains("item") {
             // Product-focused extraction
             if let Some(h1) = scrape.headings.iter().find(|h| h.level == "h1") {
-                data.insert("product_name".to_string(), serde_json::Value::String(h1.text.clone()));
+                data.insert(
+                    "product_name".to_string(),
+                    serde_json::Value::String(h1.text.clone()),
+                );
             }
         }
 
         if prompt_lower.contains("article") || prompt_lower.contains("blog") {
             // Article-focused extraction
             if let Some(author) = &scrape.author {
-                data.insert("author".to_string(), serde_json::Value::String(author.clone()));
+                data.insert(
+                    "author".to_string(),
+                    serde_json::Value::String(author.clone()),
+                );
             }
             if let Some(date) = &scrape.published_at {
-                data.insert("published_date".to_string(), serde_json::Value::String(date.clone()));
+                data.insert(
+                    "published_date".to_string(),
+                    serde_json::Value::String(date.clone()),
+                );
             }
 
             // Reading time
             if let Some(time) = scrape.reading_time_minutes {
-                data.insert("reading_time_minutes".to_string(), serde_json::Value::Number(time.into()));
+                data.insert(
+                    "reading_time_minutes".to_string(),
+                    serde_json::Value::Number(time.into()),
+                );
             }
         }
 
@@ -306,7 +364,9 @@ fn auto_extract(scrape: &ScrapeResponse, prompt: Option<&str>) -> serde_json::Ma
 
         if prompt_lower.contains("code") || prompt_lower.contains("programming") {
             if !scrape.code_blocks.is_empty() {
-                let blocks: Vec<serde_json::Value> = scrape.code_blocks.iter()
+                let blocks: Vec<serde_json::Value> = scrape
+                    .code_blocks
+                    .iter()
                     .map(|b| serde_json::Value::String(b.code.clone()))
                     .collect();
                 data.insert("code_blocks".to_string(), serde_json::Value::Array(blocks));
@@ -316,13 +376,18 @@ fn auto_extract(scrape: &ScrapeResponse, prompt: Option<&str>) -> serde_json::Ma
 
     // Add headings as table of contents
     if !scrape.headings.is_empty() {
-        let toc: Vec<serde_json::Value> = scrape.headings.iter()
+        let toc: Vec<serde_json::Value> = scrape
+            .headings
+            .iter()
             .filter(|h| h.level == "h1" || h.level == "h2" || h.level == "h3")
             .take(15)
             .map(|h| serde_json::Value::String(h.text.clone()))
             .collect();
         if !toc.is_empty() {
-            data.insert("table_of_contents".to_string(), serde_json::Value::Array(toc));
+            data.insert(
+                "table_of_contents".to_string(),
+                serde_json::Value::Array(toc),
+            );
         }
     }
 
@@ -341,7 +406,8 @@ fn parse_schema_from_prompt(prompt: &str) -> Option<Vec<ExtractField>> {
         trimmed
     };
 
-    let json_snippet = if let (Some(start), Some(end)) = (candidate.find('['), candidate.rfind(']')) {
+    let json_snippet = if let (Some(start), Some(end)) = (candidate.find('['), candidate.rfind(']'))
+    {
         candidate.get(start..=end)
     } else if candidate.starts_with('{') && candidate.ends_with('}') {
         Some(candidate)
@@ -412,7 +478,8 @@ fn parse_schema_value(value: &serde_json::Value) -> Option<Vec<ExtractField>> {
                         }),
                         serde_json::Value::Object(field_obj) => {
                             let mut field_map = field_obj.clone();
-                            field_map.insert("name".to_string(), serde_json::Value::String(key.clone()));
+                            field_map
+                                .insert("name".to_string(), serde_json::Value::String(key.clone()));
                             if let Some(field) = parse_schema_field(&field_map) {
                                 collected.push(field);
                             }
@@ -470,7 +537,8 @@ fn parse_schema_field(obj: &serde_json::Map<String, serde_json::Value>) -> Optio
 /// Extract email addresses from content
 fn extract_emails(content: &str) -> serde_json::Value {
     let email_re = Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap();
-    let emails: Vec<serde_json::Value> = email_re.find_iter(content)
+    let emails: Vec<serde_json::Value> = email_re
+        .find_iter(content)
         .map(|m| serde_json::Value::String(m.as_str().to_string()))
         .collect();
 
@@ -485,8 +553,12 @@ fn extract_emails(content: &str) -> serde_json::Value {
 
 /// Extract phone numbers from content
 fn extract_phones(content: &str) -> serde_json::Value {
-    let phone_re = Regex::new(r"[\+]?[(]?[0-9]{1,3}[)]?[-\s\.]?[0-9]{1,4}[-\s\.]?[0-9]{1,4}[-\s\.]?[0-9]{1,9}").unwrap();
-    let phones: Vec<serde_json::Value> = phone_re.find_iter(content)
+    let phone_re = Regex::new(
+        r"[\+]?[(]?[0-9]{1,3}[)]?[-\s\.]?[0-9]{1,4}[-\s\.]?[0-9]{1,4}[-\s\.]?[0-9]{1,9}",
+    )
+    .unwrap();
+    let phones: Vec<serde_json::Value> = phone_re
+        .find_iter(content)
         .filter(|m| m.as_str().len() >= 10)
         .map(|m| serde_json::Value::String(m.as_str().to_string()))
         .take(5)
@@ -504,7 +576,8 @@ fn extract_phones(content: &str) -> serde_json::Value {
 /// Extract price values from content
 fn extract_price(content: &str) -> serde_json::Value {
     let price_re = Regex::new(r"[\$€£¥₹][\s]?[0-9]{1,3}(?:[,.]?[0-9]{3})*(?:[.,][0-9]{2})?|[0-9]{1,3}(?:[,.]?[0-9]{3})*(?:[.,][0-9]{2})?\s?(?:USD|EUR|GBP|JPY|INR)").unwrap();
-    let prices: Vec<serde_json::Value> = price_re.find_iter(content)
+    let prices: Vec<serde_json::Value> = price_re
+        .find_iter(content)
         .map(|m| serde_json::Value::String(m.as_str().to_string()))
         .take(10)
         .collect();
@@ -522,11 +595,11 @@ fn extract_price(content: &str) -> serde_json::Value {
 /// Hallucination protection: returns null if not found within 500 chars
 fn extract_price_advanced(content: &str, keyword: &str) -> serde_json::Value {
     let price_re = Regex::new(r"[\$€£¥₹][\s]?[0-9]{1,3}(?:[,.]?[0-9]{3})*(?:[.,][0-9]{2})?|[0-9]{1,3}(?:[,.]?[0-9]{3})*(?:[.,][0-9]{2})?\s?(?:USD|EUR|GBP|JPY|INR)").unwrap();
-    
+
     // First, try to find near keyword
     let keyword_lower = keyword.to_lowercase();
     let content_lower = content.to_lowercase();
-    
+
     if let Some(pos) = content_lower.find(&keyword_lower) {
         // Search within 500 chars after keyword (hallucination protection limit)
         let search_area: String = content.chars().skip(pos).take(500).collect();
@@ -534,12 +607,12 @@ fn extract_price_advanced(content: &str, keyword: &str) -> serde_json::Value {
             return serde_json::Value::String(m.as_str().to_string());
         }
     }
-    
+
     // Fallback: Try to find any price in content (first occurrence only)
     if let Some(m) = price_re.find(content) {
         return serde_json::Value::String(m.as_str().to_string());
     }
-    
+
     // HALLUCINATION PROTECTION: Return null if no price found
     serde_json::Value::Null
 }
@@ -548,10 +621,10 @@ fn extract_price_advanced(content: &str, keyword: &str) -> serde_json::Value {
 fn extract_date_from_content(content: &str) -> serde_json::Value {
     // Common date patterns
     let date_patterns = [
-        r"\d{4}-\d{2}-\d{2}",  // 2024-01-15
-        r"\d{2}/\d{2}/\d{4}",  // 01/15/2024
-        r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}",  // January 15, 2024
-        r"\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}",  // 15 January 2024
+        r"\d{4}-\d{2}-\d{2}", // 2024-01-15
+        r"\d{2}/\d{2}/\d{4}", // 01/15/2024
+        r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}", // January 15, 2024
+        r"\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}", // 15 January 2024
     ];
 
     for pattern in date_patterns {
@@ -582,7 +655,7 @@ fn extract_number_with_hallucination_check(content: &str, keyword: &str) -> serd
             }
         }
     }
-    
+
     // HALLUCINATION PROTECTION: Return null if not found
     serde_json::Value::Null
 }
@@ -594,18 +667,20 @@ fn extract_text_with_hallucination_check(content: &str, keyword: &str) -> serde_
     let variants = keyword_variants(keyword);
     if let Some((pos, keyword_len)) = find_keyword_position(&content_lower, &variants) {
         // Get text after keyword until newline or 500 chars (hallucination check)
-        let after: String = content.chars()
+        let after: String = content
+            .chars()
             .skip(pos + keyword_len)
             .take(500)
             .take_while(|c| *c != '\n')
             .collect();
 
         let trimmed = after.trim().trim_start_matches(':').trim();
-        if !trimmed.is_empty() && trimmed.len() > 2 { // Minimum 3 chars to be valid
+        if !trimmed.is_empty() && trimmed.len() > 2 {
+            // Minimum 3 chars to be valid
             return serde_json::Value::String(trimmed.to_string());
         }
     }
-    
+
     // HALLUCINATION PROTECTION: Return null if not found
     serde_json::Value::Null
 }
@@ -619,17 +694,24 @@ fn extract_list_near_keyword_advanced(content: &str, keyword: &str) -> serde_jso
     if let Some((pos, keyword_len)) = find_keyword_position(&content_lower, &variants) {
         // Look for bullet points or numbered items within 500 chars (hallucination protection)
         let search_area: String = content.chars().skip(pos + keyword_len).take(500).collect();
-        let items: Vec<serde_json::Value> = search_area.lines()
+        let items: Vec<serde_json::Value> = search_area
+            .lines()
             .filter(|l| {
                 let trimmed = l.trim();
-                trimmed.starts_with('-') || trimmed.starts_with('•') || 
-                trimmed.starts_with('*') || trimmed.starts_with("1.") ||
-                trimmed.starts_with("2.") || trimmed.starts_with("3.")
+                trimmed.starts_with('-')
+                    || trimmed.starts_with('•')
+                    || trimmed.starts_with('*')
+                    || trimmed.starts_with("1.")
+                    || trimmed.starts_with("2.")
+                    || trimmed.starts_with("3.")
             })
             .take(10)
             .map(|l| {
-                let cleaned = l.trim()
-                    .trim_start_matches(|c: char| c == '-' || c == '•' || c == '*' || c.is_numeric() || c == '.')
+                let cleaned = l
+                    .trim()
+                    .trim_start_matches(|c: char| {
+                        c == '-' || c == '•' || c == '*' || c.is_numeric() || c == '.'
+                    })
                     .trim();
                 serde_json::Value::String(cleaned.to_string())
             })
@@ -646,7 +728,7 @@ fn extract_list_near_keyword_advanced(content: &str, keyword: &str) -> serde_jso
             return serde_json::Value::Array(items);
         }
     }
-    
+
     // HALLUCINATION PROTECTION: Return null if no list found
     serde_json::Value::Null
 }

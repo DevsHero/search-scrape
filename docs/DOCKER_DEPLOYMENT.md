@@ -4,17 +4,17 @@
 
 ### Build Docker Image
 ```bash
-cd shadowcrawl
+cd search-scrape
 docker build -t shadowcrawl-mcp:latest .
 ```
 
 ### Test the Image
 ```bash
-# Run HTTP server (port 5000)
+# Run HTTP server (host 5001 -> container 5000)
 docker run --rm \
   -e SEARXNG_URL=http://localhost:8888 \
   -e RUST_LOG=info \
-  -p 5000:5000 \
+  -p 5001:5000 \
   shadowcrawl-mcp:latest
 
 # Or run MCP stdio server
@@ -27,13 +27,13 @@ docker run --rm -it \
 ### Run with docker-compose
 ```bash
 # Start all services (SearXNG + MCP Server)
-docker-compose up -d
+docker compose -f docker-compose-local.yml up -d --build
 
 # Check logs
-docker-compose logs shadowcrawl
+docker compose -f docker-compose-local.yml logs -f shadowcrawl
 
 # Stop all services
-docker-compose down
+docker compose -f docker-compose-local.yml down
 ```
 
 ## GitHub Actions Auto-Deployment
@@ -43,20 +43,18 @@ The project uses GitHub Actions to automatically build and push Docker images to
 
 **Trigger Conditions:**
 - ✅ **Manual trigger**: Run workflow manually from GitHub Actions tab
-- ✅ **Commit with `[build]`**: Any commit message containing `[build]` will trigger the build
+- ✅ **Commit ending with `[build]`**: Commit messages ending with `[build]` will trigger the build
 - ❌ **Other commits**: Regular commits without `[build]` will NOT trigger builds
 
 ### Usage Examples
 
 #### Trigger Build
 ```bash
-# Commit with [build] tag to trigger Docker build
-git commit -m "[build] Add new feature"
+# Commit message ending with [build] to trigger Docker build
+git commit -m "Release v2.0.0-rc [build]"
 git push
 
-# Or include [build] anywhere in commit message
-git commit -m "Fix bug - deploy [build] to production"
-git push
+# Repo convention: keep [build] at the end so it's easy to grep in history.
 ```
 
 #### Skip Build
@@ -102,7 +100,7 @@ Each build creates multiple tags:
 - `latest` - Latest build from default branch
 - `main` - Latest build from main branch  
 - `main-abc1234` - Specific commit SHA
-- `v1.0.0` - Semantic version tags (if using git tags)
+- `v2.0.0-rc` - Semantic version tags (if using git tags)
 
 ### Environment Variables
 Configure the container with:
@@ -152,10 +150,10 @@ git push
 ### Version Tagging
 ```bash
 # Create version tag to trigger versioned build
-git tag v1.0.0
-git push origin v1.0.0
+git tag v2.0.0-rc
+git push origin v2.0.0-rc
 
-# This creates images with tags: v1.0.0, v1.0, v1, latest
+# This creates images with tags like: v2.0.0-rc, latest
 ```
 
 ### Rollback Strategy
