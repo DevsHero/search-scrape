@@ -109,7 +109,7 @@ docker compose -f docker-compose-local.yml up -d --build
 
 ### 2. The Native Rust Way (Required for non_robot_search / HITL)
 
-For the 99.99% bypass (HITL), you must run natively (tested on macOS; Linux may work but is less battle-tested).
+For the 99.99% bypass (HITL), you must run natively (tested on macOS; Linux (Desktop) may work but is less battle-tested).
 
 Build the MCP stdio server with the HITL feature enabled:
 
