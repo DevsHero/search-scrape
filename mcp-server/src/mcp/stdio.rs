@@ -212,13 +212,6 @@ impl rmcp::ServerHandler for McpService {
                 )
             })?;
 
-        if request.name.as_ref() != internal_name {
-            info!(
-                "tool_name_remap: public='{}' -> internal='{}'",
-                request.name, internal_name
-            );
-        }
-
         // rmcp stdio arguments are an object map; mcp_handlers expect a serde_json::Value.
         // Clone is fine here (tool inputs are small) and keeps handler API consistent across transports.
         let public_args = Value::Object(args_map.clone());

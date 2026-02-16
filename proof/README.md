@@ -18,13 +18,13 @@ This directory contains **verified evidence** that ShadowCrawl successfully bypa
 
 ---
 
-## � New Feature: Manual Return Button
+## 🆕 New Feature: Manual Return Button
 
 The **Manual Return Button** is a powerful user control feature that prevents browser hangs and gives explicit control over data capture timing.
 
 ### How It Works
 
-When `non_robot_search` is called with `non_robot_search` enabled:
+When `stealth_scrape` is called (feature flag: `non_robot_search`):
 
 1. **Automatic Injection**: A floating button is injected at page load
    ```

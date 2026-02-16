@@ -1,6 +1,6 @@
-# Non-Robot Search (HITL / High-Fidelity Renderer) — v2.0.0-rc (macOS-tested)
+# Stealth Scrape (HITL / High-Fidelity Renderer) — v2.0.0-rc
 
-`non_robot_search` is the “nuclear option” tool for targets that are:
+`stealth_scrape` (internal feature/handler name: `non_robot_search`) is the “nuclear option” tool for targets that are:
 
 - heavily JavaScript-driven (content appears only after client-side hydration)
 - protected by anti-bot / verification gates (captcha, interstitials)
@@ -11,12 +11,13 @@ This tool is intentionally interactive (HITL = Human-In-The-Loop). It is **not**
 ## Support / OS
 
 - ✅ **Tested:** macOS (this release)
-- ⚠️ **Not the primary test target:** Linux / Windows (may work, but expect rough edges)
+- ✅ **Tested:** Windows 10/11 (see verified setup guide below)
+- ⚠️ **Not the primary test target:** Linux (may work, but expect rough edges)
   - Ubuntu Desktop notes: docs/UBUNTU_DESKTOP.md
-  - Windows notes: docs/WINDOWS_DESKTOP.md
-- ⚠️ **Container note:** `non_robot_search` launches a **local GUI browser** (Brave/Chrome). Running it inside the Docker container is not supported for typical setups.
+  - Windows notes: docs/WINDOWS_SETUP.md
+- ⚠️ **Container note:** `stealth_scrape` launches a **local GUI browser** (Brave/Chrome). Running it inside the Docker container is not supported for typical setups.
 
-If you only run Docker-based MCP, you still get the other tools (`search_web`, `scrape_url`, `crawl_website`, …). Use native macOS for HITL.
+If you only run Docker-based MCP, you still get the other tools (`web_search`, `scrape_url`, `crawl_website`, …). Use a native desktop for HITL.
 
 ## What it does (at a high level)
 
@@ -37,7 +38,7 @@ If you only run Docker-based MCP, you still get the other tools (`search_web`, `
 
 ## Build requirements
 
-`non_robot_search` is behind a Cargo feature flag.
+`stealth_scrape` is behind a Cargo feature flag (`non_robot_search`).
 
 Build the binaries (native macOS):
 
@@ -68,7 +69,7 @@ RUST_LOG=info \
 
 Notes:
 - Host ports in `docker-compose-local.yml` are `8890` (SearXNG) and `6344` (Qdrant gRPC).
-- `non_robot_search` itself does not require Browserless.
+- `stealth_scrape` itself does not require Browserless.
 
 ### Option B: run HTTP server locally
 
@@ -131,7 +132,7 @@ If your MCP client runs without a TTY, ShadowCrawl will use a dialog by default.
 
 ## Tool arguments (MCP)
 
-`non_robot_search` accepts:
+`stealth_scrape` accepts:
 
 - `url` (required)
 - `output_format`: `json` (default) or `text`

@@ -21,8 +21,10 @@ async fn main() -> anyhow::Result<()> {
     }
 
     if args.iter().any(|a| a == "--setup") {
-        let mut opts = shadowcrawl::setup::SetupOptions::default();
-        opts.mode = shadowcrawl::setup::SetupRunMode::SetupFlag;
+        let opts = shadowcrawl::setup::SetupOptions {
+            mode: shadowcrawl::setup::SetupRunMode::SetupFlag,
+            ..Default::default()
+        };
         let report = shadowcrawl::setup::check_all(opts).await;
         let is_json = args.iter().any(|a| a == "--json");
         if is_json {

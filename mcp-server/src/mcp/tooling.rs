@@ -171,8 +171,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
 
     tools.push(ToolCatalogEntry {
         name: "non_robot_search",
-        title: "Non-Robot Search (HITL)",
-        description: "High-fidelity rendering path: open a visible browser and request human help for interactive verification steps. Technical reason: preserves DOM integrity and JavaScript execution for complex applications. (Requires a build with the `non_robot_search` feature for full functionality.)",
+        title: "Stealth Scrape",
+        description: "USE THIS for Upwork, Zillow, LinkedIn or any site with Cloudflare/Bot protection. Uses a real browser to bypass blocks.",
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {

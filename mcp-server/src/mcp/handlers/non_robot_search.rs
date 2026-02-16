@@ -136,7 +136,7 @@ pub async fn handle(
         Ok(Json(McpCallResponse {
             content: vec![McpContent {
                 content_type: "text".to_string(),
-                text: "non_robot_search is not enabled in this running binary. Rebuild and restart using a build with the `non_robot_search` feature, for example: `cd mcp-server && cargo build --release --features non_robot_search --bin shadowcrawl --bin shadowcrawl-mcp`. If you're using VS Code MCP stdio, restart the MCP server after rebuilding.".to_string(),
+                text: "stealth_scrape is not enabled in this running binary (feature flag: `non_robot_search`). Rebuild and restart using a build with the `non_robot_search` feature, for example: `cd mcp-server && cargo build --release --features non_robot_search --bin shadowcrawl --bin shadowcrawl-mcp`. If you're using VS Code MCP stdio, restart the MCP server after rebuilding.".to_string(),
             }],
             is_error: true,
         }))

@@ -23,8 +23,10 @@ async fn main() -> anyhow::Result<()> {
     // Handle setup-only mode
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--setup") {
-        let mut opts = shadowcrawl::setup::SetupOptions::default();
-        opts.mode = shadowcrawl::setup::SetupRunMode::SetupFlag;
+        let opts = shadowcrawl::setup::SetupOptions {
+            mode: shadowcrawl::setup::SetupRunMode::SetupFlag,
+            ..Default::default()
+        };
         let report = shadowcrawl::setup::check_all(opts).await;
         println!("{}", report);
         report.print_action_required_blocks();

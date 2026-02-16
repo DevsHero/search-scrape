@@ -51,6 +51,8 @@ use futures::StreamExt;
 #[cfg(feature = "non_robot_search")]
 use crossterm::event::{self, Event as TermEvent, KeyCode, KeyEventKind};
 #[cfg(feature = "non_robot_search")]
+use atty::Stream as AttyStream;
+#[cfg(feature = "non_robot_search")]
 use notify_rust::Notification;
 #[cfg(all(feature = "non_robot_search", not(target_os = "macos")))]
 use rfd::{MessageButtons, MessageDialog, MessageLevel};
@@ -154,7 +156,7 @@ async fn execute_non_robot_search_inner(
     // This avoids Chromium profile lock conflicts (e.g., SingletonLock) when callers reuse a live profile.
     let _serial_guard = state.non_robot_search_lock.lock().await;
 
-    notify_and_prompt_user()?;
+    notify_and_prompt_user(&cfg)?;
 
     let (abort_tx, mut abort_rx) = watch::channel(false);
     let killswitch = KillSwitch::start(abort_tx);
@@ -1041,7 +1043,7 @@ async fn get_html_snapshot(page: &chromiumoxide::Page, closed: bool) -> anyhow::
 }
 
 #[cfg(feature = "non_robot_search")]
-fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
+fn notify_and_prompt_user(cfg: &NonRobotSearchConfig) -> Result<(), NonRobotSearchError> {
     let auto_allow = std::env::var("SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW")
         .ok()
         .as_deref()
@@ -1049,45 +1051,10 @@ fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
         .unwrap_or(false)
     ;
 
-    // Always do a best-effort user-facing notice. This is intentionally non-blocking.
-    // (Some environments do not have desktop notifications; ignore failures.)
-    let notification_body = if auto_allow {
-        "ShadowCrawl will open a visible browser for HITL rendering.\n\nTip: If a site blocks automation, solve it in the browser and click FINISH & RETURN.\nEmergency stop: hold ESC for 3 seconds."
-    } else {
-        "ShadowCrawl will open a visible browser to fully render modern web pages and may temporarily lock your input to avoid accidental interference.\n\nPress Enter to allow or Esc to cancel."
-    };
-
-    // macOS: use Notification Center via AppleScript as the most reliable cross-context notice.
-    // This works even when the process isn't a foreground UI app.
-    #[cfg(target_os = "macos")]
-    {
-        let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
-        let script = format!(
-            "display notification \"{}\" with title \"ShadowCrawl\" subtitle \"HITL Renderer\"",
-            esc(notification_body)
-        );
-        let _ = std::process::Command::new("osascript")
-            .arg("-e")
-            .arg(script)
-            .spawn();
-    }
-
-    let _ = Notification::new()
-        .summary("ShadowCrawl: HITL browser control")
-        .body(notification_body)
-        .show();
-
-    play_tone(Tone::Attention);
-
-    if auto_allow {
-        info!("non_robot_search: auto-allow enabled via SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW");
-        return Ok(());
-    }
-
     // Consent mode override:
-    // - SHADOWCRAWL_NON_ROBOT_CONSENT=dialog => always dialog
+    // - SHADOWCRAWL_NON_ROBOT_CONSENT=dialog => always dialog (blocking)
     // - SHADOWCRAWL_NON_ROBOT_CONSENT=tty    => always tty prompt
-    // - default/auto => tty when stdin is TTY, otherwise dialog
+    // - default/auto => dialog by default (server-safe)
     let consent_mode = std::env::var("SHADOWCRAWL_NON_ROBOT_CONSENT")
         .ok()
         .unwrap_or_else(|| "auto".to_string())
@@ -1096,15 +1063,40 @@ fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
     let force_dialog = matches!(consent_mode.as_str(), "dialog" | "gui");
     let force_tty = matches!(consent_mode.as_str(), "tty" | "terminal");
 
-    // Default to a GUI popup for a more professional HITL experience.
-    // TTY prompts are still available for advanced/headless-ish environments.
-    let use_tty_prompt = if force_tty {
-        true
-    } else if force_dialog {
-        false
+    // Always do a best-effort user-facing notice. This is intentionally non-blocking.
+    // (Some environments do not have desktop notifications; ignore failures.)
+    let target_line = format!("Target URL: {}", cfg.url);
+
+    let notification_body = if auto_allow && !force_dialog {
+        format!(
+            "ShadowCrawl will open a visible browser for HITL rendering.\n\n{}\n\nTip: If a site blocks automation, solve it in the browser and click FINISH & RETURN.\nEmergency stop: hold ESC for ~3 seconds.",
+            target_line
+        )
     } else {
-        false
+        format!(
+            "ShadowCrawl is requesting permission to open a visible browser and navigate to the target page.\n\n{}\n\nClick OK to continue or Cancel to abort.\nEmergency stop: hold ESC for ~3 seconds.",
+            target_line
+        )
     };
+
+    let _ = Notification::new()
+        .summary("ShadowCrawl: HITL browser control")
+        .body(&notification_body)
+        .show();
+
+    play_tone(Tone::Attention);
+
+    // AUTO_ALLOW bypasses the blocking consent dialog *unless* the operator forces dialog mode.
+    if auto_allow && !force_dialog {
+        info!("non_robot_search: auto-allow enabled via SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW");
+        return Ok(());
+    }
+
+    let stdin_is_tty = atty::is(AttyStream::Stdin);
+
+    // Default to a GUI popup for a more professional HITL experience.
+    // Fallback to TTY only when explicitly requested, or when GUI dialogs are unavailable.
+    let use_tty_prompt = force_tty;
 
     // If we have an interactive TTY and consent mode allows it, use strict Enter/Esc flow.
     if use_tty_prompt {
@@ -1138,31 +1130,214 @@ fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
         }
     }
 
-    // Otherwise fall back to a native dialog (good for HTTP server + MCP stdio).
-    #[cfg(target_os = "macos")]
-    {
-        return macos_osascript_ok_cancel(
-            "ShadowCrawl Screen Access",
-            "ShadowCrawl needs temporary control of your browser to fully render dynamic content.\n\nIt may temporarily lock your mouse/keyboard to avoid interference.\n\nEmergency stop: hold ESC for 3 seconds.",
-        );
+    let title = "ShadowCrawl — Screen Access";
+    let message = format!(
+        "ShadowCrawl will open a visible browser window and navigate to:\n\n{}\n\nYou may need to complete CAPTCHA/login manually in the browser.\n\nClick OK to continue or Cancel to abort.\n\nEmergency stop: hold ESC for ~3 seconds.",
+        cfg.url
+    );
+
+    // Otherwise use a blocking desktop dialog. This MUST wait for user input.
+    // If desktop dialogs fail (headless / no portal), fall back to TTY when possible.
+    info!(
+        "non_robot_search: waiting for OS consent dialog (mode={}, auto_allow={})",
+        consent_mode,
+        auto_allow
+    );
+
+    match blocking_ok_cancel_dialog(title, &message) {
+        Ok(()) => Ok(()),
+        Err(NonRobotSearchError::Cancelled) => Err(NonRobotSearchError::Cancelled),
+        Err(e @ NonRobotSearchError::AutomationFailed(_)) => {
+            if stdin_is_tty && !force_dialog {
+                warn!("non_robot_search: GUI consent failed; falling back to TTY prompt: {}", e);
+                return notify_and_prompt_user_tty();
+            }
+            Err(NonRobotSearchError::InteractiveRequired)
+        }
+        Err(other) => Err(other),
     }
+}
 
-    #[cfg(not(target_os = "macos"))]
-    {
-        let result = MessageDialog::new()
-            .set_level(MessageLevel::Warning)
-            .set_title("ShadowCrawl Screen Access")
-            .set_description(
-                "ShadowCrawl needs temporary control of your browser to fully render dynamic content.\n\nIt may temporarily lock your mouse/keyboard to avoid interference.\n\nEmergency stop: hold ESC for 3 seconds.",
-            )
-            .set_buttons(MessageButtons::OkCancel)
-            .show();
+#[cfg(feature = "non_robot_search")]
+fn notify_and_prompt_user_tty() -> Result<(), NonRobotSearchError> {
+    println!(
+        "ShadowCrawl needs screen access for high-fidelity rendering. Press [Enter] to allow or [Esc] to cancel."
+    );
 
-        match result {
-            rfd::MessageDialogResult::Ok | rfd::MessageDialogResult::Yes => Ok(()),
-            _ => Err(NonRobotSearchError::Cancelled),
+    loop {
+        if event::poll(Duration::from_millis(100)).map_err(|e| {
+            NonRobotSearchError::AutomationFailed(format!("failed to poll terminal input: {}", e))
+        })? {
+            if let TermEvent::Key(key) = event::read().map_err(|e| {
+                NonRobotSearchError::AutomationFailed(format!("failed to read terminal input: {}", e))
+            })? {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                match key.code {
+                    KeyCode::Enter => return Ok(()),
+                    KeyCode::Esc => return Err(NonRobotSearchError::Cancelled),
+                    _ => {}
+                }
+            }
         }
     }
+}
+
+#[cfg(feature = "non_robot_search")]
+fn blocking_ok_cancel_dialog(title: &str, message: &str) -> Result<(), NonRobotSearchError> {
+    #[cfg(target_os = "macos")]
+    {
+        return macos_osascript_ok_cancel(title, message);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Prefer a TopMost native dialog to avoid “popup disappeared behind other windows”.
+        if let Ok(()) = windows_powershell_ok_cancel(title, message) {
+            return Ok(());
+        }
+
+        // Fallback to rfd if PowerShell is unavailable.
+        return rfd_ok_cancel(title, message);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Prefer desktop dialogs (zenity/kdialog/xmessage) because they reliably block.
+        if let Ok(()) = linux_gui_ok_cancel(title, message) {
+            return Ok(());
+        }
+
+        // Fallback to rfd portal dialog.
+        return rfd_ok_cancel(title, message);
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        rfd_ok_cancel(title, message)
+    }
+}
+
+#[cfg(all(feature = "non_robot_search", not(target_os = "macos")))]
+fn rfd_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchError> {
+    // rfd may panic in some environments; treat that as AutomationFailed.
+    let res = std::panic::catch_unwind(|| {
+        MessageDialog::new()
+            .set_level(MessageLevel::Warning)
+            .set_title(title)
+            .set_description(message)
+            .set_buttons(MessageButtons::OkCancel)
+            .show()
+    });
+
+    match res {
+        Ok(rfd::MessageDialogResult::Ok) | Ok(rfd::MessageDialogResult::Yes) => Ok(()),
+        Ok(_) => Err(NonRobotSearchError::Cancelled),
+        Err(_) => Err(NonRobotSearchError::AutomationFailed(
+            "GUI dialog failed (panic)".to_string(),
+        )),
+    }
+}
+
+#[cfg(all(feature = "non_robot_search", target_os = "windows"))]
+fn windows_powershell_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchError> {
+    // Use PowerShell + WinForms to guarantee a blocking, TopMost prompt.
+    // This avoids situations where rfd dialogs are hidden behind other windows.
+    let esc_ps_single = |s: &str| s.replace('\'', "''");
+    let title_esc = esc_ps_single(title);
+    let message_esc = esc_ps_single(message);
+
+    let script = format!(
+        "$ErrorActionPreference = 'Stop';\n"
+            + "Add-Type -AssemblyName System.Windows.Forms;\n"
+            + "$form = New-Object System.Windows.Forms.Form;\n"
+            + "$form.TopMost = $true;\n"
+            + "$form.WindowState = 'Minimized';\n"
+            + "$form.StartPosition = 'CenterScreen';\n"
+            + "$form.Width = 1; $form.Height = 1;\n"
+            + "$form.Show(); $form.Activate() | Out-Null;\n"
+            + "$msg = '{}';\n"
+            + "$ttl = '{}';\n"
+            + "$result = [System.Windows.Forms.MessageBox]::Show($form, $msg, $ttl, [System.Windows.Forms.MessageBoxButtons]::OKCancel, [System.Windows.Forms.MessageBoxIcon]::Warning);\n"
+            + "if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{ exit 0 }} else {{ exit 1 }}\n",
+        message_esc,
+        title_esc
+    );
+
+    let run_ps = |exe: &str| {
+        std::process::Command::new(exe)
+            .arg("-NoProfile")
+            .arg("-ExecutionPolicy")
+            .arg("Bypass")
+            .arg("-Command")
+            .arg(&script)
+            .status()
+    };
+
+    // Prefer Windows PowerShell (inbox) first, then PowerShell 7 (pwsh) as fallback.
+    let status = run_ps("powershell.exe").or_else(|_| run_ps("powershell")).or_else(|_| run_ps("pwsh"));
+
+    match status {
+        Ok(st) if st.success() => Ok(()),
+        Ok(_) => Err(NonRobotSearchError::Cancelled),
+        Err(e) => Err(NonRobotSearchError::AutomationFailed(format!(
+            "failed to spawn PowerShell dialog (powershell.exe/powershell/pwsh): {}",
+            e
+        ))),
+    }
+}
+
+#[cfg(all(feature = "non_robot_search", target_os = "linux"))]
+fn linux_gui_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchError> {
+    // Best-effort desktop prompts. Prefer zenity (GNOME), then kdialog (KDE), then xmessage.
+    let try_status = |cmd: &str, args: &[&str]| -> Option<std::process::ExitStatus> {
+        std::process::Command::new(cmd).args(args).status().ok()
+    };
+
+    if let Some(status) = try_status(
+        "zenity",
+        &[
+            "--question",
+            "--title",
+            title,
+            "--text",
+            message,
+            "--ok-label",
+            "OK",
+            "--cancel-label",
+            "Cancel",
+        ],
+    ) {
+        return if status.success() {
+            Ok(())
+        } else {
+            Err(NonRobotSearchError::Cancelled)
+        };
+    }
+
+    if let Some(status) = try_status("kdialog", &["--title", title, "--yesno", message]) {
+        return if status.success() {
+            Ok(())
+        } else {
+            Err(NonRobotSearchError::Cancelled)
+        };
+    }
+
+    if let Some(status) = try_status(
+        "xmessage",
+        &["-center", "-buttons", "OK:0,Cancel:1", message],
+    ) {
+        return if status.success() {
+            Ok(())
+        } else {
+            Err(NonRobotSearchError::Cancelled)
+        };
+    }
+
+    Err(NonRobotSearchError::AutomationFailed(
+        "no supported linux desktop dialog found (zenity/kdialog/xmessage)".to_string(),
+    ))
 }
 
 #[cfg(feature = "non_robot_search")]
@@ -1279,20 +1454,38 @@ fn get_prelaunch_overlay_script(target_url: &str) -> String {
 fn macos_osascript_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchError> {
     // RFD on macOS panics when called from non-main threads in some environments (e.g. servers).
     // AppleScript dialog is a reliable fallback that can be spawned from any thread.
-    let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+    let esc_as = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+
+    // Use System Events + activate to bring the dialog to the foreground (so users actually see it).
+    // NOTE: braces must be escaped for Rust format!.
     let script = format!(
-        "display dialog \"{}\" with title \"{}\" buttons {{\"Cancel\", \"OK\"}} default button \"OK\"",
-        esc(message),
-        esc(title)
+        r#"tell application "System Events"
+activate
+display dialog "{}" with title "{}" buttons {{"Cancel", "OK"}} default button "OK" with icon caution
+end tell"#,
+        esc_as(message),
+        esc_as(title)
     );
 
-    match std::process::Command::new("osascript")
+    let output = std::process::Command::new("osascript")
         .arg("-e")
         .arg(script)
-        .status()
-    {
-        Ok(status) if status.success() => Ok(()),
-        Ok(_) => Err(NonRobotSearchError::Cancelled),
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+            // osascript typically reports cancel as "User canceled.".
+            if stderr.to_lowercase().contains("user canceled") || stderr.to_lowercase().contains("user cancelled") {
+                Err(NonRobotSearchError::Cancelled)
+            } else {
+                Err(NonRobotSearchError::AutomationFailed(format!(
+                    "macOS consent dialog failed (osascript): {}",
+                    stderr.trim()
+                )))
+            }
+        }
         Err(e) => Err(NonRobotSearchError::AutomationFailed(format!(
             "failed to spawn macOS dialog (osascript): {}",
             e
@@ -1945,40 +2138,26 @@ async fn close_all_tabs_via_json(debugging_port: u16) -> anyhow::Result<()> {
 
 #[cfg(feature = "non_robot_search")]
 fn force_kill_all_debug_browsers(debugging_port: u16) {
-    // Aggressively kill ALL browser processes using this debugging port
-    // Used for emergency cleanup when browser won't close gracefully
+    // Aggressively kill ALL browser processes using this debugging port.
+    // Uses sysinfo for cross-platform support (Windows/macOS/Linux).
+    use sysinfo::System;
     let marker = format!("--remote-debugging-port={}", debugging_port);
 
-    let ps = std::process::Command::new("ps")
-        .args(["-ax", "-o", "pid=,command="])
-        .output();
-
-    let Ok(out) = ps else { return };
-    let Ok(text) = String::from_utf8(out.stdout) else {
-        return;
-    };
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     let mut killed = 0u32;
-    for line in text.lines() {
-        let trimmed = line.trim_start();
-        let mut it = trimmed.split_whitespace();
-        let Some(pid_str) = it.next() else { continue };
-        let cmd = trimmed.get(pid_str.len()..).unwrap_or("").trim_start();
-        let Ok(pid) = pid_str.trim().parse::<i32>() else {
-            continue;
-        };
-
-        if !cmd.contains(&marker) {
-            continue;
+    for (_pid, proc_) in sys.processes() {
+        let cmd_line = proc_
+            .cmd()
+            .iter()
+            .map(|s| s.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if cmd_line.contains(&marker) {
+            proc_.kill();
+            killed += 1;
         }
-
-        // Immediate SIGKILL for force cleanup
-        let _ = std::process::Command::new("kill")
-            .arg("-9")
-            .arg(pid.to_string())
-            .status();
-
-        killed += 1;
     }
 
     if killed > 0 {
@@ -1993,6 +2172,8 @@ fn force_kill_all_debug_browsers(debugging_port: u16) {
 fn kill_debug_browser_zombies(debugging_port: u16, user_data_dir: &std::path::Path) {
     // Do not kill normal user browsers. Only target processes launched with our CDP debugging port.
     // If user_data_dir is non-empty, additionally require it to match.
+    // Uses sysinfo for cross-platform support (Windows/macOS/Linux).
+    use sysinfo::System;
     let marker = format!("--remote-debugging-port={}", debugging_port);
     let user_dir_marker = if user_data_dir.as_os_str().is_empty() {
         None
@@ -2000,56 +2181,26 @@ fn kill_debug_browser_zombies(debugging_port: u16, user_data_dir: &std::path::Pa
         Some(format!("--user-data-dir={}", user_data_dir.display()))
     };
 
-    let ps = std::process::Command::new("ps")
-        .args(["-ax", "-o", "pid=,command="])
-        .output();
-
-    let Ok(out) = ps else { return };
-    let Ok(text) = String::from_utf8(out.stdout) else {
-        return;
-    };
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     let mut killed = 0u32;
-    for line in text.lines() {
-        let trimmed = line.trim_start();
-        let mut it = trimmed.split_whitespace();
-        let Some(pid_str) = it.next() else { continue };
-        // The remainder of the line after the PID is the command.
-        let cmd = trimmed.get(pid_str.len()..).unwrap_or("").trim_start();
-        let Ok(pid) = pid_str.trim().parse::<i32>() else {
-            continue;
-        };
-
-        if !cmd.contains(&marker) {
+    for (_pid, proc_) in sys.processes() {
+        let cmd_line = proc_
+            .cmd()
+            .iter()
+            .map(|s| s.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if !cmd_line.contains(&marker) {
             continue;
         }
         if let Some(ref udm) = user_dir_marker {
-            if !cmd.contains(udm) {
+            if !cmd_line.contains(udm) {
                 continue;
             }
         }
-
-        // Prefer graceful termination to reduce "restore tabs" prompts.
-        let _ = std::process::Command::new("kill")
-            .arg("-15")
-            .arg(pid.to_string())
-            .status();
-
-        std::thread::sleep(std::time::Duration::from_millis(250));
-
-        // If still alive, force kill.
-        let still_alive = std::process::Command::new("ps")
-            .args(["-p", &pid.to_string()])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if still_alive {
-            let _ = std::process::Command::new("kill")
-                .arg("-9")
-                .arg(pid.to_string())
-                .status();
-        }
-
+        proc_.kill();
         killed += 1;
     }
 
@@ -2085,17 +2236,21 @@ fn remove_stale_singleton_lock(user_data_dir: &std::path::Path) {
         return;
     }
 
-    // Check if any process is currently running with this user-data-dir.
+    // Cross-platform process check using sysinfo.
+    use sysinfo::System;
     let udm = format!("--user-data-dir={}", user_data_dir.display());
-    let ps = std::process::Command::new("ps")
-        .args(["-ax", "-o", "command="])
-        .output();
-    if let Ok(out) = ps {
-        if let Ok(text) = String::from_utf8(out.stdout) {
-            if text.contains(&udm) {
-                // Someone is using it; do not remove.
-                return;
-            }
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    for (_pid, proc_) in sys.processes() {
+        let cmd_line = proc_
+            .cmd()
+            .iter()
+            .map(|s| s.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if cmd_line.contains(&udm) {
+            // Someone is using it; do not remove.
+            return;
         }
     }
 
@@ -2238,7 +2393,17 @@ fn find_chrome_executable() -> Option<String> {
 
     #[cfg(target_os = "windows")]
     {
-        // Defer to chromiumoxide default discovery.
+        let candidates = [
+            r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        ];
+        for c in candidates {
+            if Path::new(c).exists() {
+                return Some(c.to_string());
+            }
+        }
     }
 
     None
@@ -2264,7 +2429,8 @@ fn get_manual_return_button_script() -> String {
     btn.innerHTML = '🚀 SHADOWCRAWL: FINISH & RETURN';
     btn.style.cssText = `
         position: fixed;
-        top: 10px;
+        top: auto;
+        bottom: 14px;
         right: 10px;
         z-index: 2147483648;
         padding: 15px 20px;
@@ -2310,7 +2476,7 @@ fn get_manual_return_button_script() -> String {
     function injectButton() {
         if (document.body) {
             document.body.appendChild(btn);
-            console.log('🚀 ShadowCrawl: Manual return button ready (top-right corner)');
+            console.log('🚀 ShadowCrawl: Manual return button ready (bottom-right corner)');
         } else {
             // Retry if body not ready
             setTimeout(injectButton, 100);

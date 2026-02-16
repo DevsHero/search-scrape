@@ -228,7 +228,7 @@ fn check_chrome_installed() -> SetupCheck {
     let actions = vec![ActionRequired {
         title: "Install Brave/Chrome/Chromium".to_string(),
         steps: vec![
-            "macOS: install Brave from https://brave.com/download/ (recommended for non_robot_search)"
+            "macOS: install Brave from https://brave.com/download/ (recommended for stealth_scrape / HITL)"
                 .to_string(),
             "macOS: install Google Chrome from https://www.google.com/chrome/".to_string(),
             "Ubuntu/Debian: `sudo apt-get update && sudo apt-get install -y chromium-browser`"

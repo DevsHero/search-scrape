@@ -86,7 +86,7 @@ async fn test_rust_docs_code_blocks() {
                 result.word_count
             );
             assert!(
-                result.code_blocks.len() > 0,
+                !result.code_blocks.is_empty(),
                 "❌ FAIL: No code blocks extracted"
             );
             assert!(

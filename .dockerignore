@@ -3,7 +3,6 @@
 !mcp-server/Cargo.toml
 !mcp-server/Cargo.lock
 !mcp-server/src/**
-!tools_metadata.json
 server.json
 smithery.config-schema.json
 smithery.yaml

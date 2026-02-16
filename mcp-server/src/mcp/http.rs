@@ -9,6 +9,7 @@ use tracing::info;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct McpTool {
     pub name: String,
+    pub title: String,
     pub description: String,
     pub input_schema: serde_json::Value,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -46,6 +47,7 @@ pub fn list_tools_for_state(state: &AppState) -> McpToolsResponse {
         .into_iter()
         .map(|spec| McpTool {
             name: spec.public_name,
+            title: spec.public_title,
             description: spec.public_description,
             input_schema: spec.public_input_schema,
             icons: spec.icons,
@@ -79,13 +81,6 @@ pub async fn call_tool(
                 }),
             )
         })?;
-
-    if request.name != internal_name {
-        info!(
-            "tool_name_remap: public='{}' -> internal='{}'",
-            request.name, internal_name
-        );
-    }
 
     let internal_args = state
         .tool_registry
