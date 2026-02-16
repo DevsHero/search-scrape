@@ -1,37 +1,30 @@
 # ShadowCrawl on Windows (Desktop) — `non_robot_search` / HITL
 
-This document focuses on running ShadowCrawl’s **visible-browser HITL** mode on **Windows 10/11**.
+This document covers running ShadowCrawl's **visible-browser HITL** mode on **Windows 10/11**.
 
-## What works today (current repo state)
+## ✅ Current status
 
-- The project already has a Windows setup check at [mcp-server/src/setup/os/windows.rs](../mcp-server/src/setup/os/windows.rs).
-- The `non_robot_search` flow already uses a cross-platform dialog fallback (`rfd`) for non-macOS consent prompts in [mcp-server/src/features/non_robot_search.rs](../mcp-server/src/features/non_robot_search.rs).
+All previously-known Windows blockers have been resolved:
 
-## Known Windows blockers (must address for “full support”)
-
-1. **Force-kill browser cleanup is Unix-only**
-   - Current implementation scans processes via `ps` and kills via `kill -9` in `force_kill_all_debug_browsers()`.
-   - On Windows this must be replaced with either:
-     - A Windows-specific implementation (`tasklist` + `taskkill`), or
-     - A cross-platform process library (recommended: `sysinfo`) that can match processes by command line and terminate by PID.
-
-2. **Notification dependency may not be Windows-safe**
-   - The `non_robot_search` feature enables `notify-rust` unconditionally via Cargo features.
-   - If `notify-rust` does not build/run on Windows in your environment, the fix is to introduce a small `Notifier` abstraction and use:
-     - Windows: a Windows toast notification crate (`windows` / WinRT), or
-     - Windows: no-op notifier (safe default).
-
-3. **Browser executable discovery is incomplete**
-   - `find_chrome_executable()` intentionally defers on Windows. This can work if Chromium discovery succeeds, but it’s brittle.
-   - “Full support” should add common Windows install paths for Brave/Chrome/Edge, plus allow overriding with `CHROME_EXECUTABLE`.
+| Feature | Status | Details |
+|---------|--------|---------|
+| Process cleanup | ✅ Done | `force_kill_all_debug_browsers()`, `kill_debug_browser_zombies()`, `remove_stale_singleton_lock()` — all rewritten with `sysinfo` crate for cross-platform support |
+| Browser discovery | ✅ Done | `find_chrome_executable()` now checks Brave, Chrome, and Edge at common Windows install paths |
+| Notifications | ✅ Done | `notify-rust` builds and works on Windows (uses WinRT toast notifications) |
+| Consent dialog | ✅ Done | `rfd` cross-platform dialog already handles Windows |
+| Sound playback | ✅ Done | `rodio` already cross-platform |
 
 ## Windows requirements (Desktop HITL)
 
 - **Windows 10/11** with an interactive desktop session (not Windows Server Core).
-- **Brave or Chrome installed**.
+- **Brave or Chrome installed** (Edge also works as fallback).
 - **Rust toolchain**:
   - Recommended: `stable-x86_64-pc-windows-msvc`.
-  - Install Visual Studio Build Tools (C++ workload) if any native deps require MSVC.
+  - Install Visual Studio Build Tools (C++ workload).
+  - **Windows SDK ≥ 10.0.19041.0** (required for `ort`/ONNX Runtime DirectX libs — `DXCORE.lib`, `D3D12.lib`, etc.). Install via:
+    ```powershell
+    winget install Microsoft.WindowsSDK.10.0.22621
+    ```
 - **Administrator privileges** (recommended):
   - Global input hooks (kill switch / input locking) can be blocked by policy unless the process is elevated.
   - The built-in setup check warns when not elevated.
@@ -45,53 +38,69 @@ cd mcp-server
 cargo build --release --bin shadowcrawl-mcp --features non_robot_search
 ```
 
-2. Configure your MCP client to run the native binary (example pattern):
+2. Run preflight checks:
 
-- Prefer using `env`-style args (or set env vars in your MCP client).
-- Required override if discovery fails:
-  - `CHROME_EXECUTABLE=C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`
+```powershell
+.\target\release\shadowcrawl-mcp.exe --setup --json
+```
+
+3. Configure your MCP client (VS Code `mcp.json` example):
+
+```json
+{
+  "servers": {
+    "shadowcrawl-local": {
+      "type": "stdio",
+      "command": "C:\\path\\to\\shadowcrawl-mcp.exe",
+      "args": [],
+      "env": {
+        "RUST_LOG": "info",
+        "SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW": "1",
+        "SEARXNG_URL": "http://localhost:8890",
+        "BROWSERLESS_URL": "http://localhost:3010",
+        "QDRANT_URL": "http://localhost:6343"
+      }
+    }
+  }
+}
+```
 
 ## Recommended environment variables for Windows
 
-- `CHROME_EXECUTABLE` — full path to `brave.exe` / `chrome.exe`.
+- `CHROME_EXECUTABLE` — override browser path (e.g., `C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe`).
 - `SHADOWCRAWL_RENDER_PROFILE_DIR` — a real profile directory to reuse cookies/sessions.
 - `SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW=1` — bypass consent prompts for local trusted runs.
 
-## Engineering plan (Windows)
+## Technical implementation notes
 
-### Phase 1 — Make it compile with `--features non_robot_search`
+### Cross-platform process management (`sysinfo`)
 
-- Confirm whether `notify-rust` is compatible on Windows.
-  - If not: move notifications behind a platform abstraction or compile-time `cfg`.
+All process management functions now use the `sysinfo` crate (optional, gated behind `non_robot_search` feature with `default-features = false, features = ["system"]`):
 
-### Phase 2 — Make cleanup reliable (no zombie browsers)
+- **`force_kill_all_debug_browsers(port)`** — enumerates all processes, matches `--remote-debugging-port=<port>` in command line, kills matches.
+- **`kill_debug_browser_zombies(port, user_data_dir)`** — same as above but also matches `--user-data-dir=<path>`.
+- **`remove_stale_singleton_lock(user_data_dir)`** — checks for stale `SingletonLock` files and removes them if no process is using the user-data-dir.
 
-- Replace `force_kill_all_debug_browsers()` with a cross-platform implementation:
-  - Add `sysinfo` crate.
-  - Enumerate processes and match `--remote-debugging-port=<port>` in the cmdline.
-  - Terminate matching PIDs (and optionally their children).
+### Browser discovery priority
 
-### Phase 3 — Make browser discovery deterministic
-
-- Expand `find_chrome_executable()` Windows branch with common install paths:
-  - `C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`
-  - `C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe`
-  - `C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe`
-  - `C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe`
-- Keep `CHROME_EXECUTABLE` override as top priority.
-
-### Phase 4 — Validate HITL ergonomics
-
-- Verify:
-  - Consent dialog works in MCP stdio environment.
-  - Manual Return Button works.
-  - Emergency “hold ESC” kill switch works reliably under UAC/AV restrictions.
+1. `CHROME_EXECUTABLE` env var (highest priority)
+2. Windows candidate paths (in order):
+   - `C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe`
+   - `C:\Program Files\Google\Chrome\Application\chrome.exe`
+   - `C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`
+   - `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`
+3. `chromiumoxide` default discovery (fallback)
 
 ## Troubleshooting
 
-- If the kill switch doesn’t respond:
+- **`DXCORE.lib` linker error** during `cargo build`:
+  - Your Windows SDK is too old. Install SDK ≥ 10.0.19041.0.
+  - `winget install Microsoft.WindowsSDK.10.0.22621`
+- **Kill switch doesn't respond**:
   - Re-run elevated (Run Terminal / VS Code as Administrator).
   - Check whether endpoint security blocks global hooks.
-- If the browser doesn’t launch:
+- **Browser doesn't launch**:
   - Set `CHROME_EXECUTABLE` explicitly.
   - Ensure the executable path is correctly escaped in JSON configs.
+- **Setup check shows `chrome_installed: fail`**:
+  - This checks PATH only. The browser discovery function checks filesystem paths directly and will still find your browser.

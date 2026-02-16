@@ -1923,40 +1923,26 @@ async fn close_all_tabs_via_json(debugging_port: u16) -> anyhow::Result<()> {
 
 #[cfg(feature = "non_robot_search")]
 fn force_kill_all_debug_browsers(debugging_port: u16) {
-    // Aggressively kill ALL browser processes using this debugging port
-    // Used for emergency cleanup when browser won't close gracefully
+    // Aggressively kill ALL browser processes using this debugging port.
+    // Uses sysinfo for cross-platform support (Windows/macOS/Linux).
+    use sysinfo::System;
     let marker = format!("--remote-debugging-port={}", debugging_port);
 
-    let ps = std::process::Command::new("ps")
-        .args(["-ax", "-o", "pid=,command="])
-        .output();
-
-    let Ok(out) = ps else { return };
-    let Ok(text) = String::from_utf8(out.stdout) else {
-        return;
-    };
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     let mut killed = 0u32;
-    for line in text.lines() {
-        let trimmed = line.trim_start();
-        let mut it = trimmed.split_whitespace();
-        let Some(pid_str) = it.next() else { continue };
-        let cmd = trimmed.get(pid_str.len()..).unwrap_or("").trim_start();
-        let Ok(pid) = pid_str.trim().parse::<i32>() else {
-            continue;
-        };
-
-        if !cmd.contains(&marker) {
-            continue;
+    for (_pid, proc_) in sys.processes() {
+        let cmd_line = proc_
+            .cmd()
+            .iter()
+            .map(|s| s.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if cmd_line.contains(&marker) {
+            proc_.kill();
+            killed += 1;
         }
-
-        // Immediate SIGKILL for force cleanup
-        let _ = std::process::Command::new("kill")
-            .arg("-9")
-            .arg(pid.to_string())
-            .status();
-
-        killed += 1;
     }
 
     if killed > 0 {
@@ -1971,6 +1957,8 @@ fn force_kill_all_debug_browsers(debugging_port: u16) {
 fn kill_debug_browser_zombies(debugging_port: u16, user_data_dir: &std::path::Path) {
     // Do not kill normal user browsers. Only target processes launched with our CDP debugging port.
     // If user_data_dir is non-empty, additionally require it to match.
+    // Uses sysinfo for cross-platform support (Windows/macOS/Linux).
+    use sysinfo::System;
     let marker = format!("--remote-debugging-port={}", debugging_port);
     let user_dir_marker = if user_data_dir.as_os_str().is_empty() {
         None
@@ -1978,56 +1966,26 @@ fn kill_debug_browser_zombies(debugging_port: u16, user_data_dir: &std::path::Pa
         Some(format!("--user-data-dir={}", user_data_dir.display()))
     };
 
-    let ps = std::process::Command::new("ps")
-        .args(["-ax", "-o", "pid=,command="])
-        .output();
-
-    let Ok(out) = ps else { return };
-    let Ok(text) = String::from_utf8(out.stdout) else {
-        return;
-    };
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     let mut killed = 0u32;
-    for line in text.lines() {
-        let trimmed = line.trim_start();
-        let mut it = trimmed.split_whitespace();
-        let Some(pid_str) = it.next() else { continue };
-        // The remainder of the line after the PID is the command.
-        let cmd = trimmed.get(pid_str.len()..).unwrap_or("").trim_start();
-        let Ok(pid) = pid_str.trim().parse::<i32>() else {
-            continue;
-        };
-
-        if !cmd.contains(&marker) {
+    for (_pid, proc_) in sys.processes() {
+        let cmd_line = proc_
+            .cmd()
+            .iter()
+            .map(|s| s.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if !cmd_line.contains(&marker) {
             continue;
         }
         if let Some(ref udm) = user_dir_marker {
-            if !cmd.contains(udm) {
+            if !cmd_line.contains(udm) {
                 continue;
             }
         }
-
-        // Prefer graceful termination to reduce "restore tabs" prompts.
-        let _ = std::process::Command::new("kill")
-            .arg("-15")
-            .arg(pid.to_string())
-            .status();
-
-        std::thread::sleep(std::time::Duration::from_millis(250));
-
-        // If still alive, force kill.
-        let still_alive = std::process::Command::new("ps")
-            .args(["-p", &pid.to_string()])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if still_alive {
-            let _ = std::process::Command::new("kill")
-                .arg("-9")
-                .arg(pid.to_string())
-                .status();
-        }
-
+        proc_.kill();
         killed += 1;
     }
 
@@ -2063,17 +2021,21 @@ fn remove_stale_singleton_lock(user_data_dir: &std::path::Path) {
         return;
     }
 
-    // Check if any process is currently running with this user-data-dir.
+    // Cross-platform process check using sysinfo.
+    use sysinfo::System;
     let udm = format!("--user-data-dir={}", user_data_dir.display());
-    let ps = std::process::Command::new("ps")
-        .args(["-ax", "-o", "command="])
-        .output();
-    if let Ok(out) = ps {
-        if let Ok(text) = String::from_utf8(out.stdout) {
-            if text.contains(&udm) {
-                // Someone is using it; do not remove.
-                return;
-            }
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    for (_pid, proc_) in sys.processes() {
+        let cmd_line = proc_
+            .cmd()
+            .iter()
+            .map(|s| s.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if cmd_line.contains(&udm) {
+            // Someone is using it; do not remove.
+            return;
         }
     }
 
@@ -2216,7 +2178,17 @@ fn find_chrome_executable() -> Option<String> {
 
     #[cfg(target_os = "windows")]
     {
-        // Defer to chromiumoxide default discovery.
+        let candidates = [
+            r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        ];
+        for c in candidates {
+            if Path::new(c).exists() {
+                return Some(c.to_string());
+            }
+        }
     }
 
     None

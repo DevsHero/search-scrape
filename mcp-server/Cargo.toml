@@ -70,6 +70,7 @@ notify-rust = { version = "4.11", optional = true }
 crossterm = { version = "0.29", optional = true }
 atty = { version = "0.2", optional = true }
 rdev = { version = "0.5.3", optional = true }
+sysinfo = { version = "0.35", optional = true, default-features = false, features = ["system"] }
 
 [target.'cfg(windows)'.dependencies]
 is_elevated = "0.1"
@@ -81,7 +82,7 @@ core-foundation-sys = "0.8"
 [features]
 # Keep default builds lean; enable HITL "nuclear option" explicitly.
 default = []
-non_robot_search = ["dep:rodio", "dep:notify-rust", "dep:crossterm", "dep:atty", "dep:rdev"]
+non_robot_search = ["dep:rodio", "dep:notify-rust", "dep:crossterm", "dep:atty", "dep:rdev", "dep:sysinfo"]
 
 [dev-dependencies]
 tokio-test = "0.4"
