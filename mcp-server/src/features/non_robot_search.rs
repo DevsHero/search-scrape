@@ -1051,9 +1051,21 @@ fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
         .unwrap_or(false)
     ;
 
+    // Consent mode override:
+    // - SHADOWCRAWL_NON_ROBOT_CONSENT=dialog => always dialog (blocking)
+    // - SHADOWCRAWL_NON_ROBOT_CONSENT=tty    => always tty prompt
+    // - default/auto => dialog by default (server-safe)
+    let consent_mode = std::env::var("SHADOWCRAWL_NON_ROBOT_CONSENT")
+        .ok()
+        .unwrap_or_else(|| "auto".to_string())
+        .to_lowercase();
+
+    let force_dialog = matches!(consent_mode.as_str(), "dialog" | "gui");
+    let force_tty = matches!(consent_mode.as_str(), "tty" | "terminal");
+
     // Always do a best-effort user-facing notice. This is intentionally non-blocking.
     // (Some environments do not have desktop notifications; ignore failures.)
-    let notification_body = if auto_allow {
+    let notification_body = if auto_allow && !force_dialog {
         "ShadowCrawl will open a visible browser for HITL rendering.\n\nTip: If a site blocks automation, solve it in the browser and click FINISH & RETURN.\nEmergency stop: hold ESC for 3 seconds."
     } else {
         "ShadowCrawl will open a visible browser to fully render modern web pages and may temporarily lock your input to avoid accidental interference.\n\nPress Enter to allow or Esc to cancel."
@@ -1066,22 +1078,11 @@ fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
 
     play_tone(Tone::Attention);
 
-    if auto_allow {
+    // AUTO_ALLOW bypasses the blocking consent dialog *unless* the operator forces dialog mode.
+    if auto_allow && !force_dialog {
         info!("non_robot_search: auto-allow enabled via SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW");
         return Ok(());
     }
-
-    // Consent mode override:
-    // - SHADOWCRAWL_NON_ROBOT_CONSENT=dialog => always dialog
-    // - SHADOWCRAWL_NON_ROBOT_CONSENT=tty    => always tty prompt
-    // - default/auto => tty when stdin is TTY, otherwise dialog
-    let consent_mode = std::env::var("SHADOWCRAWL_NON_ROBOT_CONSENT")
-        .ok()
-        .unwrap_or_else(|| "auto".to_string())
-        .to_lowercase();
-
-    let force_dialog = matches!(consent_mode.as_str(), "dialog" | "gui");
-    let force_tty = matches!(consent_mode.as_str(), "tty" | "terminal");
 
     let stdin_is_tty = atty::is(AttyStream::Stdin);
 
@@ -1126,6 +1127,12 @@ fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
 
     // Otherwise use a blocking desktop dialog. This MUST wait for user input.
     // If desktop dialogs fail (headless / no portal), fall back to TTY when possible.
+    info!(
+        "non_robot_search: waiting for OS consent dialog (mode={}, auto_allow={})",
+        consent_mode,
+        auto_allow
+    );
+
     match blocking_ok_cancel_dialog(title, message) {
         Ok(()) => Ok(()),
         Err(NonRobotSearchError::Cancelled) => Err(NonRobotSearchError::Cancelled),
@@ -1436,20 +1443,38 @@ fn get_prelaunch_overlay_script(target_url: &str) -> String {
 fn macos_osascript_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchError> {
     // RFD on macOS panics when called from non-main threads in some environments (e.g. servers).
     // AppleScript dialog is a reliable fallback that can be spawned from any thread.
-    let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+    let esc_as = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+
+    // Use System Events + activate to bring the dialog to the foreground (so users actually see it).
+    // NOTE: braces must be escaped for Rust format!.
     let script = format!(
-        "display dialog \"{}\" with title \"{}\" buttons {{\"Cancel\", \"OK\"}} default button \"OK\"",
-        esc(message),
-        esc(title)
+        r#"tell application "System Events"
+activate
+display dialog "{}" with title "{}" buttons {{"Cancel", "OK"}} default button "OK"
+end tell"#,
+        esc_as(message),
+        esc_as(title)
     );
 
-    match std::process::Command::new("osascript")
+    let output = std::process::Command::new("osascript")
         .arg("-e")
         .arg(script)
-        .status()
-    {
-        Ok(status) if status.success() => Ok(()),
-        Ok(_) => Err(NonRobotSearchError::Cancelled),
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+            // osascript typically reports cancel as "User canceled.".
+            if stderr.to_lowercase().contains("user canceled") || stderr.to_lowercase().contains("user cancelled") {
+                Err(NonRobotSearchError::Cancelled)
+            } else {
+                Err(NonRobotSearchError::AutomationFailed(format!(
+                    "macOS consent dialog failed (osascript): {}",
+                    stderr.trim()
+                )))
+            }
+        }
         Err(e) => Err(NonRobotSearchError::AutomationFailed(format!(
             "failed to spawn macOS dialog (osascript): {}",
             e
