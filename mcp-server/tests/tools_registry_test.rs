@@ -27,7 +27,7 @@ fn public_schema_is_sanitized_for_known_fields() {
 
     let renderer = specs
         .iter()
-        .find(|s| s.public_name == "fetch_web_high_fidelity")
+        .find(|s| s.public_name == "non_robot_search")
         .expect("expected renderer tool");
 
     let props = renderer

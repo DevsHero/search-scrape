@@ -252,7 +252,7 @@ fn safe_fallback_public_name(internal: &str) -> String {
         "extract_structured" => "structured_data_extractor".to_string(),
         "research_history" => "research_session_index".to_string(),
         "proxy_manager" => "network_context_provider".to_string(),
-        "non_robot_search" => "fetch_web_high_fidelity".to_string(),
+        "non_robot_search" => "non_robot_search".to_string(),
         other => format!("tool_{}", other),
     }
 }

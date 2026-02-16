@@ -12,6 +12,8 @@ This tool is intentionally interactive (HITL = Human-In-The-Loop). It is **not**
 
 - ✅ **Tested:** macOS (this release)
 - ⚠️ **Not the primary test target:** Linux / Windows (may work, but expect rough edges)
+  - Ubuntu Desktop notes: docs/UBUNTU_DESKTOP.md
+  - Windows notes: docs/WINDOWS_DESKTOP.md
 - ⚠️ **Container note:** `non_robot_search` launches a **local GUI browser** (Brave/Chrome). Running it inside the Docker container is not supported for typical setups.
 
 If you only run Docker-based MCP, you still get the other tools (`search_web`, `scrape_url`, `crawl_website`, …). Use native macOS for HITL.

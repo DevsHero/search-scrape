@@ -100,7 +100,7 @@ Comprehensive documentation covering:
 
 ### Test Setup
 - **Target**: https://nowsecure.nl (Cloudflare-protected)
-- **Tool**: `fetch_web_high_fidelity`
+- **Tool**: `non_robot_search`
 - **Mode**: `quality_mode: "aggressive"`
 
 ### Results
@@ -211,7 +211,7 @@ run_flow() → panic → Drop trait
 7. ✅ **DONE**: Commit changes
 
 ### Future Improvements
-1. **Windows Support**: Implement `taskkill /F /PID` for Windows compatibility
+1. **Cross-platform process management**: Replace `ps`/`kill` with a cross-platform approach (recommended: `sysinfo`) to enumerate processes by cmdline and terminate by PID.
 2. **Metrics**: Track force-kill frequency to identify problematic sites
 3. **Progressive Timeout**: SIGTERM → SIGKILL escalation (currently immediate SIGKILL)
 4. **Health Check**: Add browser heartbeat mechanism for early detection

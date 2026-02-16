@@ -24,7 +24,7 @@ The **Manual Return Button** is a powerful user control feature that prevents br
 
 ### How It Works
 
-When `fetch_web_high_fidelity` is called with `non_robot_search` enabled:
+When `non_robot_search` is called with `non_robot_search` enabled:
 
 1. **Automatic Injection**: A floating button is injected at page load
    ```

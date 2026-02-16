@@ -6,7 +6,7 @@ The Safety Kill Switch is a comprehensive browser process management system that
 
 ## Problem Statement
 
-During high-fidelity scraping (`non_robot_search`/`fetch_web_high_fidelity`), the browser process would sometimes fail to terminate after successful content extraction. This was particularly common on:
+During high-fidelity scraping (`non_robot_search`/`non_robot_search`), the browser process would sometimes fail to terminate after successful content extraction. This was particularly common on:
 - Cloudflare-protected sites (nowsecure.nl)
 - DataDome-protected sites (Zillow, Airbnb)
 - LinkedIn job postings
@@ -167,7 +167,7 @@ async fn close(&mut self) {
 ## Execution Flow
 
 ```
-User calls fetch_web_high_fidelity
+User calls non_robot_search
     ↓
 execute_non_robot_search_impl()
     ↓ (wrapped in tokio::time::timeout)
@@ -271,12 +271,12 @@ global_timeout = human_timeout_seconds + 30s
 | Platform | Status | Notes |
 |----------|--------|-------|
 | macOS | ✅ Tested | Primary development platform |
-| Linux | ⚠️ Untested | Should work (ps/kill commands compatible) |
-| Windows | ❌ Unsupported | Requires different process management |
+| Ubuntu Desktop / Linux | ⚠️ Best-effort | Works best on X11; Wayland/input permissions may restrict kill switch. See docs/UBUNTU_DESKTOP.md |
+| Windows | ⚠️ Planned | Requires Windows process management + validation. See docs/WINDOWS_DESKTOP.md |
 
 ## Future Improvements
 
-1. **Windows Support**: Implement Windows-specific process killing (`taskkill /F /PID`)
+1. **Cross-platform process management**: Replace `ps`/`kill` with a cross-platform approach (recommended: `sysinfo`) to enumerate processes by cmdline and terminate by PID.
 2. **Metrics**: Track force-kill frequency to detect problematic sites
 3. **Progressive Timeout**: Start with graceful shutdown, escalate to SIGTERM, then SIGKILL
 4. **Health Check**: Add heartbeat mechanism to detect hung browser earlier

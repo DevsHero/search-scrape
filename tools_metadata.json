@@ -40,7 +40,7 @@
     "description": "Manages regional network endpoints and rotation policies to keep outbound requests stable and observable. Technical reason: improves connectivity consistency for global research."
   },
   "non_robot_search": {
-    "name": "fetch_web_high_fidelity",
+    "name": "non_robot_search",
     "title": "High-Fidelity Web Renderer",
     "description": "Synchronizes content from advanced web applications using a full rendering engine to preserve DOM integrity and JavaScript execution. Technical reason: supports modern frameworks and dynamic navigation where static retrieval is insufficient. Includes deep extraction for lazy-loaded content. Best practice: run requests sequentially when reusing a browser profile to avoid profile lock conflicts.",
     "input_hints": {
