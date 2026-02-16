@@ -51,6 +51,8 @@ use futures::StreamExt;
 #[cfg(feature = "non_robot_search")]
 use crossterm::event::{self, Event as TermEvent, KeyCode, KeyEventKind};
 #[cfg(feature = "non_robot_search")]
+use atty::Stream as AttyStream;
+#[cfg(feature = "non_robot_search")]
 use notify_rust::Notification;
 #[cfg(all(feature = "non_robot_search", not(target_os = "macos")))]
 use rfd::{MessageButtons, MessageDialog, MessageLevel};
@@ -1081,15 +1083,11 @@ fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
     let force_dialog = matches!(consent_mode.as_str(), "dialog" | "gui");
     let force_tty = matches!(consent_mode.as_str(), "tty" | "terminal");
 
+    let stdin_is_tty = atty::is(AttyStream::Stdin);
+
     // Default to a GUI popup for a more professional HITL experience.
-    // TTY prompts are still available for advanced/headless-ish environments.
-    let use_tty_prompt = if force_tty {
-        true
-    } else if force_dialog {
-        false
-    } else {
-        false
-    };
+    // Fallback to TTY only when explicitly requested, or when GUI dialogs are unavailable.
+    let use_tty_prompt = force_tty;
 
     // If we have an interactive TTY and consent mode allows it, use strict Enter/Esc flow.
     if use_tty_prompt {
@@ -1123,31 +1121,205 @@ fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
         }
     }
 
-    // Otherwise fall back to a native dialog (good for HTTP server + MCP stdio).
-    #[cfg(target_os = "macos")]
-    {
-        return macos_osascript_ok_cancel(
-            "ShadowCrawl Screen Access",
-            "ShadowCrawl needs temporary control of your browser to fully render dynamic content.\n\nIt may temporarily lock your mouse/keyboard to avoid interference.\n\nEmergency stop: hold ESC for 3 seconds.",
-        );
+    let title = "ShadowCrawl Screen Access";
+    let message = "ShadowCrawl needs temporary control of your browser to fully render dynamic content.\n\nIt may temporarily lock your mouse/keyboard to avoid interference.\n\nEmergency stop: hold ESC for 3 seconds.";
+
+    // Otherwise use a blocking desktop dialog. This MUST wait for user input.
+    // If desktop dialogs fail (headless / no portal), fall back to TTY when possible.
+    match blocking_ok_cancel_dialog(title, message) {
+        Ok(()) => Ok(()),
+        Err(NonRobotSearchError::Cancelled) => Err(NonRobotSearchError::Cancelled),
+        Err(e @ NonRobotSearchError::AutomationFailed(_)) => {
+            if stdin_is_tty && !force_dialog {
+                warn!("non_robot_search: GUI consent failed; falling back to TTY prompt: {}", e);
+                return notify_and_prompt_user_tty();
+            }
+            Err(NonRobotSearchError::InteractiveRequired)
+        }
+        Err(other) => Err(other),
     }
+}
 
-    #[cfg(not(target_os = "macos"))]
-    {
-        let result = MessageDialog::new()
-            .set_level(MessageLevel::Warning)
-            .set_title("ShadowCrawl Screen Access")
-            .set_description(
-                "ShadowCrawl needs temporary control of your browser to fully render dynamic content.\n\nIt may temporarily lock your mouse/keyboard to avoid interference.\n\nEmergency stop: hold ESC for 3 seconds.",
-            )
-            .set_buttons(MessageButtons::OkCancel)
-            .show();
+#[cfg(feature = "non_robot_search")]
+fn notify_and_prompt_user_tty() -> Result<(), NonRobotSearchError> {
+    println!(
+        "ShadowCrawl needs screen access for high-fidelity rendering. Press [Enter] to allow or [Esc] to cancel."
+    );
 
-        match result {
-            rfd::MessageDialogResult::Ok | rfd::MessageDialogResult::Yes => Ok(()),
-            _ => Err(NonRobotSearchError::Cancelled),
+    loop {
+        if event::poll(Duration::from_millis(100)).map_err(|e| {
+            NonRobotSearchError::AutomationFailed(format!("failed to poll terminal input: {}", e))
+        })? {
+            if let TermEvent::Key(key) = event::read().map_err(|e| {
+                NonRobotSearchError::AutomationFailed(format!("failed to read terminal input: {}", e))
+            })? {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                match key.code {
+                    KeyCode::Enter => return Ok(()),
+                    KeyCode::Esc => return Err(NonRobotSearchError::Cancelled),
+                    _ => {}
+                }
+            }
         }
     }
+}
+
+#[cfg(feature = "non_robot_search")]
+fn blocking_ok_cancel_dialog(title: &str, message: &str) -> Result<(), NonRobotSearchError> {
+    #[cfg(target_os = "macos")]
+    {
+        return macos_osascript_ok_cancel(title, message);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Prefer a TopMost native dialog to avoid “popup disappeared behind other windows”.
+        if let Ok(()) = windows_powershell_ok_cancel(title, message) {
+            return Ok(());
+        }
+
+        // Fallback to rfd if PowerShell is unavailable.
+        return rfd_ok_cancel(title, message);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Prefer desktop dialogs (zenity/kdialog/xmessage) because they reliably block.
+        if let Ok(()) = linux_gui_ok_cancel(title, message) {
+            return Ok(());
+        }
+
+        // Fallback to rfd portal dialog.
+        return rfd_ok_cancel(title, message);
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        rfd_ok_cancel(title, message)
+    }
+}
+
+#[cfg(all(feature = "non_robot_search", not(target_os = "macos")))]
+fn rfd_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchError> {
+    // rfd may panic in some environments; treat that as AutomationFailed.
+    let res = std::panic::catch_unwind(|| {
+        MessageDialog::new()
+            .set_level(MessageLevel::Warning)
+            .set_title(title)
+            .set_description(message)
+            .set_buttons(MessageButtons::OkCancel)
+            .show()
+    });
+
+    match res {
+        Ok(rfd::MessageDialogResult::Ok) | Ok(rfd::MessageDialogResult::Yes) => Ok(()),
+        Ok(_) => Err(NonRobotSearchError::Cancelled),
+        Err(_) => Err(NonRobotSearchError::AutomationFailed(
+            "GUI dialog failed (panic)".to_string(),
+        )),
+    }
+}
+
+#[cfg(all(feature = "non_robot_search", target_os = "windows"))]
+fn windows_powershell_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchError> {
+    // Use PowerShell + WinForms to guarantee a blocking, TopMost prompt.
+    // This avoids situations where rfd dialogs are hidden behind other windows.
+    let esc_ps_single = |s: &str| s.replace('\'', "''");
+    let title_esc = esc_ps_single(title);
+    let message_esc = esc_ps_single(message);
+
+    let script = format!(
+        "$ErrorActionPreference = 'Stop';\n"
+            + "Add-Type -AssemblyName System.Windows.Forms;\n"
+            + "$form = New-Object System.Windows.Forms.Form;\n"
+            + "$form.TopMost = $true;\n"
+            + "$form.WindowState = 'Minimized';\n"
+            + "$form.StartPosition = 'CenterScreen';\n"
+            + "$form.Width = 1; $form.Height = 1;\n"
+            + "$form.Show(); $form.Activate() | Out-Null;\n"
+            + "$msg = '{}';\n"
+            + "$ttl = '{}';\n"
+            + "$result = [System.Windows.Forms.MessageBox]::Show($form, $msg, $ttl, [System.Windows.Forms.MessageBoxButtons]::OKCancel, [System.Windows.Forms.MessageBoxIcon]::Warning);\n"
+            + "if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{ exit 0 }} else {{ exit 1 }}\n",
+        message_esc,
+        title_esc
+    );
+
+    let run_ps = |exe: &str| {
+        std::process::Command::new(exe)
+            .arg("-NoProfile")
+            .arg("-ExecutionPolicy")
+            .arg("Bypass")
+            .arg("-Command")
+            .arg(&script)
+            .status()
+    };
+
+    // Prefer Windows PowerShell (inbox) first, then PowerShell 7 (pwsh) as fallback.
+    let status = run_ps("powershell.exe").or_else(|_| run_ps("powershell")).or_else(|_| run_ps("pwsh"));
+
+    match status {
+        Ok(st) if st.success() => Ok(()),
+        Ok(_) => Err(NonRobotSearchError::Cancelled),
+        Err(e) => Err(NonRobotSearchError::AutomationFailed(format!(
+            "failed to spawn PowerShell dialog (powershell.exe/powershell/pwsh): {}",
+            e
+        ))),
+    }
+}
+
+#[cfg(all(feature = "non_robot_search", target_os = "linux"))]
+fn linux_gui_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchError> {
+    // Best-effort desktop prompts. Prefer zenity (GNOME), then kdialog (KDE), then xmessage.
+    let try_status = |cmd: &str, args: &[&str]| -> Option<std::process::ExitStatus> {
+        std::process::Command::new(cmd).args(args).status().ok()
+    };
+
+    if let Some(status) = try_status(
+        "zenity",
+        &[
+            "--question",
+            "--title",
+            title,
+            "--text",
+            message,
+            "--ok-label",
+            "OK",
+            "--cancel-label",
+            "Cancel",
+        ],
+    ) {
+        return if status.success() {
+            Ok(())
+        } else {
+            Err(NonRobotSearchError::Cancelled)
+        };
+    }
+
+    if let Some(status) = try_status("kdialog", &["--title", title, "--yesno", message]) {
+        return if status.success() {
+            Ok(())
+        } else {
+            Err(NonRobotSearchError::Cancelled)
+        };
+    }
+
+    if let Some(status) = try_status(
+        "xmessage",
+        &["-center", "-buttons", "OK:0,Cancel:1", message],
+    ) {
+        return if status.success() {
+            Ok(())
+        } else {
+            Err(NonRobotSearchError::Cancelled)
+        };
+    }
+
+    Err(NonRobotSearchError::AutomationFailed(
+        "no supported linux desktop dialog found (zenity/kdialog/xmessage)".to_string(),
+    ))
 }
 
 #[cfg(feature = "non_robot_search")]
@@ -2214,9 +2386,10 @@ fn get_manual_return_button_script() -> String {
     btn.innerHTML = '🚀 SHADOWCRAWL: FINISH & RETURN';
     btn.style.cssText = `
         position: fixed;
-        top: 10px;
+        top: auto;
+        bottom: 14px;
         right: 10px;
-        z-index: 2147483647;
+        z-index: 2147483648;
         padding: 15px 20px;
         background: linear-gradient(135deg, #ff4757 0%, #ff6348 100%);
         color: white;
@@ -2260,7 +2433,7 @@ fn get_manual_return_button_script() -> String {
     function injectButton() {
         if (document.body) {
             document.body.appendChild(btn);
-            console.log('🚀 ShadowCrawl: Manual return button ready (top-right corner)');
+            console.log('🚀 ShadowCrawl: Manual return button ready (bottom-right corner)');
         } else {
             // Retry if body not ready
             setTimeout(injectButton, 100);
