@@ -66,9 +66,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Tool metadata (sanitized names/descriptions)
-COPY tools_metadata.json /etc/shadowcrawl/tools_metadata.json
-
 # Create app user and cache directories
 RUN useradd -r -s /bin/false appuser && \
     mkdir -p /home/appuser/.cache/fastembed /home/appuser/.cache/huggingface && \

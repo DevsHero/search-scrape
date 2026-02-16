@@ -1,19 +1,6 @@
 use crate::mcp::tooling::tool_catalog;
-use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::PathBuf;
-use tracing::{info, warn};
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct ToolMetadataEntry {
-    pub name: String,
-    #[serde(default)]
-    pub title: Option<String>,
-    pub description: String,
-    #[serde(default)]
-    pub input_hints: Option<std::collections::HashMap<String, String>>,
-}
 
 #[derive(Clone, Debug)]
 pub struct PublicToolSpec {
@@ -26,8 +13,8 @@ pub struct PublicToolSpec {
 
 #[derive(Clone, Debug, Default)]
 pub struct ToolRegistry {
-    internal_to_public: HashMap<String, PublicToolSpec>,
     public_to_internal: HashMap<String, String>,
+    internal_to_public: HashMap<String, PublicToolSpec>,
     // Per-internal-tool argument key aliases (public_key -> internal_key)
     arg_aliases: HashMap<String, HashMap<String, String>>,
     // Per-internal-tool enum value aliases: tool -> field -> (public_value -> internal_value)
@@ -37,13 +24,6 @@ pub struct ToolRegistry {
 impl ToolRegistry {
     pub fn load() -> Self {
         let internal_catalog = tool_catalog();
-        let (metadata_map, source) = load_tools_metadata();
-        if let Some(source) = source {
-            info!("tool_metadata: loaded from {}", source.display());
-        } else {
-            warn!("tool_metadata: metadata file not found; using built-in safe defaults");
-        }
-
         let mut registry = ToolRegistry::default();
 
         // Define schema + argument sanitization rules.
@@ -68,37 +48,21 @@ impl ToolRegistry {
             let internal_name = internal.name.to_string();
             let icons = internal.icons.into_iter().map(|s| s.to_string()).collect();
 
-            let (public_name, public_title, public_description) =
-                match metadata_map.as_ref().and_then(|m| m.get(&internal_name)) {
-                    Some(meta) => (
-                        meta.name.clone(),
-                        meta.title
-                            .clone()
-                            .unwrap_or_else(|| safe_fallback_title(&internal_name)),
-                        meta.description.clone(),
-                    ),
-                    None => (
-                        safe_fallback_public_name(&internal_name),
-                        safe_fallback_title(&internal_name),
-                        safe_fallback_description(&internal_name),
-                    ),
-                };
+            // Public-facing tool names are designed to be "agent-attractive" verbs.
+            // Internal names remain stable for handler routing and for backwards compatibility.
+            let public_name = match internal_name.as_str() {
+                "search_web" => "web_search".to_string(),
+                "non_robot_search" => "stealth_scrape".to_string(),
+                _ => internal_name.clone(),
+            };
+            let public_title = internal.title.to_string();
+            let public_description = internal.description.to_string();
 
             let public_input_schema =
                 registry.sanitize_schema_for_public(&internal_name, internal.input_schema);
 
-            if let Some(existing) = registry
-                .public_to_internal
-                .insert(public_name.clone(), internal_name.clone())
-            {
-                warn!(
-                    "tool_metadata: public tool name collision: {} already mapped to {}; now also maps to {}",
-                    public_name, existing, internal_name
-                );
-            }
-
             registry.internal_to_public.insert(
-                internal_name,
+                internal_name.clone(),
                 PublicToolSpec {
                     public_name,
                     public_title,
@@ -107,6 +71,18 @@ impl ToolRegistry {
                     icons,
                 },
             );
+
+            // Accept calls using either the public name or the internal name.
+            // Example: "stealth_scrape" (public) -> "non_robot_search" (internal)
+            //          "non_robot_search" (internal) -> "non_robot_search" (internal)
+            if let Some(spec) = registry.internal_to_public.get(&internal_name) {
+                registry
+                    .public_to_internal
+                    .insert(spec.public_name.clone(), internal_name.clone());
+            }
+            registry
+                .public_to_internal
+                .insert(internal_name.clone(), internal_name.clone());
         }
 
         registry
@@ -119,9 +95,6 @@ impl ToolRegistry {
     }
 
     pub fn resolve_incoming_tool_name(&self, incoming: &str) -> Option<String> {
-        if self.internal_to_public.contains_key(incoming) {
-            return Some(incoming.to_string());
-        }
         self.public_to_internal.get(incoming).cloned()
     }
 
@@ -190,103 +163,6 @@ impl ToolRegistry {
         }
 
         schema
-    }
-}
-
-fn load_tools_metadata() -> (Option<HashMap<String, ToolMetadataEntry>>, Option<PathBuf>) {
-    let explicit = std::env::var("SHADOWCRAWL_TOOLS_METADATA_PATH")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .map(PathBuf::from);
-
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Some(p) = explicit {
-        candidates.push(p);
-    }
-
-    // Common system location (useful in container images)
-    candidates.push(PathBuf::from("/etc/shadowcrawl/tools_metadata.json"));
-
-    // Try current working directory and a parent directory (common when running from mcp-server/)
-    if let Ok(cwd) = std::env::current_dir() {
-        candidates.push(cwd.join("tools_metadata.json"));
-        candidates.push(cwd.join("../tools_metadata.json"));
-        candidates.push(cwd.join("../../tools_metadata.json"));
-    }
-
-    for path in candidates {
-        if !path.exists() {
-            continue;
-        }
-        match std::fs::read_to_string(&path) {
-            Ok(raw) => match serde_json::from_str::<HashMap<String, ToolMetadataEntry>>(&raw) {
-                Ok(map) => return (Some(map), Some(path)),
-                Err(e) => {
-                    warn!(
-                        "tool_metadata: failed to parse {} ({}); ignoring and continuing",
-                        path.display(),
-                        e
-                    );
-                }
-            },
-            Err(e) => {
-                warn!(
-                    "tool_metadata: failed to read {} ({}); ignoring and continuing",
-                    path.display(),
-                    e
-                );
-            }
-        }
-    }
-
-    (None, None)
-}
-
-fn safe_fallback_public_name(internal: &str) -> String {
-    match internal {
-        "search_web" => "web_source_discovery".to_string(),
-        "search_structured" => "top_results_synchronizer".to_string(),
-        "scrape_url" => "page_content_synchronizer".to_string(),
-        "scrape_batch" => "batch_content_sync".to_string(),
-        "crawl_website" => "sitemap_structure_analyzer".to_string(),
-        "extract_structured" => "structured_data_extractor".to_string(),
-        "research_history" => "research_session_index".to_string(),
-        "proxy_manager" => "network_context_provider".to_string(),
-        "non_robot_search" => "non_robot_search".to_string(),
-        other => format!("tool_{}", other),
-    }
-}
-
-fn safe_fallback_title(internal: &str) -> String {
-    match internal {
-        "search_web" => "Web Source Discovery".to_string(),
-        "search_structured" => "Top Results Synchronizer".to_string(),
-        "scrape_url" => "Page Content Synchronizer".to_string(),
-        "scrape_batch" => "Batch Content Sync".to_string(),
-        "crawl_website" => "Sitemap Structure Analyzer".to_string(),
-        "extract_structured" => "Structured Data Extractor".to_string(),
-        "research_history" => "Research Session Index".to_string(),
-        "proxy_manager" => "Network Context Provider".to_string(),
-        "non_robot_search" => "High-Fidelity Web Renderer".to_string(),
-        other => other.to_string(),
-    }
-}
-
-fn safe_fallback_description(internal: &str) -> String {
-    match internal {
-        "search_web" => "Discovers public web sources using federated queries and relevance ranking for research workflows. Technical reason: improves source coverage and reduces manual source hunting.".to_string(),
-        "search_structured" => "Runs a query, then synchronizes the top results into a consistent summary payload for quick review. Technical reason: standardizes result triage across providers and formats.".to_string(),
-        "scrape_url" => "Synchronizes a single page into cleaned text or structured JSON with link context when requested. Technical reason: provides consistent downstream inputs for analysis and note-taking.".to_string(),
-        "scrape_batch" => "Synchronizes many pages in parallel with concurrency control and consistent output formatting. Technical reason: improves throughput while keeping results comparable.".to_string(),
-        "crawl_website" => "Traverses a site link graph within configured bounds to produce a structured view of pages and relationships. Technical reason: supports architecture analysis and content inventory.".to_string(),
-        "extract_structured" => "Extracts user-defined fields from a page into a structured JSON object. Technical reason: enables schema-aligned research capture for repeatable evaluation.".to_string(),
-        "research_history" => "Queries prior research artifacts by meaning with configurable recall controls. Technical reason: reduces repeated work by reusing previously synchronized materials.".to_string(),
-        "proxy_manager" => "Manages regional network endpoints and rotation policies to keep outbound requests stable and observable. Technical reason: improves connectivity consistency for global research.".to_string(),
-        "non_robot_search" => "Synchronizes content from advanced web applications using a full rendering engine to preserve DOM integrity and JavaScript execution. Technical reason: supports modern frameworks and dynamic navigation where static retrieval is insufficient.".to_string(),
-        other => format!(
-            "Provides a specialized capability for research workflows. Technical reason: supports consistent automation for {}.",
-            other
-        ),
     }
 }
 

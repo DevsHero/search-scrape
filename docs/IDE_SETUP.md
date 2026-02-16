@@ -25,7 +25,7 @@ The stdio server is executed inside the running container:
 docker compose -f docker-compose-local.yml exec -i -T shadowcrawl shadowcrawl-mcp
 ```
 
-Optional (enable `non_robot_search` / HITL in the container build):
+Optional (enable `stealth_scrape` / HITL in the container build):
 
 ```bash
 SHADOWCRAWL_CARGO_FEATURES=non_robot_search \

@@ -363,7 +363,6 @@ mod tests {
 
     #[test]
     fn test_user_agents() {
-        assert!(!USER_AGENTS.is_empty());
         assert!(USER_AGENTS[0].contains("Mozilla"));
     }
 

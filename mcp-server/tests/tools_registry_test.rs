@@ -27,7 +27,7 @@ fn public_schema_is_sanitized_for_known_fields() {
 
     let renderer = specs
         .iter()
-        .find(|s| s.public_name == "non_robot_search")
+        .find(|s| s.public_name == "stealth_scrape")
         .expect("expected renderer tool");
 
     let props = renderer
@@ -42,7 +42,7 @@ fn public_schema_is_sanitized_for_known_fields() {
 
     let history = specs
         .iter()
-        .find(|s| s.public_name == "research_session_index")
+        .find(|s| s.public_name == "research_history")
         .expect("expected history tool");
 
     let entry_type_enum = history

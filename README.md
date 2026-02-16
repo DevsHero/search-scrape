@@ -20,11 +20,11 @@
 
 ---
 
-## 💎 The "Nuclear Option": Non-Robot Search (HITL)
+## 💎 The "Nuclear Option": Stealth Scrape (HITL)
 
 Most scrapers try to "act" like a human and fail. ShadowCrawl **uses a human** when it matters.
 
-`non_robot_search` is our flagship tool for high-fidelity rendering. It launches a **visible, native Brave Browser instance** on your machine.
+`stealth_scrape` is our flagship tool for high-fidelity rendering. It launches a **visible, native Brave Browser instance** on your machine.
 
 * **Manual Intervention:** If a site asks for a Login or a Puzzle, you solve it once; the agent scrapes the rest.
 * **Brave Integration:** Uses your actual browser profiles (cookies/sessions) to look like a legitimate user, not a headless bot.
@@ -48,7 +48,7 @@ Most scraping APIs surrender when facing enterprise-grade shields. ShadowCrawl i
 
 ### 📂 Verified Evidence (Boss-Level Targets)
 
-We don't just claim to bypass—we provide the receipts. All evidence below was captured using `non_robot_search` with the Safety Kill Switch enabled (2026-02-14).
+We don't just claim to bypass—we provide the receipts. All evidence below was captured using `stealth_scrape` (feature flag: `non_robot_search`) with the Safety Kill Switch enabled (2026-02-14).
 
 | Target Site | Protection | Evidence Size | Data Extracted | Status |
 |-------------|-----------|---------------|----------------|--------|
@@ -96,7 +96,7 @@ We don't just claim to bypass—we provide the receipts. All evidence below was 
 
 Docker is the fastest way to bring up the full stack (SearXNG, proxy manager, etc.).
 
-**Important:** Docker mode cannot use the HITL/GUI renderer (`non_robot_search`) because containers cannot reliably access your host's native Brave/Chrome window, keyboard hooks, and OS permissions.
+**Important:** Docker mode cannot use the HITL/GUI renderer (`stealth_scrape`) because containers cannot reliably access your host's native Brave/Chrome window, keyboard hooks, and OS permissions.
 Use the **Native Rust Way** below when you want boss-level bypass.
 
 ```bash
@@ -107,9 +107,9 @@ docker compose -f docker-compose-local.yml up -d --build
 
 ```
 
-### 2. The Native Rust Way (Required for non_robot_search / HITL)
+### 2. The Native Rust Way (Required for stealth_scrape / HITL)
 
-For the 99.99% bypass (HITL), you must run natively (tested on macOS; Linux (Desktop) may work but is less battle-tested).
+For the 99.99% bypass (HITL), you must run natively (tested on macOS; Windows supported via a verified install guide below).
 
 Build the MCP stdio server with the HITL feature enabled:
 
@@ -123,10 +123,14 @@ This produces the local MCP binary at:
 
 - `mcp-server/target/release/shadowcrawl-mcp`
 
-Prereqs (macOS):
+Prereqs:
 
 - Install Brave Browser (recommended) or Google Chrome
 - Grant Accessibility permissions (required for the emergency ESC hold-to-abort kill switch)
+
+Windows:
+
+- Verified setup guide (tested): `docs/WINDOWS_SETUP.md`
 
 ---
 
@@ -134,10 +138,10 @@ Prereqs (macOS):
 
 ShadowCrawl can run as an MCP server in 2 modes:
 
-- **Docker MCP server**: great for normal scraping/search tools, but **cannot** do HITL/GUI (`non_robot_search`).
+- **Docker MCP server**: great for normal scraping/search tools, but **cannot** do HITL/GUI (`stealth_scrape`).
 - **Local MCP server (`shadowcrawl-local`)**: required for HITL tools (a visible Brave/Chrome window).
 
-### Option A: Docker MCP server (no non_robot_search)
+### Option A: Docker MCP server (no stealth_scrape)
 
 Add this to your MCP config to use the Dockerized server:
 
@@ -162,9 +166,9 @@ Add this to your MCP config to use the Dockerized server:
 
 ```
 
-### Option B: Local MCP server (required for non_robot_search)
+### Option B: Local MCP server (required for stealth_scrape)
 
-If you want to use HITL tools like `non_robot_search`, configure a **local** MCP server that launches the native binary.
+If you want to use HITL tools like `stealth_scrape`, configure a **local** MCP server that launches the native binary.
 
 VS Code MCP config example ("servers" format):
 
@@ -194,7 +198,7 @@ VS Code MCP config example ("servers" format):
         "IP_LIST_PATH=/YOUR_PATH/shadowcrawl/ip.txt",
         "PROXY_SOURCE_PATH=/YOUR_PATH/shadowcrawl/proxy_source.json",
 
-        // HITL / non_robot_search quality-of-life:
+        // HITL / stealth_scrape quality-of-life:
         // "SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW=1",
         // "SHADOWCRAWL_RENDER_PROFILE_DIR=/YOUR_PROFILE_DIR",
         // "CHROME_EXECUTABLE=/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
@@ -208,26 +212,9 @@ VS Code MCP config example ("servers" format):
 
 Notes:
 
-- The user-facing name in this README is **`non_robot_search`** (sometimes people mistype this as “non_human_search”).
+- MCP tool name: **`stealth_scrape`** (internal handler + feature flag name: `non_robot_search`).
 - For HITL, prefer Brave + a real profile dir (`SHADOWCRAWL_RENDER_PROFILE_DIR`) so cookies/sessions persist.
 - If you're running via Docker MCP server, HITL tools will either be unavailable or fail (no host GUI).
-
----
-
-## 🧾 Tool Metadata Overrides (`tools_metadata.json`)
-
-ShadowCrawl supports an optional `tools_metadata.json` file that lets you override **public tool names, titles, descriptions, and input hints** exposed to MCP clients.
-
-Why this exists:
-
-- Different MCP clients (and different teams) prefer different wording and levels of detail.
-- Clear, specific tool descriptions reduce confusion and help agents choose the right tool.
-- You can align tool wording with your organization’s acceptable-use / compliance guidelines without changing Rust code.
-
-How it works:
-
-- If present, the server loads `tools_metadata.json` from the repo root (or from `SHADOWCRAWL_TOOLS_METADATA_PATH`).
-- If missing/invalid, ShadowCrawl falls back to built-in safe defaults.
 
 ---
 

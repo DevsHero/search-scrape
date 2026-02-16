@@ -272,7 +272,7 @@ global_timeout = human_timeout_seconds + 30s
 |----------|--------|-------|
 | macOS | ✅ Tested | Primary development platform |
 | Ubuntu Desktop / Linux | ⚠️ Best-effort | Works best on X11; Wayland/input permissions may restrict kill switch. See docs/UBUNTU_DESKTOP.md |
-| Windows | ⚠️ Planned | Requires Windows process management + validation. See docs/WINDOWS_DESKTOP.md |
+| Windows | ✅ Tested | Verified Windows install + HITL setup: docs/WINDOWS_SETUP.md |
 
 ## Future Improvements
 

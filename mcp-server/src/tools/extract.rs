@@ -362,15 +362,15 @@ fn auto_extract(
             }
         }
 
-        if prompt_lower.contains("code") || prompt_lower.contains("programming") {
-            if !scrape.code_blocks.is_empty() {
-                let blocks: Vec<serde_json::Value> = scrape
-                    .code_blocks
-                    .iter()
-                    .map(|b| serde_json::Value::String(b.code.clone()))
-                    .collect();
-                data.insert("code_blocks".to_string(), serde_json::Value::Array(blocks));
-            }
+        if (prompt_lower.contains("code") || prompt_lower.contains("programming"))
+            && !scrape.code_blocks.is_empty()
+        {
+            let blocks: Vec<serde_json::Value> = scrape
+                .code_blocks
+                .iter()
+                .map(|b| serde_json::Value::String(b.code.clone()))
+                .collect();
+            data.insert("code_blocks".to_string(), serde_json::Value::Array(blocks));
         }
     }
 
@@ -743,7 +743,7 @@ fn keyword_variants(keyword: &str) -> Vec<String> {
     let lower = trimmed.to_lowercase();
     variants.push(lower.clone());
 
-    let spaced = lower.replace('_', " ").replace('-', " ");
+    let spaced = lower.replace(['_', '-'], " ");
     if spaced != lower {
         variants.push(spaced.clone());
     }
