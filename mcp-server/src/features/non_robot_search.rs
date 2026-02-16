@@ -1057,6 +1057,21 @@ fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
         "ShadowCrawl will open a visible browser to fully render modern web pages and may temporarily lock your input to avoid accidental interference.\n\nPress Enter to allow or Esc to cancel."
     };
 
+    // macOS: use Notification Center via AppleScript as the most reliable cross-context notice.
+    // This works even when the process isn't a foreground UI app.
+    #[cfg(target_os = "macos")]
+    {
+        let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+        let script = format!(
+            "display notification \"{}\" with title \"ShadowCrawl\" subtitle \"HITL Renderer\"",
+            esc(notification_body)
+        );
+        let _ = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .spawn();
+    }
+
     let _ = Notification::new()
         .summary("ShadowCrawl: HITL browser control")
         .body(notification_body)
@@ -1481,7 +1496,10 @@ async fn detect_interstitial_like(page: &chromiumoxide::Page) -> anyhow::Result<
             || body.includes('press and hold');
 
         const tooShort = bodyLen > 0 && bodyLen < 220;
-        return Boolean(titleLooksHolding || textLooksHolding || tooShort);
+        // Avoid false positives on legitimate small pages (e.g., example.com).
+        // Only treat "too short" as interstitial when there are other holding signals.
+        const tooShortAndHolding = tooShort && (titleLooksHolding || textLooksHolding);
+        return Boolean(titleLooksHolding || textLooksHolding || tooShortAndHolding);
     })()"#;
 
     let val = page.evaluate(js).await?;
