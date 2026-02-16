@@ -21,6 +21,12 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+fn global_hitl_test_lock() -> &'static tokio::sync::Mutex<()> {
+    use std::sync::OnceLock;
+    static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
 async fn page_ok() -> &'static str {
     r#"<!doctype html>
 <html><head><title>OK</title></head>
@@ -62,6 +68,10 @@ fn init_logger() {
 #[ignore]
 async fn hitl_flow_sandbox_auto_resolve() {
     init_logger();
+
+    // These tests mutate process-wide env vars and use a shared CDP port (9222).
+    // Serialize them to avoid races/hangs when the test runner executes in parallel.
+    let _guard = global_hitl_test_lock().lock().await;
 
     // Start local sandbox server on an ephemeral port.
     let app = Router::new()
@@ -108,6 +118,65 @@ async fn hitl_flow_sandbox_auto_resolve() {
         .expect("non_robot_search sandbox run failed");
 
     // We expect the page to have auto-appended "Solved" before extraction.
+    assert!(
+        result.content.contains("Solved") || result.clean_content.contains("Solved"),
+        "expected sandbox to auto-resolve challenge"
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn hitl_flow_sandbox_auto_resolve_with_blocking_os_dialog() {
+    init_logger();
+
+    // These tests mutate process-wide env vars and use a shared CDP port (9222).
+    // Serialize them to avoid races/hangs when the test runner executes in parallel.
+    let _guard = global_hitl_test_lock().lock().await;
+
+    // Start local sandbox server on an ephemeral port.
+    let app = Router::new()
+        .route("/ok", get(page_ok))
+        .route("/challenge", get(page_challenge_auto_resolve));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind failed");
+    let addr: SocketAddr = listener.local_addr().expect("local_addr failed");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.ok();
+    });
+
+    // Minimal AppState for scrape processing.
+    let state = Arc::new(AppState::new(
+        "http://localhost:8890".to_string(),
+        reqwest::Client::new(),
+    ));
+
+    // Force a blocking OS-level consent dialog even if AUTO_ALLOW is set.
+    std::env::set_var("SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW", "1");
+    std::env::set_var("SHADOWCRAWL_NON_ROBOT_CONSENT", "dialog");
+
+    let url = format!("http://{}/challenge", addr);
+    println!("Sandbox URL (dialog mode): {}", url);
+    println!("You should see an OS consent popup now. Click OK to continue.");
+
+    let cfg = NonRobotSearchConfig {
+        url,
+        max_chars: 10_000,
+        use_proxy: false,
+        quality_mode: QualityMode::Balanced,
+        captcha_grace: Duration::from_secs(1),
+        human_timeout: Duration::from_secs(20),
+        user_profile_path: None,
+        auto_scroll: false,
+        wait_for_selector: None,
+    };
+
+    let result = execute_non_robot_search(&state, cfg)
+        .await
+        .expect("non_robot_search sandbox run failed");
+
     assert!(
         result.content.contains("Solved") || result.clean_content.contains("Solved"),
         "expected sandbox to auto-resolve challenge"

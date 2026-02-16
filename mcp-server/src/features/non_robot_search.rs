@@ -156,7 +156,7 @@ async fn execute_non_robot_search_inner(
     // This avoids Chromium profile lock conflicts (e.g., SingletonLock) when callers reuse a live profile.
     let _serial_guard = state.non_robot_search_lock.lock().await;
 
-    notify_and_prompt_user()?;
+    notify_and_prompt_user(&cfg)?;
 
     let (abort_tx, mut abort_rx) = watch::channel(false);
     let killswitch = KillSwitch::start(abort_tx);
@@ -1043,7 +1043,7 @@ async fn get_html_snapshot(page: &chromiumoxide::Page, closed: bool) -> anyhow::
 }
 
 #[cfg(feature = "non_robot_search")]
-fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
+fn notify_and_prompt_user(cfg: &NonRobotSearchConfig) -> Result<(), NonRobotSearchError> {
     let auto_allow = std::env::var("SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW")
         .ok()
         .as_deref()
@@ -1065,15 +1065,23 @@ fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
 
     // Always do a best-effort user-facing notice. This is intentionally non-blocking.
     // (Some environments do not have desktop notifications; ignore failures.)
+    let target_line = format!("Target URL: {}", cfg.url);
+
     let notification_body = if auto_allow && !force_dialog {
-        "ShadowCrawl will open a visible browser for HITL rendering.\n\nTip: If a site blocks automation, solve it in the browser and click FINISH & RETURN.\nEmergency stop: hold ESC for 3 seconds."
+        format!(
+            "ShadowCrawl will open a visible browser for HITL rendering.\n\n{}\n\nTip: If a site blocks automation, solve it in the browser and click FINISH & RETURN.\nEmergency stop: hold ESC for ~3 seconds.",
+            target_line
+        )
     } else {
-        "ShadowCrawl will open a visible browser to fully render modern web pages and may temporarily lock your input to avoid accidental interference.\n\nPress Enter to allow or Esc to cancel."
+        format!(
+            "ShadowCrawl is requesting permission to open a visible browser and navigate to the target page.\n\n{}\n\nClick OK to continue or Cancel to abort.\nEmergency stop: hold ESC for ~3 seconds.",
+            target_line
+        )
     };
 
     let _ = Notification::new()
         .summary("ShadowCrawl: HITL browser control")
-        .body(notification_body)
+        .body(&notification_body)
         .show();
 
     play_tone(Tone::Attention);
@@ -1122,8 +1130,11 @@ fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
         }
     }
 
-    let title = "ShadowCrawl Screen Access";
-    let message = "ShadowCrawl needs temporary control of your browser to fully render dynamic content.\n\nIt may temporarily lock your mouse/keyboard to avoid interference.\n\nEmergency stop: hold ESC for 3 seconds.";
+    let title = "ShadowCrawl — Screen Access";
+    let message = format!(
+        "ShadowCrawl will open a visible browser window and navigate to:\n\n{}\n\nYou may need to complete CAPTCHA/login manually in the browser.\n\nClick OK to continue or Cancel to abort.\n\nEmergency stop: hold ESC for ~3 seconds.",
+        cfg.url
+    );
 
     // Otherwise use a blocking desktop dialog. This MUST wait for user input.
     // If desktop dialogs fail (headless / no portal), fall back to TTY when possible.
@@ -1133,7 +1144,7 @@ fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
         auto_allow
     );
 
-    match blocking_ok_cancel_dialog(title, message) {
+    match blocking_ok_cancel_dialog(title, &message) {
         Ok(()) => Ok(()),
         Err(NonRobotSearchError::Cancelled) => Err(NonRobotSearchError::Cancelled),
         Err(e @ NonRobotSearchError::AutomationFailed(_)) => {
@@ -1450,7 +1461,7 @@ fn macos_osascript_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotS
     let script = format!(
         r#"tell application "System Events"
 activate
-display dialog "{}" with title "{}" buttons {{"Cancel", "OK"}} default button "OK"
+display dialog "{}" with title "{}" buttons {{"Cancel", "OK"}} default button "OK" with icon caution
 end tell"#,
         esc_as(message),
         esc_as(title)
