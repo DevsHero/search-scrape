@@ -1308,7 +1308,7 @@ async fn request_human_help(
     warn!("non_robot_search: verification gate detected; requesting human help");
     play_tone(Tone::Urgent);
 
-    // Big overlay inside the page.
+    // Compact banner overlay inside the page.
     let _ = session.page.evaluate(
         r#"(() => {
             const id = '__shadowcrawl_hitl_overlay__';
@@ -1319,15 +1319,19 @@ async fn request_human_help(
             div.style.left = '0';
             div.style.top = '0';
             div.style.right = '0';
+            div.style.height = '60px';
             div.style.zIndex = '2147483647';
-            div.style.padding = '24px';
-            div.style.fontSize = '28px';
-            div.style.fontWeight = '800';
-            div.style.background = 'rgba(0,0,0,0.88)';
+            div.style.padding = '12px 24px';
+            div.style.display = 'flex';
+            div.style.alignItems = 'center';
+            div.style.fontSize = '16px';
+            div.style.fontWeight = '700';
+            div.style.background = 'linear-gradient(90deg, rgba(255,68,68,0.95) 0%, rgba(255,100,100,0.95) 100%)';
             div.style.color = 'white';
-            div.style.textAlign = 'center';
-            div.style.borderBottom = '4px solid #ff4444';
-            div.textContent = '🚨 SHADOWCRAWL NEEDS HELP: Please complete the verification step in this window.';
+            div.style.borderBottom = '2px solid rgba(255,50,50,0.8)';
+            div.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
+            div.style.fontFamily = 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+            div.textContent = '🚨 SHADOWCRAWL NEEDS HELP: Complete verification to continue';
             document.documentElement.appendChild(div);
         })()"#,
     ).await;
@@ -2262,7 +2266,7 @@ fn get_manual_return_button_script() -> String {
         position: fixed;
         top: 10px;
         right: 10px;
-        z-index: 2147483647;
+        z-index: 2147483648;
         padding: 15px 20px;
         background: linear-gradient(135deg, #ff4757 0%, #ff6348 100%);
         color: white;
