@@ -559,6 +559,13 @@ async fn run_flow(
 
     log_state(NonRobotState::Interaction);
 
+    // Professional, non-blocking notice inside the browser before we navigate.
+    // This ensures operators see what is happening even when consent is auto-allowed.
+    let _ = session
+        .page
+        .evaluate(get_prelaunch_overlay_script(&cfg.url))
+        .await;
+
     session
         .page
         .goto(&cfg.url)
@@ -1035,22 +1042,32 @@ async fn get_html_snapshot(page: &chromiumoxide::Page, closed: bool) -> anyhow::
 
 #[cfg(feature = "non_robot_search")]
 fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
-    if std::env::var("SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW")
+    let auto_allow = std::env::var("SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW")
         .ok()
         .as_deref()
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
         .unwrap_or(false)
-    {
-        info!("non_robot_search: auto-allow enabled via SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW");
-        return Ok(());
-    }
+    ;
+
+    // Always do a best-effort user-facing notice. This is intentionally non-blocking.
+    // (Some environments do not have desktop notifications; ignore failures.)
+    let notification_body = if auto_allow {
+        "ShadowCrawl will open a visible browser for HITL rendering.\n\nTip: If a site blocks automation, solve it in the browser and click FINISH & RETURN.\nEmergency stop: hold ESC for 3 seconds."
+    } else {
+        "ShadowCrawl will open a visible browser to fully render modern web pages and may temporarily lock your input to avoid accidental interference.\n\nPress Enter to allow or Esc to cancel."
+    };
 
     let _ = Notification::new()
-        .summary("ShadowCrawl needs screen access")
-        .body("ShadowCrawl will open a visible browser to fully render modern web pages and may temporarily lock your input to avoid accidental interference.\n\nPress Enter to allow or Esc to cancel.")
+        .summary("ShadowCrawl: HITL browser control")
+        .body(notification_body)
         .show();
 
     play_tone(Tone::Attention);
+
+    if auto_allow {
+        info!("non_robot_search: auto-allow enabled via SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW");
+        return Ok(());
+    }
 
     // Consent mode override:
     // - SHADOWCRAWL_NON_ROBOT_CONSENT=dialog => always dialog
@@ -1064,12 +1081,14 @@ fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
     let force_dialog = matches!(consent_mode.as_str(), "dialog" | "gui");
     let force_tty = matches!(consent_mode.as_str(), "tty" | "terminal");
 
-    let use_tty_prompt = if force_dialog {
-        false
-    } else if force_tty {
+    // Default to a GUI popup for a more professional HITL experience.
+    // TTY prompts are still available for advanced/headless-ish environments.
+    let use_tty_prompt = if force_tty {
         true
+    } else if force_dialog {
+        false
     } else {
-        atty::is(atty::Stream::Stdin)
+        false
     };
 
     // If we have an interactive TTY and consent mode allows it, use strict Enter/Esc flow.
@@ -1129,6 +1148,116 @@ fn notify_and_prompt_user() -> Result<(), NonRobotSearchError> {
             _ => Err(NonRobotSearchError::Cancelled),
         }
     }
+}
+
+#[cfg(feature = "non_robot_search")]
+fn get_prelaunch_overlay_script(target_url: &str) -> String {
+        // NOTE: This overlay is a UX notice (non-blocking). It improves operator clarity,
+        // especially when consent is auto-allowed or when tools are invoked via curl.
+        let url_json = serde_json::to_string(target_url).unwrap_or_else(|_| "\"\"".to_string());
+        format!(
+                r#"(() => {{
+    try {{
+        const id = '__shadowcrawl_prelaunch_overlay__';
+        if (document.getElementById(id)) return;
+
+        const targetUrl = {url_json};
+
+        const overlay = document.createElement('div');
+        overlay.id = id;
+        overlay.style.position = 'fixed';
+        overlay.style.left = '0';
+        overlay.style.top = '0';
+        overlay.style.right = '0';
+        overlay.style.bottom = '0';
+        overlay.style.zIndex = '2147483647';
+        overlay.style.display = 'flex';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        overlay.style.background = 'rgba(0, 0, 0, 0.55)';
+        overlay.style.backdropFilter = 'blur(6px)';
+        overlay.style.webkitBackdropFilter = 'blur(6px)';
+
+        const card = document.createElement('div');
+        card.style.width = 'min(720px, calc(100vw - 48px))';
+        card.style.background = 'rgba(20, 20, 24, 0.96)';
+        card.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+        card.style.borderRadius = '16px';
+        card.style.boxShadow = '0 20px 60px rgba(0,0,0,0.55)';
+        card.style.color = '#fff';
+        card.style.fontFamily = 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif';
+        card.style.padding = '20px 20px 16px 20px';
+
+        const h = document.createElement('div');
+        h.textContent = 'ShadowCrawl — HITL Rendering';
+        h.style.fontSize = '20px';
+        h.style.fontWeight = '800';
+        h.style.letterSpacing = '0.2px';
+
+        const sub = document.createElement('div');
+        sub.textContent = 'A visible browser will open and navigate to your target.';
+        sub.style.marginTop = '6px';
+        sub.style.opacity = '0.92';
+
+        const url = document.createElement('div');
+        url.textContent = targetUrl ? ('Target: ' + targetUrl) : 'Target: (unknown)';
+        url.style.marginTop = '12px';
+        url.style.padding = '10px 12px';
+        url.style.borderRadius = '12px';
+        url.style.background = 'rgba(255, 255, 255, 0.06)';
+        url.style.border = '1px solid rgba(255, 255, 255, 0.10)';
+        url.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+        url.style.fontSize = '12px';
+        url.style.wordBreak = 'break-all';
+
+        const ul = document.createElement('ul');
+        ul.style.marginTop = '14px';
+        ul.style.paddingLeft = '18px';
+        ul.style.lineHeight = '1.55';
+        ul.style.opacity = '0.95';
+        ul.innerHTML = [
+            '<li>If a site shows a CAPTCHA/login, complete it manually in the browser.</li>',
+            '<li>When ready, click <b>FINISH &amp; RETURN</b> to extract immediately.</li>',
+            '<li>Emergency stop: hold <b>Esc</b> for ~3 seconds.</li>'
+        ].join('');
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.justifyContent = 'flex-end';
+        actions.style.gap = '10px';
+        actions.style.marginTop = '16px';
+
+        const btn = document.createElement('button');
+        btn.textContent = 'Continue';
+        btn.style.cursor = 'pointer';
+        btn.style.padding = '10px 14px';
+        btn.style.borderRadius = '12px';
+        btn.style.border = '1px solid rgba(255,255,255,0.16)';
+        btn.style.background = 'rgba(255,255,255,0.10)';
+        btn.style.color = '#fff';
+        btn.style.fontWeight = '700';
+        btn.onclick = () => overlay.remove();
+
+        actions.appendChild(btn);
+
+        card.appendChild(h);
+        card.appendChild(sub);
+        card.appendChild(url);
+        card.appendChild(ul);
+        card.appendChild(actions);
+        overlay.appendChild(card);
+        document.body.appendChild(overlay);
+
+        // Auto-hide after 10s to avoid blocking the operator.
+        setTimeout(() => {{
+            const el = document.getElementById(id);
+            if (el) el.remove();
+        }}, 10000);
+    }} catch (e) {{
+        // ignore
+    }}
+}})()"#
+        )
 }
 
 #[cfg(all(feature = "non_robot_search", target_os = "macos"))]
