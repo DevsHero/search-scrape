@@ -41,9 +41,9 @@ impl RustScraper {
                 let type_val = map.get("@type").and_then(|v| v.as_str()).unwrap_or("");
                 match type_val {
                     "Product" => {
-                        let name = self.json_ld_string(map.get("name"));
-                        let description = self.json_ld_string(map.get("description"));
-                        let price = self.json_ld_price(map.get("offers"));
+                        let name = Self::json_ld_string(map.get("name"));
+                        let description = Self::json_ld_string(map.get("description"));
+                        let price = Self::json_ld_price(map.get("offers"));
 
                         if let Some(name) = name {
                             let mut entry = format!("# {}", name);
@@ -59,14 +59,14 @@ impl RustScraper {
                         }
                     }
                     "Article" | "NewsArticle" | "BlogPosting" => {
-                        let headline = self.json_ld_string(map.get("headline"));
-                        let article_body = self.json_ld_string(map.get("articleBody"));
-                        let author = self.json_ld_author(map.get("author"));
+                        let headline = Self::json_ld_string(map.get("headline"));
+                        let article_body = Self::json_ld_string(map.get("articleBody"));
+                        let author = Self::json_ld_author(map.get("author"));
 
                         if let Some(body) = article_body {
                             if !body.trim().is_empty() {
                                 let title = headline.unwrap_or_else(|| "Article".to_string());
-                                let byline = author.unwrap_or_else(|| "".to_string());
+                                let byline = author.unwrap_or_default();
                                 if byline.is_empty() {
                                     structured_content.push(format!("# {}\n\n{}", title, body));
                                 } else {
@@ -77,13 +77,11 @@ impl RustScraper {
                         }
                     }
                     "RealEstateListing" => {
-                        let name = self
-                            .json_ld_string(map.get("name"))
+                        let name = Self::json_ld_string(map.get("name"))
                             .unwrap_or_else(|| "Listing".to_string());
                         let address = self.json_ld_address(map.get("address"));
-                        let price = self
-                            .json_ld_string(map.get("price"))
-                            .or_else(|| self.json_ld_price(map.get("offers")));
+                        let price = Self::json_ld_string(map.get("price"))
+                            .or_else(|| Self::json_ld_price(map.get("offers")));
 
                         let mut entry = format!("# {}", name);
                         if let Some(address) = address {
@@ -95,10 +93,9 @@ impl RustScraper {
                         structured_content.push(entry);
                     }
                     _ => {
-                        if let Some(name) = self.json_ld_string(map.get("name")) {
-                            let description = self
-                                .json_ld_string(map.get("description"))
-                                .unwrap_or_default();
+                        if let Some(name) = Self::json_ld_string(map.get("name")) {
+                            let description =
+                                Self::json_ld_string(map.get("description")).unwrap_or_default();
                             if description.is_empty() {
                                 structured_content.push(name);
                             } else {
@@ -112,13 +109,13 @@ impl RustScraper {
         }
     }
 
-    fn json_ld_string(&self, value: Option<&serde_json::Value>) -> Option<String> {
+    fn json_ld_string(value: Option<&serde_json::Value>) -> Option<String> {
         match value {
             Some(serde_json::Value::String(s)) => Some(s.trim().to_string()),
             Some(serde_json::Value::Number(n)) => Some(n.to_string()),
             Some(serde_json::Value::Array(items)) => {
                 for item in items {
-                    if let Some(val) = self.json_ld_string(Some(item)) {
+                    if let Some(val) = Self::json_ld_string(Some(item)) {
                         if !val.is_empty() {
                             return Some(val);
                         }
@@ -136,13 +133,13 @@ impl RustScraper {
         }
     }
 
-    fn json_ld_author(&self, value: Option<&serde_json::Value>) -> Option<String> {
+    fn json_ld_author(value: Option<&serde_json::Value>) -> Option<String> {
         match value {
             Some(serde_json::Value::String(s)) => Some(s.trim().to_string()),
             Some(serde_json::Value::Array(items)) => {
                 let mut names = Vec::new();
                 for item in items {
-                    if let Some(name) = self.json_ld_author(Some(item)) {
+                    if let Some(name) = Self::json_ld_author(Some(item)) {
                         if !name.is_empty() {
                             names.push(name);
                         }
@@ -164,26 +161,26 @@ impl RustScraper {
         }
     }
 
-    fn json_ld_price(&self, value: Option<&serde_json::Value>) -> Option<String> {
+    fn json_ld_price(value: Option<&serde_json::Value>) -> Option<String> {
         match value {
             Some(serde_json::Value::Object(map)) => {
                 if let Some(price) = map.get("price") {
-                    return self.json_ld_string(Some(price));
+                    return Self::json_ld_string(Some(price));
                 }
                 if let Some(price) = map.get("lowPrice") {
-                    return self.json_ld_string(Some(price));
+                    return Self::json_ld_string(Some(price));
                 }
                 if let Some(price) = map.get("highPrice") {
-                    return self.json_ld_string(Some(price));
+                    return Self::json_ld_string(Some(price));
                 }
                 if let Some(price) = map.get("offers") {
-                    return self.json_ld_price(Some(price));
+                    return Self::json_ld_price(Some(price));
                 }
                 None
             }
             Some(serde_json::Value::Array(items)) => {
                 for item in items {
-                    if let Some(val) = self.json_ld_price(Some(item)) {
+                    if let Some(val) = Self::json_ld_price(Some(item)) {
                         if !val.is_empty() {
                             return Some(val);
                         }

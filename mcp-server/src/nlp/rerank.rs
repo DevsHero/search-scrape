@@ -63,7 +63,7 @@ impl Reranker {
         let match_ratio = matches as f32 / self.query_tokens.len() as f32;
         let final_score = (normalized + match_ratio) / 2.0;
 
-        final_score.min(1.0).max(0.0)
+        final_score.clamp(0.0, 1.0)
     }
 
     /// Rerank search results and optionally filter by threshold

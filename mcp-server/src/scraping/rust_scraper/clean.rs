@@ -24,7 +24,7 @@ impl RustScraper {
         } else {
             (raw.len().saturating_sub(clean.len())) as f64 / raw.len() as f64
         };
-        (clean, ratio.max(0.0).min(1.0))
+        (clean, ratio.clamp(0.0, 1.0))
     }
 
     /// Fallback to og:description when main content is missing or too small
@@ -210,7 +210,7 @@ impl RustScraper {
                     let text = element.text().collect::<Vec<_>>().join("");
                     if text.len() > 20 {
                         content.push_str(&text);
-                        content.push_str("\n");
+                        content.push('\n');
                     }
                 }
             }

@@ -119,7 +119,7 @@ pub async fn extract_structured(
         raw_content_preview: raw_preview,
         extraction_method: extraction_method.to_string(),
         field_count,
-        confidence: confidence.max(0.0).min(1.0),
+        confidence: confidence.clamp(0.0, 1.0),
         duration_ms: start_time.elapsed().as_millis() as u64,
         warnings,
     })

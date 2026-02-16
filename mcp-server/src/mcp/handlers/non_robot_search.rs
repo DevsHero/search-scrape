@@ -50,12 +50,12 @@ pub async fn handle(
     let captcha_grace_seconds = arguments
         .get("captcha_grace_seconds")
         .and_then(|v| v.as_u64())
-        .unwrap_or(5) as u64;
+        .unwrap_or(5);
 
     let human_timeout_seconds = arguments
         .get("human_timeout_seconds")
         .and_then(|v| v.as_u64())
-        .unwrap_or(60) as u64;
+        .unwrap_or(60);
 
     #[cfg(feature = "non_robot_search")]
     {

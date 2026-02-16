@@ -512,9 +512,7 @@ fn build_proxy_config(
 }
 
 fn parse_host_port(value: &str) -> Option<(String, u16)> {
-    let mut parts = value.rsplitn(2, ':');
-    let port_str = parts.next()?;
-    let host = parts.next()?;
+    let (host, port_str) = value.rsplit_once(':')?;
     if host.is_empty() {
         return None;
     }

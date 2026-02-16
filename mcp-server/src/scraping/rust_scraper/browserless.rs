@@ -177,6 +177,7 @@ impl RustScraper {
         None
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn fetch_browserless_content(
         &self,
         url: &str,

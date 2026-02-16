@@ -49,9 +49,9 @@ use chromiumoxide::Browser;
 use futures::StreamExt;
 
 #[cfg(feature = "non_robot_search")]
-use crossterm::event::{self, Event as TermEvent, KeyCode, KeyEventKind};
-#[cfg(feature = "non_robot_search")]
 use atty::Stream as AttyStream;
+#[cfg(feature = "non_robot_search")]
+use crossterm::event::{self, Event as TermEvent, KeyCode, KeyEventKind};
 #[cfg(feature = "non_robot_search")]
 use notify_rust::Notification;
 #[cfg(all(feature = "non_robot_search", not(target_os = "macos")))]
@@ -131,16 +131,20 @@ async fn execute_non_robot_search_impl(
 ) -> Result<ScrapeResponse, NonRobotSearchError> {
     // Global timeout: human_timeout + 30s safety margin
     let global_timeout = cfg.human_timeout + Duration::from_secs(30);
-    
+
     match tokio::time::timeout(global_timeout, execute_non_robot_search_inner(state, cfg)).await {
         Ok(result) => result,
         Err(_) => {
-            warn!("non_robot_search: global timeout exceeded ({}s), force-killing browser", global_timeout.as_secs());
+            warn!(
+                "non_robot_search: global timeout exceeded ({}s), force-killing browser",
+                global_timeout.as_secs()
+            );
             // Emergency cleanup: kill all debug browsers on port 9222
             force_kill_all_debug_browsers(9222);
-            Err(NonRobotSearchError::AutomationFailed(
-                format!("global timeout exceeded ({}s)", global_timeout.as_secs())
-            ))
+            Err(NonRobotSearchError::AutomationFailed(format!(
+                "global timeout exceeded ({}s)",
+                global_timeout.as_secs()
+            )))
         }
     }
 }
@@ -626,7 +630,7 @@ async fn run_flow(
     // Poll for button click signal with short timeout
     info!("non_robot_search: checking for manual return button click...");
     let manual_triggered = check_manual_return_triggered(&session.page).await;
-    
+
     if manual_triggered {
         info!("non_robot_search: 🚀 MANUAL RETURN BUTTON CLICKED - Extracting immediately");
         play_tone(Tone::Success);
@@ -1048,8 +1052,7 @@ fn notify_and_prompt_user(cfg: &NonRobotSearchConfig) -> Result<(), NonRobotSear
         .ok()
         .as_deref()
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
-        .unwrap_or(false)
-    ;
+        .unwrap_or(false);
 
     // Consent mode override:
     // - SHADOWCRAWL_NON_ROBOT_CONSENT=dialog => always dialog (blocking)
@@ -1140,8 +1143,7 @@ fn notify_and_prompt_user(cfg: &NonRobotSearchConfig) -> Result<(), NonRobotSear
     // If desktop dialogs fail (headless / no portal), fall back to TTY when possible.
     info!(
         "non_robot_search: waiting for OS consent dialog (mode={}, auto_allow={})",
-        consent_mode,
-        auto_allow
+        consent_mode, auto_allow
     );
 
     match blocking_ok_cancel_dialog(title, &message) {
@@ -1149,7 +1151,10 @@ fn notify_and_prompt_user(cfg: &NonRobotSearchConfig) -> Result<(), NonRobotSear
         Err(NonRobotSearchError::Cancelled) => Err(NonRobotSearchError::Cancelled),
         Err(e @ NonRobotSearchError::AutomationFailed(_)) => {
             if stdin_is_tty && !force_dialog {
-                warn!("non_robot_search: GUI consent failed; falling back to TTY prompt: {}", e);
+                warn!(
+                    "non_robot_search: GUI consent failed; falling back to TTY prompt: {}",
+                    e
+                );
                 return notify_and_prompt_user_tty();
             }
             Err(NonRobotSearchError::InteractiveRequired)
@@ -1169,7 +1174,10 @@ fn notify_and_prompt_user_tty() -> Result<(), NonRobotSearchError> {
             NonRobotSearchError::AutomationFailed(format!("failed to poll terminal input: {}", e))
         })? {
             if let TermEvent::Key(key) = event::read().map_err(|e| {
-                NonRobotSearchError::AutomationFailed(format!("failed to read terminal input: {}", e))
+                NonRobotSearchError::AutomationFailed(format!(
+                    "failed to read terminal input: {}",
+                    e
+                ))
             })? {
                 if key.kind != KeyEventKind::Press {
                     continue;
@@ -1188,7 +1196,7 @@ fn notify_and_prompt_user_tty() -> Result<(), NonRobotSearchError> {
 fn blocking_ok_cancel_dialog(title: &str, message: &str) -> Result<(), NonRobotSearchError> {
     #[cfg(target_os = "macos")]
     {
-        return macos_osascript_ok_cancel(title, message);
+        macos_osascript_ok_cancel(title, message)
     }
 
     #[cfg(target_os = "windows")]
@@ -1276,7 +1284,9 @@ fn windows_powershell_ok_cancel(title: &str, message: &str) -> Result<(), NonRob
     };
 
     // Prefer Windows PowerShell (inbox) first, then PowerShell 7 (pwsh) as fallback.
-    let status = run_ps("powershell.exe").or_else(|_| run_ps("powershell")).or_else(|_| run_ps("pwsh"));
+    let status = run_ps("powershell.exe")
+        .or_else(|_| run_ps("powershell"))
+        .or_else(|_| run_ps("pwsh"));
 
     match status {
         Ok(st) if st.success() => Ok(()),
@@ -1342,11 +1352,11 @@ fn linux_gui_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchE
 
 #[cfg(feature = "non_robot_search")]
 fn get_prelaunch_overlay_script(target_url: &str) -> String {
-        // NOTE: This overlay is a UX notice (non-blocking). It improves operator clarity,
-        // especially when consent is auto-allowed or when tools are invoked via curl.
-        let url_json = serde_json::to_string(target_url).unwrap_or_else(|_| "\"\"".to_string());
-        format!(
-                r#"(() => {{
+    // NOTE: This overlay is a UX notice (non-blocking). It improves operator clarity,
+    // especially when consent is auto-allowed or when tools are invoked via curl.
+    let url_json = serde_json::to_string(target_url).unwrap_or_else(|_| "\"\"".to_string());
+    format!(
+        r#"(() => {{
     try {{
         const id = '__shadowcrawl_prelaunch_overlay__';
         if (document.getElementById(id)) return;
@@ -1447,7 +1457,7 @@ fn get_prelaunch_overlay_script(target_url: &str) -> String {
         // ignore
     }}
 }})()"#
-        )
+    )
 }
 
 #[cfg(all(feature = "non_robot_search", target_os = "macos"))]
@@ -1477,7 +1487,9 @@ end tell"#,
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr).to_string();
             // osascript typically reports cancel as "User canceled.".
-            if stderr.to_lowercase().contains("user canceled") || stderr.to_lowercase().contains("user cancelled") {
+            if stderr.to_lowercase().contains("user canceled")
+                || stderr.to_lowercase().contains("user cancelled")
+            {
                 Err(NonRobotSearchError::Cancelled)
             } else {
                 Err(NonRobotSearchError::AutomationFailed(format!(
@@ -1728,9 +1740,12 @@ struct BrowserSession {
 impl Drop for BrowserSession {
     fn drop(&mut self) {
         // Force-kill browser process on drop to prevent zombie processes
-        info!("non_robot_search: BrowserSession drop - force-killing browser on port {}", self.debugging_port);
+        info!(
+            "non_robot_search: BrowserSession drop - force-killing browser on port {}",
+            self.debugging_port
+        );
         force_kill_all_debug_browsers(self.debugging_port);
-        
+
         // Clean up temp profile if created
         if self.created_profile_dir {
             if let Some(dir) = self.profile_dir.take() {
@@ -1904,8 +1919,11 @@ impl BrowserSession {
     }
 
     async fn close(&mut self) {
-        info!("non_robot_search: closing browser session (port {})", self.debugging_port);
-        
+        info!(
+            "non_robot_search: closing browser session (port {})",
+            self.debugging_port
+        );
+
         // Close tabs first (more "human" shutdown), reducing Brave's "Restore tabs?" prompt.
         let _ = close_all_tabs_via_json(self.debugging_port).await;
 
@@ -1913,10 +1931,10 @@ impl BrowserSession {
         let _ = self.browser.close().await;
         let _ = self.browser.wait().await;
         self.handler_task.abort();
-        
+
         // Wait briefly for graceful shutdown
         tokio::time::sleep(Duration::from_millis(500)).await;
-        
+
         // Force-kill any remaining browser processes
         force_kill_all_debug_browsers(self.debugging_port);
 
@@ -2147,7 +2165,7 @@ fn force_kill_all_debug_browsers(debugging_port: u16) {
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     let mut killed = 0u32;
-    for (_pid, proc_) in sys.processes() {
+    for proc_ in sys.processes().values() {
         let cmd_line = proc_
             .cmd()
             .iter()
@@ -2185,7 +2203,7 @@ fn kill_debug_browser_zombies(debugging_port: u16, user_data_dir: &std::path::Pa
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     let mut killed = 0u32;
-    for (_pid, proc_) in sys.processes() {
+    for proc_ in sys.processes().values() {
         let cmd_line = proc_
             .cmd()
             .iter()
@@ -2241,7 +2259,7 @@ fn remove_stale_singleton_lock(user_data_dir: &std::path::Path) {
     let udm = format!("--user-data-dir={}", user_data_dir.display());
     let mut sys = System::new();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-    for (_pid, proc_) in sys.processes() {
+    for proc_ in sys.processes().values() {
         let cmd_line = proc_
             .cmd()
             .iter()
@@ -2498,11 +2516,9 @@ fn get_manual_return_button_script() -> String {
 async fn check_manual_return_triggered(page: &chromiumoxide::Page) -> bool {
     // Check if user clicked the manual return button
     let check_script = "window.__shadowcrawl_manual_finish === true";
-    
+
     match page.evaluate(check_script).await {
-        Ok(result) => {
-            result.into_value::<bool>().unwrap_or(false)
-        }
+        Ok(result) => result.into_value::<bool>().unwrap_or(false),
         Err(_) => false,
     }
 }

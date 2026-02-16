@@ -13,9 +13,7 @@ use core_foundation_sys::number::kCFBooleanTrue;
 use std::ffi::c_void;
 
 pub async fn check(options: &SetupOptions) -> Vec<SetupCheck> {
-    let mut checks = Vec::new();
-    checks.push(check_accessibility(options));
-    checks
+    vec![check_accessibility(options)]
 }
 
 fn check_accessibility(options: &SetupOptions) -> SetupCheck {

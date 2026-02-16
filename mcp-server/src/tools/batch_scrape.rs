@@ -29,8 +29,6 @@ pub async fn scrape_batch(
     let results: Vec<ScrapeBatchResult> = stream::iter(urls)
         .map(|url| {
             let state = Arc::clone(state);
-            let max_chars = max_chars;
-            let quality_mode = quality_mode;
             async move {
                 let url_start = Instant::now();
 
