@@ -54,7 +54,8 @@ use atty::Stream as AttyStream;
 use crossterm::event::{self, Event as TermEvent, KeyCode, KeyEventKind};
 #[cfg(feature = "non_robot_search")]
 use notify_rust::Notification;
-#[cfg(all(feature = "non_robot_search", not(target_os = "macos")))]
+// On Linux we intentionally avoid `rfd` for consent dialogs (it may hang when called from a server thread).
+#[cfg(all(feature = "non_robot_search", not(any(target_os = "macos", target_os = "linux"))))]
 use rfd::{MessageButtons, MessageDialog, MessageLevel};
 #[cfg(feature = "non_robot_search")]
 use rodio::{OutputStreamBuilder, Sink, Source};
@@ -1082,10 +1083,16 @@ fn notify_and_prompt_user(cfg: &NonRobotSearchConfig) -> Result<(), NonRobotSear
         )
     };
 
-    let _ = Notification::new()
-        .summary("ShadowCrawl: HITL browser control")
-        .body(&notification_body)
-        .show();
+    // Run desktop notification on a dedicated thread to avoid `notify-rust`'s
+    // internal blocking runtime creation from occurring inside the Tokio runtime
+    // (which causes a panic: "Cannot start a runtime from within a runtime").
+    let body = notification_body.clone();
+    std::thread::spawn(move || {
+        let _ = Notification::new()
+            .summary("ShadowCrawl: HITL browser control")
+            .body(&body)
+            .show();
+    });
 
     play_tone(Tone::Attention);
 
@@ -1157,7 +1164,10 @@ fn notify_and_prompt_user(cfg: &NonRobotSearchConfig) -> Result<(), NonRobotSear
                 );
                 return notify_and_prompt_user_tty();
             }
-            Err(NonRobotSearchError::InteractiveRequired)
+            // No TTY available (common for MCP stdio). Surface the real GUI failure so the
+            // operator can install missing dependencies (e.g. zenity) instead of seeing a
+            // confusing generic error.
+            Err(e)
         }
         Err(other) => Err(other),
     }
@@ -1212,13 +1222,13 @@ fn blocking_ok_cancel_dialog(title: &str, message: &str) -> Result<(), NonRobotS
 
     #[cfg(target_os = "linux")]
     {
-        // Prefer desktop dialogs (zenity/kdialog/xmessage) because they reliably block.
-        if let Ok(()) = linux_gui_ok_cancel(title, message) {
-            return Ok(());
-        }
-
-        // Fallback to rfd portal dialog.
-        return rfd_ok_cancel(title, message);
+        // Prefer external desktop dialogs (zenity/yad/kdialog/xmessage) because they reliably
+        // block and do NOT require being called from a GUI "main thread".
+        //
+        // IMPORTANT: Do not fall back to `rfd` on Linux here. In some Ubuntu desktop setups
+        // (especially when invoked from an MCP stdio server thread), rfd/GTK portal dialogs can
+        // hang without showing a window, which looks like the tool is frozen.
+        linux_gui_ok_cancel(title, message)
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
@@ -1227,7 +1237,7 @@ fn blocking_ok_cancel_dialog(title: &str, message: &str) -> Result<(), NonRobotS
     }
 }
 
-#[cfg(all(feature = "non_robot_search", not(target_os = "macos")))]
+#[cfg(all(feature = "non_robot_search", not(any(target_os = "macos", target_os = "linux"))))]
 fn rfd_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchError> {
     // rfd may panic in some environments; treat that as AutomationFailed.
     let res = std::panic::catch_unwind(|| {
@@ -1300,12 +1310,40 @@ fn windows_powershell_ok_cancel(title: &str, message: &str) -> Result<(), NonRob
 
 #[cfg(all(feature = "non_robot_search", target_os = "linux"))]
 fn linux_gui_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchError> {
-    // Best-effort desktop prompts. Prefer zenity (GNOME), then kdialog (KDE), then xmessage.
-    let try_status = |cmd: &str, args: &[&str]| -> Option<std::process::ExitStatus> {
-        std::process::Command::new(cmd).args(args).status().ok()
+    // Best-effort desktop prompts. Prefer zenity/yad (GNOME-ish), then kdialog (KDE), then xmessage.
+    // Add a timeout so a broken portal/GUI stack cannot freeze the MCP call indefinitely.
+    let timeout_secs: u64 = std::env::var("SHADOWCRAWL_NON_ROBOT_CONSENT_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(120);
+    let timeout = Duration::from_secs(timeout_secs);
+
+    let run_with_timeout = |cmd: &str, args: &[&str]| -> Option<std::process::ExitStatus> {
+        let mut child = std::process::Command::new(cmd)
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok()?;
+
+        let start = Instant::now();
+        loop {
+            if let Ok(Some(status)) = child.try_wait() {
+                return Some(status);
+            }
+            if start.elapsed() >= timeout {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(80));
+        }
     };
 
-    if let Some(status) = try_status(
+    // zenity: exit code 0=OK, 1=Cancel, 5=timeout
+    let timeout_str = timeout_secs.to_string();
+    if let Some(status) = run_with_timeout(
         "zenity",
         &[
             "--question",
@@ -1317,8 +1355,43 @@ fn linux_gui_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchE
             "OK",
             "--cancel-label",
             "Cancel",
+            "--timeout",
+            timeout_str.as_str(),
         ],
     ) {
+        return match status.code() {
+            Some(0) => Ok(()),
+            Some(5) => Err(NonRobotSearchError::HumanUnavailable),
+            _ => Err(NonRobotSearchError::Cancelled),
+        };
+    }
+
+    // yad: exit code 0=OK, 1=Cancel, 70=timeout
+    let timeout_str = timeout_secs.to_string();
+    if let Some(status) = run_with_timeout(
+        "yad",
+        &[
+            "--question",
+            "--title",
+            title,
+            "--text",
+            message,
+            "--button",
+            "OK:0",
+            "--button",
+            "Cancel:1",
+            "--timeout",
+            timeout_str.as_str(),
+        ],
+    ) {
+        return match status.code() {
+            Some(0) => Ok(()),
+            Some(70) => Err(NonRobotSearchError::HumanUnavailable),
+            _ => Err(NonRobotSearchError::Cancelled),
+        };
+    }
+
+    if let Some(status) = run_with_timeout("kdialog", &["--title", title, "--yesno", message]) {
         return if status.success() {
             Ok(())
         } else {
@@ -1326,15 +1399,7 @@ fn linux_gui_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchE
         };
     }
 
-    if let Some(status) = try_status("kdialog", &["--title", title, "--yesno", message]) {
-        return if status.success() {
-            Ok(())
-        } else {
-            Err(NonRobotSearchError::Cancelled)
-        };
-    }
-
-    if let Some(status) = try_status(
+    if let Some(status) = run_with_timeout(
         "xmessage",
         &["-center", "-buttons", "OK:0,Cancel:1", message],
     ) {
@@ -1346,7 +1411,7 @@ fn linux_gui_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchE
     }
 
     Err(NonRobotSearchError::AutomationFailed(
-        "no supported linux desktop dialog found (zenity/kdialog/xmessage)".to_string(),
+        "no supported linux desktop dialog found (install one of: zenity, yad, kdialog, xmessage)".to_string(),
     ))
 }
 
@@ -1798,7 +1863,7 @@ impl BrowserSession {
             args.push(format!("--profile-directory={}", name));
         }
 
-        info!("non_robot_search: launching Brave with user profile (human-centric mode)");
+        info!("non_robot_search: launching browser with user profile (human-centric mode)");
         let _chrome_process = std::process::Command::new(&chrome_exe)
             .args(&args)
             .stdin(std::process::Stdio::null())
@@ -1816,10 +1881,17 @@ impl BrowserSession {
         let mut last_error = None;
         let mut browser_opt = None;
 
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(3))
+            .connect_timeout(Duration::from_secs(1))
+            .build()?;
+
         for attempt in 1..=5 {
             // First, try to get the WebSocket debugger URL from Chrome
             let ws_url_result: anyhow::Result<String> = async {
-                let response = reqwest::get(&json_url)
+                let response = http
+                    .get(&json_url)
+                    .send()
                     .await
                     .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
                 let json: serde_json::Value = response
@@ -1989,7 +2061,7 @@ impl BrowserSession {
             args.push(format!("--profile-directory={}", name));
         }
 
-        info!("non_robot_search: relaunching Brave with user profile (human-centric mode)");
+        info!("non_robot_search: relaunching browser with user profile (human-centric mode)");
         let _chrome_process = std::process::Command::new(&chrome_exe)
             .args(&args)
             .stdin(std::process::Stdio::null())
@@ -2007,10 +2079,17 @@ impl BrowserSession {
         let mut last_error = None;
         let mut browser_opt = None;
 
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(3))
+            .connect_timeout(Duration::from_secs(1))
+            .build()?;
+
         for attempt in 1..=5 {
             // First, try to get the WebSocket debugger URL from Chrome
             let ws_url_result: anyhow::Result<String> = async {
-                let response = reqwest::get(&json_url)
+                let response = http
+                    .get(&json_url)
+                    .send()
                     .await
                     .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
                 let json: serde_json::Value = response
@@ -2106,7 +2185,11 @@ async fn close_extra_tabs_via_json(debugging_port: u16, keep_title: &str) -> any
     let list_url = format!("http://127.0.0.1:{}/json/list", debugging_port);
     let close_base = format!("http://127.0.0.1:{}/json/close/", debugging_port);
 
-    let resp = reqwest::get(&list_url).await?;
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .connect_timeout(Duration::from_secs(1))
+        .build()?;
+    let resp = http.get(&list_url).send().await?;
     let targets: serde_json::Value = resp.json().await?;
     let arr = targets.as_array().cloned().unwrap_or_default();
 
@@ -2124,7 +2207,10 @@ async fn close_extra_tabs_via_json(debugging_port: u16, keep_title: &str) -> any
         if id.is_empty() {
             continue;
         }
-        let _ = reqwest::get(format!("{}{}", close_base, id)).await;
+        let _ = http
+            .get(format!("{}{}", close_base, id))
+            .send()
+            .await;
     }
 
     Ok(())
@@ -2135,7 +2221,11 @@ async fn close_all_tabs_via_json(debugging_port: u16) -> anyhow::Result<()> {
     let list_url = format!("http://127.0.0.1:{}/json/list", debugging_port);
     let close_base = format!("http://127.0.0.1:{}/json/close/", debugging_port);
 
-    let resp = reqwest::get(&list_url).await?;
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .connect_timeout(Duration::from_secs(1))
+        .build()?;
+    let resp = http.get(&list_url).send().await?;
     let targets: serde_json::Value = resp.json().await?;
     let arr = targets.as_array().cloned().unwrap_or_default();
 
@@ -2148,7 +2238,10 @@ async fn close_all_tabs_via_json(debugging_port: u16) -> anyhow::Result<()> {
         if id.is_empty() {
             continue;
         }
-        let _ = reqwest::get(format!("{}{}", close_base, id)).await;
+        let _ = http
+            .get(format!("{}{}", close_base, id))
+            .send()
+            .await;
     }
 
     Ok(())
@@ -2379,6 +2472,27 @@ fn find_chrome_executable() -> Option<String> {
         }
     }
 
+    // PATH-based discovery first (Linux/Windows/macOS all benefit from this when installed via package managers).
+    // Keep this minimal to avoid adding a new dependency.
+    if let Ok(path) = std::env::var("PATH") {
+        let candidates = [
+            "brave-browser",
+            "brave",
+            "google-chrome",
+            "chromium",
+            "chromium-browser",
+            "chrome",
+        ];
+        for dir in std::env::split_paths(&path) {
+            for exe in candidates {
+                let full = dir.join(exe);
+                if full.exists() {
+                    return Some(full.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
     #[cfg(target_os = "macos")]
     {
         // Prioritize Brave Browser for better human-centric experience
@@ -2398,6 +2512,8 @@ fn find_chrome_executable() -> Option<String> {
     #[cfg(target_os = "linux")]
     {
         let candidates = [
+            "/usr/bin/brave-browser",
+            "/usr/bin/brave",
             "/usr/bin/chromium",
             "/usr/bin/chromium-browser",
             "/usr/bin/google-chrome",

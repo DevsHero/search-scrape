@@ -52,7 +52,8 @@ impl ToolRegistry {
             // Internal names remain stable for handler routing and for backwards compatibility.
             let public_name = match internal_name.as_str() {
                 "search_web" => "web_search".to_string(),
-                "non_robot_search" => "stealth_scrape".to_string(),
+                // "non_robot_search" => "stealth_scrape".to_string(), // OLD
+                "non_robot_search" => "non_robot_search".to_string(), // NEW
                 _ => internal_name.clone(),
             };
             let public_title = internal.title.to_string();
@@ -73,7 +74,7 @@ impl ToolRegistry {
             );
 
             // Accept calls using either the public name or the internal name.
-            // Example: "stealth_scrape" (public) -> "non_robot_search" (internal)
+            // Example: "non_robot_search" (public) -> "non_robot_search" (internal)
             //          "non_robot_search" (internal) -> "non_robot_search" (internal)
             if let Some(spec) = registry.internal_to_public.get(&internal_name) {
                 registry

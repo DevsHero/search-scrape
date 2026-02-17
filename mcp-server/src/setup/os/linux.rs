@@ -5,8 +5,71 @@ use std::path::Path;
 pub async fn check(options: &SetupOptions) -> Vec<SetupCheck> {
     let mut checks = Vec::new();
     checks.push(check_display_env());
+    checks.push(check_dialog_helper(options));
     checks.push(check_input_devices_access(options));
     checks
+}
+
+fn command_exists(cmd: &str) -> bool {
+    if cmd.contains('/') {
+        return Path::new(cmd).exists();
+    }
+    let Ok(path) = std::env::var("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path).any(|dir| dir.join(cmd).exists())
+}
+
+fn check_dialog_helper(options: &SetupOptions) -> SetupCheck {
+    // non_robot_search consent requires a *blocking* GUI dialog when no TTY is attached (typical for MCP stdio).
+    // On Linux we rely on external helpers (zenity/yad/kdialog/xmessage) because they are robust from any thread.
+    let display = std::env::var("DISPLAY").ok();
+    let wayland = std::env::var("WAYLAND_DISPLAY").ok();
+    if display.is_none() && wayland.is_none() {
+        return SetupCheck {
+            id: "linux_dialog".to_string(),
+            title: "Linux consent dialog helper".to_string(),
+            status: CheckStatus::Skip,
+            details: "No DISPLAY/WAYLAND_DISPLAY detected; skipping GUI dialog helper check.".to_string(),
+            actions: vec![],
+        };
+    }
+
+    let helpers = ["zenity", "yad", "kdialog", "xmessage"];
+    let found: Vec<&str> = helpers.into_iter().filter(|h| command_exists(h)).collect();
+
+    if !found.is_empty() {
+        return SetupCheck {
+            id: "linux_dialog".to_string(),
+            title: "Linux consent dialog helper".to_string(),
+            status: CheckStatus::Pass,
+            details: format!("Found dialog helper(s): {}", found.join(", ")),
+            actions: vec![],
+        };
+    }
+
+    let details = format!(
+        "No supported blocking dialog helper found (zenity/yad/kdialog/xmessage). Without one, `stealth_scrape` consent may appear to freeze. {}",
+        interactive_hint(options)
+    );
+
+    let mut steps = vec![
+        "Ubuntu/Debian (recommended): `sudo apt-get update && sudo apt-get install -y zenity`".to_string(),
+        "Alternative: `sudo apt-get install -y yad`".to_string(),
+        "KDE alternative: `sudo apt-get install -y kdialog`".to_string(),
+        "X11 minimal alternative: `sudo apt-get install -y x11-utils` (for xmessage)".to_string(),
+    ];
+    if matches!(options.mode, SetupRunMode::SetupFlag) {
+        steps.push("Re-run `shadowcrawl-mcp --setup` to confirm.".to_string());
+    }
+
+    SetupCheck {
+        id: "linux_dialog".to_string(),
+        title: "Linux consent dialog helper".to_string(),
+        status: CheckStatus::Warn,
+        details,
+        actions: vec![action_block("Install a blocking dialog helper", steps, None)],
+    }
 }
 
 fn check_display_env() -> SetupCheck {

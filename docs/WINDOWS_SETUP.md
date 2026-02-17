@@ -25,7 +25,7 @@ This guide provides a comprehensive, step-by-step procedure to set up **ShadowCr
     - [Download Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)
 
 4.  **Install a Browser (Brave Recommended):**
-  - [Brave Browser](https://brave.com/) (Best for `stealth_scrape` / HITL)
+  - [Brave Browser](https://brave.com/) (Best for `non_robot_search` / HITL)
     - OR Google Chrome / Microsoft Edge.
 
 ---
@@ -119,7 +119,7 @@ This configuration connects VS Code to your local ShadowCrawl binary.
 3.  Open a Chat in VS Code (e.g., using GitHub Copilot or an MCP-enabled chat agent).
 4.  Ask: *"Search the web for 'Rust programming 2026' using ShadowCrawl"*
     - **Result:** Should return search results from SearXNG.
-5.  Ask: *"Go to https://example.com using stealth_scrape and extract the content"*
+5.  Ask: *"Go to https://example.com using non_robot_search and extract the content"*
     - **Result:** 
       - A browser window (Brave/Chrome) should visibly open on your desktop.
       - It will navigate to example.com.

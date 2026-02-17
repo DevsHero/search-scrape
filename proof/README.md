@@ -24,7 +24,7 @@ The **Manual Return Button** is a powerful user control feature that prevents br
 
 ### How It Works
 
-When `stealth_scrape` is called (feature flag: `non_robot_search`):
+When `non_robot_search` is called (feature flag: `non_robot_search`):
 
 1. **Automatic Injection**: A floating button is injected at page load
    ```
@@ -197,12 +197,14 @@ Return JSON Evidence
 
 ## 📝 Changelog
 
+We don't just claim to bypass—we provide the receipts. All evidence below was captured using `non_robot_search` (feature flag: `non_robot_search`) with the Safety Kill Switch enabled (2026-02-14).
+
 ### 2026-02-14 - Boss-Level Evidence Collection
-- ✅ LinkedIn: Job postings with embedded JSON-LD
-- ✅ Ticketmaster: Les Miserables tour schedule extraction
-- ✅ Airbnb: Tokyo property search results (1000+ listings)
-- ✅ Upwork: Job search with advanced filtering
-- ✅ Amazon: RTX 5070 Ti product search results
+-   ✅ LinkedIn: Job postings with embedded JSON-LD
+-   ✅ Ticketmaster: Les Miserables tour schedule extraction
+-   ✅ Airbnb: Tokyo property search results (1000+ listings)
+-   ✅ Upwork: Job search with advanced filtering
+-   ✅ Amazon: RTX 5070 Ti product search results
 
 **All tests passed with Safety Kill Switch enabled.**
 
@@ -210,9 +212,9 @@ Return JSON Evidence
 
 ## 🔗 Related Documentation
 
-- [Non-Robot Search Guide](../docs/NON_ROBOT_SEARCH.md)
-- [Safety Kill Switch](../docs/SAFETY_KILL_SWITCH.md)
-- [Main README](../README.md)
+-   [Non-Robot Search Guide](../docs/NON_ROBOT_SEARCH.md)
+-   [Safety Kill Switch](../docs/SAFETY_KILL_SWITCH.md)
+-   [Main README](../README.md)
 
 ---
 

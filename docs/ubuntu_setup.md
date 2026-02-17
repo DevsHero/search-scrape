@@ -1,6 +1,6 @@
 # ShadowCrawl on Ubuntu Desktop — `non_robot_search` / HITL
 
-This document focuses on running ShadowCrawl’s **visible-browser HITL** mode on **Ubuntu Desktop** (GNOME/KDE).
+This document focuses on running ShadowCrawl’s **visible-browser HITL** mode (`non_robot_search`) on **Ubuntu Desktop** (GNOME/KDE).
 
 ## What works today (current repo state)
 
