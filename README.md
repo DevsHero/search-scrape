@@ -129,7 +129,7 @@ Prereqs:
 - Grant Accessibility permissions (required for the emergency ESC hold-to-abort kill switch)
 
 Windows:
-
+- Setup guide: `docs/window_setup.md`
 Ubuntu:
 - Setup guide: `docs/ubuntu_setup.md`
 
