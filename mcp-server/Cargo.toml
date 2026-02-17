@@ -1,6 +1,6 @@
 [package]
 name = "shadowcrawl"
-version = "2.1.0"
+version = "2.0.0-rc"
 edition = "2021"
 description = "The Sovereign Stealth Intelligence Engine for AI Agents - A self-hosted, private alternative to Firecrawl with universal anti-bot bypass and semantic research memory"
 repository = "https://github.com/DevsHero/ShadowCrawl"
@@ -41,6 +41,7 @@ model2vec-rs = "0.1.4"
 lancedb = "0.26"
 arrow-array = "57"
 arrow-schema = "57"
+rmcp = { version = "0.15", features = ["server", "transport-io"] }
 moka = { version = "0.12", features = ["future"] }
 
 # HTML Processing
