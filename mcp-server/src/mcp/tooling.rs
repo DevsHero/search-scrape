@@ -17,7 +17,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         ToolCatalogEntry {
             name: "search_web",
             title: "Web Search",
-            description: "Find sources on the public web.",
+            description: "Search the internet for real-time information and links. Use this first to find URLs before scraping.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -36,8 +36,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         },
         ToolCatalogEntry {
             name: "search_structured",
-            title: "Search Structured",
-            description: "Search and scrape top results.",
+            title: "Search and Extract",
+            description: "Search the web and immediately return the top results as a clean, structured JSON format.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -52,8 +52,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         },
         ToolCatalogEntry {
             name: "scrape_url",
-            title: "Scrape URL",
-            description: "Fetch a URL and extract content.",
+            title: "Scrape Normal Website",
+            description: "Extract readable text and links from a single, standard website URL. Do NOT use this for protected sites (Cloudflare/LinkedIn).",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -71,8 +71,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         },
         ToolCatalogEntry {
             name: "scrape_batch",
-            title: "Scrape Batch",
-            description: "Scrape many URLs in parallel.",
+            title: "Batch Scrape",
+            description: "Scrape multiple standard URLs at the same time to speed up research.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -89,8 +89,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         },
         ToolCatalogEntry {
             name: "crawl_website",
-            title: "Crawl Website",
-            description: "Crawl a site recursively.",
+            title: "Crawl Site Map",
+            description: "Find all sub-pages and links within a specific website to understand its structure.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -127,22 +127,39 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
             }),
             icons: vec![SHADOWCRAWL_ICON],
         },
-        ToolCatalogEntry {
-            name: "research_history",
-            title: "Research History",
-            description: "Search prior searches/scrapes by meaning.",
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
-                    "threshold": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-                    "entry_type": {"type": "string", "enum": ["search", "scrape"]}
-                },
-                "required": ["query"]
+       ToolCatalogEntry {
+        name: "research_history",
+        title: "Search Past Research", // เปลี่ยนจาก Research History เป็นกริยา
+        description: "Access your memory of previous searches and scrapes. Use this to retrieve information you already found earlier in this session or past sessions. Search by meaning to avoid re-searching or re-scraping the same URLs.",
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+            "query": {
+                "type": "string", 
+                "description": "Semantic search query to find relevant past information (e.g., 'What did I find about Rust safety?')"
+            },
+            "limit": {
+                "type": "integer", 
+                "minimum": 1, 
+                "maximum": 50,
+                "description": "Number of historical entries to return."
+            },
+            "threshold": {
+                "type": "number", 
+                "minimum": 0.0, 
+                "maximum": 1.0,
+                "description": "Similarity score; higher means more exact matches."
+            },
+            "entry_type": {
+                "type": "string", 
+                "enum": ["search", "scrape"],
+                "description": "Optional: Filter by 'search' queries or 'scrape' content."
+            }
+            },
+            "required": ["query"]
             }),
             icons: vec![SHADOWCRAWL_ICON],
-        },
+            },
         ToolCatalogEntry {
             name: "proxy_manager",
             title: "Proxy Manager",
@@ -171,8 +188,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
 
     tools.push(ToolCatalogEntry {
         name: "non_robot_search",
-        title: "Stealth Scrape",
-        description: "USE THIS for Upwork, Zillow, LinkedIn or any site with Cloudflare/Bot protection. Uses a real browser to bypass blocks.",
+        title: "Stealth Browser Scrape",
+        description: "MANDATORY FOR: Upwork, LinkedIn, Airbnb, Zillow, or any site that blocks bots (Cloudflare/CAPTCHA). Opens a real browser to bypass protections. Use this if 'scrape_url' fails.",
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {

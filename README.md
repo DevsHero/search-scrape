@@ -20,11 +20,11 @@
 
 ---
 
-## 💎 The "Nuclear Option": Non-Robot Search (HITL)
+## 💎 The "Nuclear Option": Stealth Scrape (HITL)
 
 Most scrapers try to "act" like a human and fail. ShadowCrawl **uses a human** when it matters.
 
-`non_robot_search` is our flagship tool for high-fidelity rendering. It launches a **visible, native Brave Browser instance** on your machine.
+`stealth_scrape` is our flagship tool for high-fidelity rendering (public name). It launches a **visible, native Brave Browser instance** on your machine.
 
 * **Manual Intervention:** If a site asks for a Login or a Puzzle, you solve it once; the agent scrapes the rest.
 * **Brave Integration:** Uses your actual browser profiles (cookies/sessions) to look like a legitimate user, not a headless bot.
@@ -48,7 +48,7 @@ Most scraping APIs surrender when facing enterprise-grade shields. ShadowCrawl i
 
 ### 📂 Verified Evidence (Boss-Level Targets)
 
-We don't just claim to bypass—we provide the receipts. All evidence below was captured using `non_robot_search` (feature flag: `non_robot_search`) with the Safety Kill Switch enabled (2026-02-14).
+We don't just claim to bypass—we provide the receipts. All evidence below was captured using `stealth_scrape` (feature flag: `non_robot_search`) with the Safety Kill Switch enabled (2026-02-14).
 
 | Target Site | Protection | Evidence Size | Data Extracted | Status |
 |-------------|-----------|---------------|----------------|--------|
@@ -107,31 +107,48 @@ docker compose -f docker-compose-local.yml up -d --build
 
 ```
 
-### 2. The Native Rust Way (Required for non_robot_search / HITL)
+### 2. The Native Rust Way (All Tools + HITL)
 
-For the 99.99% bypass (HITL), you must run natively (tested on macOS; Windows supported via a verified install guide below).
+For the 99.99% bypass (HITL) and all MCP tools, you must run natively (tested on macOS; Windows supported via a verified install guide below).
 
-Build the MCP stdio server with the HITL feature enabled:
+**Quick build (all features, recommended):**
 
 ```bash
 cd mcp-server
-cargo build --release --bin shadowcrawl-mcp --features non_robot_search
+cargo build --release --all-features
 
 ```
 
-This produces the local MCP binary at:
+This builds both MCP server binaries with all tools included:
 
-- `mcp-server/target/release/shadowcrawl-mcp`
+- `mcp-server/target/release/shadowcrawl-mcp` — **stdio** MCP server (use this for VS Code/Cursor)
+- `mcp-server/target/release/shadowcrawl` — HTTP MCP server (port 5000, optional)
 
-Prereqs:
+**Or, if you only want the HTTP server without HITL:**
+
+```bash
+cd mcp-server
+cargo build --release --bin shadowcrawl
+
+```
+
+**Minimal MCP stdio (without stealth_scrape / HITL):**
+
+```bash
+cd mcp-server
+cargo build --release --bin shadowcrawl-mcp
+
+```
+
+Prereqs (for stealth_scrape / HITL):
 
 - Install Brave Browser (recommended) or Google Chrome
 - Grant Accessibility permissions (required for the emergency ESC hold-to-abort kill switch)
 
-Windows:
-- Setup guide: `docs/window_setup.md`
-Ubuntu:
-- Setup guide: `docs/ubuntu_setup.md`
+Setup guides:
+- **Windows:** `docs/WINDOWS_SETUP.md`
+- **Ubuntu/Linux:** `docs/UBUNTU_DESKTOP.md`
+- **macOS:** No special setup beyond Accessibility permissions
 
 ---
 
@@ -167,16 +184,16 @@ Add this to your MCP config to use the Dockerized server:
 
 ```
 
-### Option B: Local MCP server (required for non_robot_search)
+### Option B: Local MCP server (includes all tools + stealth_scrape)
 
-If you want to use HITL tools like `non_robot_search`, configure a **local** MCP server that launches the native binary.
+If you want to use all tools including HITL like `stealth_scrape`, configure a **local** MCP server that launches the native binary.
 
 VS Code MCP config example ("servers" format):
 
 ```jsonc
 {
   "servers": {
-    "shadowcrawl": {
+    "shadowcrawl-local": {
       "type": "stdio",
       "command": "env",
       "args": [
@@ -186,6 +203,7 @@ VS Code MCP config example ("servers" format):
         "SEARXNG_URL=http://localhost:8890",
         "BROWSERLESS_URL=http://localhost:3010",
         "BROWSERLESS_TOKEN=mcp_stealth_session",
+        
         // Optional semantic memory (embedded LanceDB on local filesystem):
         "LANCEDB_URI=/YOUR_PATH/shadowcrawl/lancedb",
 
@@ -205,7 +223,7 @@ VS Code MCP config example ("servers" format):
         "IP_LIST_PATH=/YOUR_PATH/shadowcrawl/ip.txt",
         "PROXY_SOURCE_PATH=/YOUR_PATH/shadowcrawl/proxy_source.json",
 
-        // HITL / non_robot_search quality-of-life:
+        // HITL / stealth_scrape quality-of-life:
         // "SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW=1",
         // "SHADOWCRAWL_RENDER_PROFILE_DIR=/YOUR_PROFILE_DIR",
         // "CHROME_EXECUTABLE=/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
@@ -217,11 +235,23 @@ VS Code MCP config example ("servers" format):
 }
 ```
 
+**Public tool names available (after build with `--all-features`):**
+
+- `web_search` — Federated search via SearXNG
+- `stealth_scrape` — HITL browser + Cloudflare bypass (requires `non_robot_search` feature)
+- `scrape_url` — Single URL scraping with noise reduction
+- `scrape_batch` — Concurrent multi-URL scraping
+- `crawl_website` — Recursive website crawler
+- `extract_structured` — Schema-based data extraction
+- `search_structured` — Structured web search
+- `research_history` — Semantic memory / research recall (requires LanceDB)
+- `proxy_manager` — Proxy pool management
+
 Notes:
 
-- MCP tool name: **`non_robot_search`** (internal handler + feature flag name: `non_robot_search`).
-- For HITL, prefer Brave + a real profile dir (`SHADOWCRAWL_RENDER_PROFILE_DIR`) so cookies/sessions persist.
-- If you're running via Docker MCP server, HITL tools will either be unavailable or fail (no host GUI).
+- For Cursor/Claude Desktop/VS Code: build with `--all-features` to include `stealth_scrape`
+- For HITL, prefer Brave + a real profile dir (`SHADOWCRAWL_RENDER_PROFILE_DIR`) so cookies/sessions persist
+- If you're running via Docker MCP server, HITL tools (`stealth_scrape`) will be unavailable (no host GUI access)
 
 ---
 
