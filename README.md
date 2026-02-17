@@ -42,7 +42,7 @@ Most scraping APIs surrender when facing enterprise-grade shields. ShadowCrawl i
 * **PerimeterX / HUMAN** 👤
 * **Kasada & Shape Security** 🔐
 
-**The Secret?** The **Cyborg Approach (HITL)**. ShadowCrawl doesn't just "imitate" a human—it bridges your real, native Brave/Chrome session into the agent's workflow. If a human can see it, ShadowCrawl can scrape it.
+**The Secret?** The **Cyborg Approach (HITL)**. ShadowCrawl doesn't just "imitate" a human—it bridges your real, native Brave Browser session into the agent's workflow. If a human can see it, ShadowCrawl can scrape it.
 
 ---
 
@@ -96,7 +96,7 @@ We don't just claim to bypass—we provide the receipts. All evidence below was 
 
 Docker is the fastest way to bring up the full stack (SearXNG, proxy manager, etc.).
 
-**Important:** Docker mode cannot use the HITL/GUI renderer (`non_robot_search`) because containers cannot reliably access your host's native Brave/Chrome window, keyboard hooks, and OS permissions.
+**Important:** Docker mode cannot use the HITL/GUI renderer (`non_robot_search`) because containers cannot reliably access your host's native Brave Browser, keyboard hooks, and OS permissions.
 Use the **Native Rust Way** below when you want boss-level bypass.
 
 ```bash
@@ -120,7 +120,7 @@ This produces the local MCP binary at:
 
 Prereqs:
 
-- Install Brave Browser (recommended) or Google Chrome
+- Install Brave Browser 
 - Grant Accessibility permissions (required for the emergency ESC hold-to-abort kill switch)
 
 Windows:
@@ -135,7 +135,7 @@ Ubuntu:
 ShadowCrawl can run as an MCP server in 2 modes:
 
 - **Docker MCP server**: great for normal scraping/search tools, but **cannot** do HITL/GUI (`non_robot_search`).
-- **Local MCP server (`shadowcrawl`)**: required for HITL tools (a visible Brave/Chrome window).
+- **Local MCP server (`shadowcrawl`)**: required for HITL tools (a visible Brave Browser).
 
 ### Option A: Docker MCP server (no non_robot_search)
 
