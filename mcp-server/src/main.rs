@@ -36,12 +36,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Get configuration from environment
-    let searxng_url =
-        env::var("SEARXNG_URL").unwrap_or_else(|_| "http://localhost:8888".to_string());
-
     info!("Starting MCP Server");
-    info!("SearXNG URL: {}", searxng_url);
 
     // Pre-flight checklist (non-interactive) at startup
     let report = shadowcrawl::setup::check_all(shadowcrawl::setup::SetupOptions::default()).await;
@@ -66,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
         .build()?;
 
     // Create application state
-    let mut state = AppState::new(searxng_url, http_client);
+    let mut state = AppState::new(http_client);
 
     // Initialize semantic memory if LANCEDB_URI is set
     if let Ok(lancedb_uri) = env::var("LANCEDB_URI") {

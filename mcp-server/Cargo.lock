@@ -6928,12 +6928,13 @@ dependencies = [
 
 [[package]]
 name = "shadowcrawl"
-version = "2.0.0-rc"
+version = "2.1.0"
 dependencies = [
  "accessibility-sys",
  "anyhow",
  "arrow-array",
  "arrow-schema",
+ "async-trait",
  "atty",
  "axum",
  "backoff",

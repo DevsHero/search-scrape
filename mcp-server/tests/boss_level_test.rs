@@ -14,14 +14,12 @@ fn init_logger() {
 
 // Create AppState for testing
 fn create_test_state() -> Arc<AppState> {
-    let searxng_url =
-        std::env::var("SEARXNG_URL").unwrap_or_else(|_| "http://localhost:8888".to_string());
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .unwrap();
 
-    Arc::new(AppState::new(searxng_url, client))
+    Arc::new(AppState::new(client))
 }
 
 #[tokio::test]

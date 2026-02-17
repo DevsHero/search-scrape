@@ -69,7 +69,7 @@ We don't just claim to bypass—we provide the receipts. All evidence below was 
 
 | Feature | Description |
 | --- | --- |
-| **Search & Discovery** | Federated search via SearXNG. Finds what Google hides. |
+| **Search & Discovery** | Built-in Rust metasearch (Google/Bing/DuckDuckGo HTML) with optional HITL fallback. |
 | **Deep Crawling** | Recursive, bounded crawling to map entire subdomains. |
 | **Semantic Memory** | (Optional) Embedded LanceDB + Model2Vec for long-term research recall (no separate DB container). (Rust: https://github.com/MinishLab/model2vec-rs) |
 | **Proxy Master** | Native rotation logic for HTTP/SOCKS5 pools. |
@@ -94,7 +94,7 @@ We don't just claim to bypass—we provide the receipts. All evidence below was 
 
 ### 1. The Docker Way (Full Stack)
 
-Docker is the fastest way to bring up the full stack (SearXNG, proxy manager, etc.).
+Docker is the fastest way to bring up the stack services (Browserless, volumes, etc.).
 
 **Important:** Docker mode cannot use the HITL/GUI renderer (`non_robot_search`) because containers cannot reliably access your host's native Brave Browser, keyboard hooks, and OS permissions.
 Use the **Native Rust Way** below when you want boss-level bypass.
@@ -181,7 +181,6 @@ VS Code MCP config example ("servers" format):
         "RUST_LOG=info",
 
         // Optional (only if you run the full stack locally):
-        "SEARXNG_URL=http://localhost:8890",
         "BROWSERLESS_URL=http://localhost:3010",
         "BROWSERLESS_TOKEN=mcp_stealth_session",
         // Optional semantic memory (embedded LanceDB on local filesystem):

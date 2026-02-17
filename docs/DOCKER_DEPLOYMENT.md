@@ -12,21 +12,19 @@ docker build -t shadowcrawl-mcp:latest .
 ```bash
 # Run HTTP server (host 5001 -> container 5000)
 docker run --rm \
-  -e SEARXNG_URL=http://localhost:8888 \
   -e RUST_LOG=info \
   -p 5001:5000 \
   shadowcrawl-mcp:latest
 
 # Or run MCP stdio server
 docker run --rm -it \
-  -e SEARXNG_URL=http://localhost:8888 \
   shadowcrawl-mcp:latest \
   shadowcrawl-mcp
 ```
 
 ### Run with docker-compose
 ```bash
-# Start all services (SearXNG + MCP Server)
+# Start all services (Browserless + MCP Server)
 docker compose -f docker-compose-local.yml up -d --build
 
 # Check logs
@@ -105,8 +103,7 @@ Each build creates multiple tags:
 ### Environment Variables
 Configure the container with:
 ```bash
-docker run -e SEARXNG_URL=http://searxng:8080 \
-           -e LANCEDB_URI=/home/appuser/lancedb \
+docker run -e LANCEDB_URI=/home/appuser/lancedb \
            -e RUST_LOG=info \
            -e MAX_CONTENT_CHARS=10000 \
            ghcr.io/YOUR_USERNAME/shadowcrawl:latest

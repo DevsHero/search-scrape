@@ -4,10 +4,8 @@ use std::sync::Arc;
 #[tokio::test]
 #[ignore]
 async fn research_history_vector_search_returns_seeded_entry() {
-    let tmp_dir = std::env::temp_dir().join(format!(
-        "shadowcrawl_lancedb_test_{}",
-        uuid::Uuid::new_v4()
-    ));
+    let tmp_dir =
+        std::env::temp_dir().join(format!("shadowcrawl_lancedb_test_{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&tmp_dir).expect("create temp lancedb dir");
 
     // Initialize LanceDB + Model2Vec (may download model on first run).
@@ -46,8 +44,7 @@ async fn research_history_vector_search_returns_seeded_entry() {
         .build()
         .expect("build http client");
 
-    let state = AppState::new("http://localhost:8888".to_string(), http_client)
-        .with_memory(Arc::new(memory));
+    let state = AppState::new(http_client).with_memory(Arc::new(memory));
 
     // Exercise the MCP handler (same logic used by both HTTP and stdio MCP).
     let args = serde_json::json!({

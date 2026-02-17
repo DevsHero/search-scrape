@@ -21,7 +21,7 @@ This guide provides a comprehensive, step-by-step procedure to set up **ShadowCr
     ```
 
 3.  **Install Docker Desktop:**
-  Required for the support services (SearXNG, Browserless).
+  Required for the support services (Browserless).
     - [Download Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)
 
 4.  **Install a Browser (Brave Recommended):**
@@ -65,7 +65,6 @@ docker compose -f docker-compose-local.yml up -d
 ```
 
 **Verify services are running:**
-- **SearXNG**: http://localhost:8890
 - **Browserless**: http://localhost:3010
 
 ---
@@ -89,7 +88,6 @@ This configuration connects VS Code to your local ShadowCrawl binary.
       "args": [],
       "env": {
         "RUST_LOG": "info",
-        "SEARXNG_URL": "http://localhost:8890",
         "BROWSERLESS_URL": "http://localhost:3010",
         "BROWSERLESS_TOKEN": "mcp_stealth_session",
         "LANCEDB_URI": "c:\\Users\\YOUR_USER\\Downloads\\ShadowCrawl\\lancedb",
@@ -117,7 +115,7 @@ This configuration connects VS Code to your local ShadowCrawl binary.
 2.  Open the MCP servers view (icon in sidebar) to confirm `shadowcrawl` is connected (green dot).
 3.  Open a Chat in VS Code (e.g., using GitHub Copilot or an MCP-enabled chat agent).
 4.  Ask: *"Search the web for 'Rust programming 2026' using ShadowCrawl"*
-    - **Result:** Should return search results from SearXNG.
+  - **Result:** Should return search results from the built-in Rust metasearch.
 5.  Ask: *"Go to https://example.com using non_robot_search and extract the content"*
     - **Result:** 
       - A browser window (Brave/Chrome) should visibly open on your desktop.

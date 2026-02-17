@@ -6,14 +6,17 @@ use std::sync::Arc;
 use tokio::sync::OnceCell;
 use uuid::Uuid;
 
+use arrow_array::Array;
+use arrow_array::RecordBatchIterator;
 use arrow_array::{
     types::Float32Type, FixedSizeListArray, Float32Array, Int64Array, RecordBatch, StringArray,
 };
-use arrow_array::Array;
-use arrow_array::RecordBatchIterator;
 use arrow_schema::{DataType, Field, Schema};
 use futures::TryStreamExt;
-use lancedb::{query::{ExecutableQuery, QueryBase}, Table};
+use lancedb::{
+    query::{ExecutableQuery, QueryBase},
+    Table,
+};
 
 /// Entry type for history records
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,14 +62,20 @@ impl MemoryManager {
 
         // Load Model2Vec eagerly once to determine embedding dimension and validate config.
         let model_id_for_load = model_id.clone();
-        let (model, embedding_dim) = tokio::task::spawn_blocking(move || -> Result<(StaticModel, usize)> {
-            let model = StaticModel::from_pretrained(&model_id_for_load, None, None, None)
-                .with_context(|| format!("Failed to load Model2Vec model from '{}'", model_id_for_load))?;
-            let probe = model.encode_single("dimension probe");
-            Ok((model, probe.len()))
-        })
-        .await
-        .context("Model2Vec init task failed")??;
+        let (model, embedding_dim) =
+            tokio::task::spawn_blocking(move || -> Result<(StaticModel, usize)> {
+                let model = StaticModel::from_pretrained(&model_id_for_load, None, None, None)
+                    .with_context(|| {
+                        format!(
+                            "Failed to load Model2Vec model from '{}'",
+                            model_id_for_load
+                        )
+                    })?;
+                let probe = model.encode_single("dimension probe");
+                Ok((model, probe.len()))
+            })
+            .await
+            .context("Model2Vec init task failed")??;
 
         // Connect to LanceDB (in-process)
         let db = lancedb::connect(lancedb_uri)
@@ -149,7 +158,9 @@ impl MemoryManager {
                 tokio::task::spawn_blocking(move || {
                     StaticModel::from_pretrained(&model_id, None, None, None)
                         .map(Arc::new)
-                        .with_context(|| format!("Failed to load Model2Vec model from '{}'", model_id))
+                        .with_context(|| {
+                            format!("Failed to load Model2Vec model from '{}'", model_id)
+                        })
                 })
                 .await?
             })
@@ -227,7 +238,11 @@ impl MemoryManager {
         Ok(())
     }
 
-    fn entry_to_record_batch(&self, entry: &HistoryEntry, embedding: &[f32]) -> Result<RecordBatch> {
+    fn entry_to_record_batch(
+        &self,
+        entry: &HistoryEntry,
+        embedding: &[f32],
+    ) -> Result<RecordBatch> {
         let schema = Arc::new(Self::history_schema(self.embedding_dim)?);
 
         let entry_type_str = match entry.entry_type {
@@ -241,9 +256,7 @@ impl MemoryManager {
             .context("Embedding dimension too large")?;
 
         let vector = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
-            std::iter::once(Some(
-                embedding.iter().map(|v| Some(*v)).collect::<Vec<_>>(),
-            )),
+            std::iter::once(Some(embedding.iter().map(|v| Some(*v)).collect::<Vec<_>>())),
             vector_len,
         );
 
@@ -340,7 +353,10 @@ impl MemoryManager {
             }
 
             let stream = scan.execute().await.context("Failed to scan LanceDB")?;
-            let batches: Vec<RecordBatch> = stream.try_collect().await.context("Failed to read scan results")?;
+            let batches: Vec<RecordBatch> = stream
+                .try_collect()
+                .await
+                .context("Failed to read scan results")?;
             let mut out = Vec::new();
             for batch in batches {
                 out.extend(Self::batches_to_entries(&batch, None)?);
@@ -556,9 +572,7 @@ impl MemoryManager {
 
         let mut out = Vec::with_capacity(batch.num_rows());
         for row in 0..batch.num_rows() {
-            let entry_type_raw = entry_type_col
-                .value(row)
-                .to_string();
+            let entry_type_raw = entry_type_col.value(row).to_string();
             let entry_type = match entry_type_raw.as_str() {
                 "search" => EntryType::Search,
                 "scrape" => EntryType::Scrape,
@@ -569,8 +583,8 @@ impl MemoryManager {
             };
 
             let timestamp_ms = ts_col.value(row);
-            let timestamp = DateTime::<Utc>::from_timestamp_millis(timestamp_ms)
-                .unwrap_or_else(|| Utc::now());
+            let timestamp =
+                DateTime::<Utc>::from_timestamp_millis(timestamp_ms).unwrap_or_else(|| Utc::now());
 
             let full_result_str = full_result_col.value(row);
             let full_result = serde_json::from_str(full_result_str)

@@ -55,8 +55,7 @@ export LANCEDB_URI=./lancedb
 # Optional: HF model id or local path to a Model2Vec model directory
 # export MODEL2VEC_MODEL=minishlab/potion-base-8M
 
-SEARXNG_URL=http://localhost:8890 \
-  ./mcp-server/target/release/shadowcrawl-mcp
+./mcp-server/target/release/shadowcrawl-mcp
 ```
 
 ### 3) Verify

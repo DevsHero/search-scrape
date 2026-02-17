@@ -88,7 +88,6 @@ EXPOSE 5000
 
 # Set environment variables
 ENV RUST_LOG=info
-ENV SEARXNG_URL=http://searxng:8080
 ENV HF_HOME=/home/appuser/.cache/huggingface
 ENV LANCEDB_URI=/home/appuser/lancedb
 

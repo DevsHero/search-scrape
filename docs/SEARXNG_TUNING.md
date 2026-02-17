@@ -1,8 +1,9 @@
-# SearXNG Tuning (noise, bans, and bot friction)
+# Legacy: SearXNG Tuning (deprecated)
 
-This repo runs SearXNG as the search backend.
+ShadowCrawl now uses a built-in Rust metasearch engine by default (no SearXNG/Redis stack required).
+This document is kept for historical reference only.
 
-Main config: [searxng/settings.yml](../searxng/settings.yml)
+Main legacy config: [searxng/settings.yml](../searxng/settings.yml)
 
 ## Goals
 

@@ -34,7 +34,7 @@ SHADOWCRAWL_CARGO_FEATURES=non_robot_search \
 
 Important: `non_robot_search` launches a **local GUI browser** (Brave/Chrome) and is macOS-tested.
 Even if you compile it into the container image, typical Docker deployments won’t be able to open the host browser.
-For HITL usage, run the MCP server **natively on macOS** and connect it to the Docker stack for SearXNG/Browserless.
+For HITL usage, run the MCP server **natively on macOS** and connect it to the Docker stack for Browserless.
 
 Guide:
 - [docs/NON_ROBOT_SEARCH.md](docs/NON_ROBOT_SEARCH.md)
