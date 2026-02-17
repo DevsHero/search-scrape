@@ -112,9 +112,12 @@ docker compose -f docker-compose-local.yml up -d --build
 cd mcp-server
 cargo build --release --all-features
 ```
+( Note:
+After  build binary or docker image is complete:
+To apply changes to your MCP tools (such as new tool names or updated descriptions), you MUST restart the MCP client session.)
 
 
-This produces the local MCP binary at:
+For This produces the local MCP binary at:
 
 - `mcp-server/target/release/shadowcrawl-mcp`
 

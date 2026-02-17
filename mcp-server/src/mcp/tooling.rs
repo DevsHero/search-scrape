@@ -184,33 +184,31 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
             }),
             icons: vec![SHADOWCRAWL_ICON],
         },
-    ];
-
-    tools.push(ToolCatalogEntry {
-    name: "non_robot_search",
-    title: "Human-In-The-Loop Stealth Scraper", // เปลี่ยนชื่อให้ชัดว่ามีมนุษย์เกี่ยวข้อง
-    description: "ULTIMATE BYPASS: Use this ONLY for sites with heavy anti-bot (Cloudflare, LinkedIn, Upwork, CAPTCHA). \
+        ToolCatalogEntry {
+            name: "non_robot_search",
+            title: "Human-In-The-Loop Stealth Scraper", 
+            description: "ULTIMATE BYPASS: Use this ONLY for sites with heavy anti-bot (Cloudflare, LinkedIn, Upwork, CAPTCHA). \
                   It opens a REAL browser on the host machine. If a challenge/login appears, the Agent MUST ask the human \
                   user to solve it on their screen. Use this when 'scrape_url' is blocked or returns bot-detection errors.",
-    input_schema: serde_json::json!({
-        "type": "object",
-        "properties": {
-            "url": {"type": "string", "description": "The URL that is blocking standard bot access."},
-            "output_format": {"type": "string", "enum": ["text", "json"], "default": "json"},
-            "max_chars": {"type": "integer", "minimum": 1, "default": 10000},
-            "use_proxy": {"type": "boolean", "default": false},
-            "quality_mode": {"type": "string", "enum": ["balanced", "aggressive", "high"], "default": "balanced"},
-            "captcha_grace_seconds": {"type": "integer", "minimum": 1, "default": 5, "description": "Seconds to wait for a human to solve a CAPTCHA before checking content again."},
-            "human_timeout_seconds": {"type": "integer", "minimum": 1, "default": 60, "description": "Max time (seconds) to keep the browser open for human interaction/login."},
-            "user_profile_path": {"type": "string", "description": "Path to a real browser profile (Chrome/Brave) to bypass login walls using existing cookies."},
-            "auto_scroll": {"type": "boolean", "default": false, "description": "Scroll down to trigger lazy-loaded items (critical for infinite-scroll sites)."},
-            "wait_for_selector": {"type": "string", "description": "Wait for this CSS element to ensure the page has fully bypassed the bot wall."}
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                "url": {"type": "string", "description": "The URL that is blocking standard bot access."},
+                "output_format": {"type": "string", "enum": ["text", "json"], "default": "json"},
+                "max_chars": {"type": "integer", "minimum": 1, "default": 10000},
+                "use_proxy": {"type": "boolean", "default": false},
+                "quality_mode": {"type": "string", "enum": ["balanced", "aggressive", "high"], "default": "balanced"},
+                "captcha_grace_seconds": {"type": "integer", "minimum": 1, "default": 5, "description": "Seconds to wait for a human to solve a CAPTCHA before checking content again."},
+                "human_timeout_seconds": {"type": "integer", "minimum": 1, "default": 60, "description": "Max time (seconds) to keep the browser open for human interaction/login."},
+                "user_profile_path": {"type": "string", "description": "Path to a real browser profile (Chrome/Brave) to bypass login walls using existing cookies."},
+                "auto_scroll": {"type": "boolean", "default": false, "description": "Scroll down to trigger lazy-loaded items (critical for infinite-scroll sites)."},
+                "wait_for_selector": {"type": "string", "description": "Wait for this CSS element to ensure the page has fully bypassed the bot wall."}
         },
         "required": ["url"]
-    }),
-    icons: vec![SHADOWCRAWL_ICON],
-});
-
+        }),
+        icons: vec![SHADOWCRAWL_ICON],
+    }
+    ];
     tools
 }
 
