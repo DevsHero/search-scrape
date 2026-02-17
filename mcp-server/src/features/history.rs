@@ -1,11 +1,19 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
-use qdrant_client::{Payload, Qdrant};
+use model2vec_rs::model::StaticModel;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 use uuid::Uuid;
+
+use arrow_array::{
+    types::Float32Type, FixedSizeListArray, Float32Array, Int64Array, RecordBatch, StringArray,
+};
+use arrow_array::Array;
+use arrow_array::RecordBatchIterator;
+use arrow_schema::{DataType, Field, Schema};
+use futures::TryStreamExt;
+use lancedb::{query::{ExecutableQuery, QueryBase}, Table};
 
 /// Entry type for history records
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,7 +23,7 @@ pub enum EntryType {
     Scrape,
 }
 
-/// History entry stored in Qdrant
+/// History entry stored in semantic memory
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
     pub id: String,
@@ -31,83 +39,117 @@ pub struct HistoryEntry {
 
 /// Memory manager for research history
 pub struct MemoryManager {
-    qdrant: Arc<Qdrant>,
-    embedding_model: Arc<OnceCell<Arc<TextEmbedding>>>,
-    collection_name: String,
+    table: Table,
+    model_id: String,
+    embedding_model: Arc<OnceCell<Arc<StaticModel>>>,
+    embedding_dim: usize,
 }
 
 impl MemoryManager {
     /// Create a new memory manager
-    pub async fn new(qdrant_url: &str) -> Result<Self> {
-        let qdrant = Qdrant::from_url(qdrant_url)
-            .build()
-            .context("Failed to connect to Qdrant")?;
+    pub async fn new(lancedb_uri: &str) -> Result<Self> {
+        let model_id = std::env::var("MODEL2VEC_MODEL")
+            .unwrap_or_else(|_| "minishlab/potion-base-8M".to_string());
 
-        let manager = Self {
-            qdrant: Arc::new(qdrant),
-            embedding_model: Arc::new(OnceCell::new()),
-            collection_name: "research_history".to_string(),
+        tracing::info!(
+            "Initializing semantic memory with LanceDB at: {} (model2vec model: {})",
+            lancedb_uri,
+            model_id
+        );
+
+        // Load Model2Vec eagerly once to determine embedding dimension and validate config.
+        let model_id_for_load = model_id.clone();
+        let (model, embedding_dim) = tokio::task::spawn_blocking(move || -> Result<(StaticModel, usize)> {
+            let model = StaticModel::from_pretrained(&model_id_for_load, None, None, None)
+                .with_context(|| format!("Failed to load Model2Vec model from '{}'", model_id_for_load))?;
+            let probe = model.encode_single("dimension probe");
+            Ok((model, probe.len()))
+        })
+        .await
+        .context("Model2Vec init task failed")??;
+
+        // Connect to LanceDB (in-process)
+        let db = lancedb::connect(lancedb_uri)
+            .execute()
+            .await
+            .context("Failed to connect to LanceDB")?;
+
+        let table_name = "research_history";
+        let schema = Arc::new(Self::history_schema(embedding_dim)?);
+
+        let table = match db.open_table(table_name).execute().await {
+            Ok(table) => table,
+            Err(lancedb::Error::TableNotFound { .. }) => {
+                tracing::info!(
+                    "Creating LanceDB table '{}' (embedding_dim: {})",
+                    table_name,
+                    embedding_dim
+                );
+                db.create_empty_table(table_name, schema.clone())
+                    .execute()
+                    .await
+                    .context("Failed to create LanceDB table")?
+            }
+            Err(e) => return Err(e).context("Failed to open LanceDB table"),
         };
 
-        manager.init_collection().await?;
-        Ok(manager)
-    }
-
-    /// Initialize the Qdrant collection with hybrid search support
-    async fn init_collection(&self) -> Result<()> {
-        // Check if collection exists
-        let collections = self
-            .qdrant
-            .list_collections()
+        // Create a vector index if possible (safe to ignore failures; flat search still works)
+        if let Err(e) = table
+            .create_index(&["vector"], lancedb::index::Index::Auto)
+            .execute()
             .await
-            .context("Failed to list collections")?;
-
-        let exists = collections
-            .collections
-            .iter()
-            .any(|c| c.name == self.collection_name);
-
-        if !exists {
-            tracing::info!(
-                "Creating Qdrant collection: {} with hybrid search support (full-text + vector)",
-                self.collection_name
-            );
-
-            // Create collection with 384-dimensional vectors (fastembed default)
-            let create_collection =
-                qdrant_client::qdrant::CreateCollectionBuilder::new(&self.collection_name)
-                    .vectors_config(qdrant_client::qdrant::VectorParamsBuilder::new(
-                        384,
-                        qdrant_client::qdrant::Distance::Cosine,
-                    ))
-                    .build();
-
-            self.qdrant
-                .create_collection(create_collection)
-                .await
-                .context("Failed to create collection")?;
-
-            tracing::info!(
-                "Hybrid search collection created (Qdrant will auto-index text fields for BM25)"
-            );
+        {
+            tracing::debug!("LanceDB create_index skipped/failed: {}", e);
         }
 
-        Ok(())
+        let embedding_model = Arc::new(OnceCell::new());
+        let _ = embedding_model.set(Arc::new(model));
+
+        Ok(Self {
+            table,
+            model_id,
+            embedding_model,
+            embedding_dim,
+        })
+    }
+
+    fn history_schema(embedding_dim: usize) -> Result<Schema> {
+        let vector_len: i32 = embedding_dim
+            .try_into()
+            .context("Embedding dimension too large")?;
+
+        Ok(Schema::new(vec![
+            Field::new("id", DataType::Utf8, false),
+            Field::new("entry_type", DataType::Utf8, false),
+            Field::new("query", DataType::Utf8, false),
+            Field::new("topic", DataType::Utf8, false),
+            Field::new("summary", DataType::Utf8, false),
+            Field::new("full_result", DataType::Utf8, false),
+            Field::new("timestamp_ms", DataType::Int64, false),
+            Field::new("domain", DataType::Utf8, true),
+            Field::new("source_type", DataType::Utf8, true),
+            Field::new(
+                "vector",
+                DataType::FixedSizeList(
+                    Arc::new(Field::new("item", DataType::Float32, true)),
+                    vector_len,
+                ),
+                true,
+            ),
+        ]))
     }
 
     /// Get or initialize the embedding model
-    async fn get_embedding_model(&self) -> Result<Arc<TextEmbedding>> {
+    async fn get_embedding_model(&self) -> Result<Arc<StaticModel>> {
+        let model_id = self.model_id.clone();
         let model = self
             .embedding_model
-            .get_or_try_init(|| async {
-                tracing::info!("Initializing fastembed model...");
-                tokio::task::spawn_blocking(|| {
-                    TextEmbedding::try_new(
-                        InitOptions::new(EmbeddingModel::AllMiniLML6V2)
-                            .with_show_download_progress(true),
-                    )
-                    .map(Arc::new)
-                    .context("Failed to initialize embedding model")
+            .get_or_try_init(|| async move {
+                tracing::info!("Loading Model2Vec model: {}", model_id);
+                tokio::task::spawn_blocking(move || {
+                    StaticModel::from_pretrained(&model_id, None, None, None)
+                        .map(Arc::new)
+                        .with_context(|| format!("Failed to load Model2Vec model from '{}'", model_id))
                 })
                 .await?
             })
@@ -121,14 +163,21 @@ impl MemoryManager {
         let text_owned = text.to_string();
 
         // Use spawn_blocking for CPU-intensive embedding
-        let embeddings = tokio::task::spawn_blocking(move || model.embed(vec![&text_owned], None))
-            .await?
-            .context("Failed to generate embedding")?;
+        let embedding = tokio::task::spawn_blocking(move || {
+            Ok::<_, anyhow::Error>(model.encode_single(&text_owned))
+        })
+        .await?
+        .context("Failed to generate embedding")?;
 
-        Ok(embeddings
-            .first()
-            .context("No embedding generated")?
-            .clone())
+        if embedding.len() != self.embedding_dim {
+            anyhow::bail!(
+                "Embedding dimension mismatch: expected {}, got {}",
+                self.embedding_dim,
+                embedding.len()
+            );
+        }
+
+        Ok(embedding)
     }
 
     /// Auto-generate topic from query using simple keyword extraction
@@ -159,23 +208,16 @@ impl MemoryManager {
         // Generate embedding from summary
         let embedding = self.embed_text(&entry_to_store.summary).await?;
 
-        // Serialize entry to JSON payload
-        let payload: Payload = serde_json::to_value(&entry_to_store)
-            .context("Failed to serialize entry")?
-            .try_into()
-            .context("Failed to convert to Payload")?;
+        let batch = self.entry_to_record_batch(&entry_to_store, &embedding)?;
 
-        // Create point for Qdrant
-        let point =
-            qdrant_client::qdrant::PointStruct::new(entry_to_store.id.clone(), embedding, payload);
+        let schema = batch.schema();
+        let batches = RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema);
 
-        // Upsert point using builder pattern
-        use qdrant_client::qdrant::UpsertPointsBuilder;
-        let request = UpsertPointsBuilder::new(&self.collection_name, vec![point]);
-        self.qdrant
-            .upsert_points(request)
+        self.table
+            .add(batches)
+            .execute()
             .await
-            .context("Failed to store entry in Qdrant")?;
+            .context("Failed to store entry in LanceDB")?;
 
         tracing::info!(
             "Stored history entry: {} ({})",
@@ -183,6 +225,46 @@ impl MemoryManager {
             entry_to_store.topic
         );
         Ok(())
+    }
+
+    fn entry_to_record_batch(&self, entry: &HistoryEntry, embedding: &[f32]) -> Result<RecordBatch> {
+        let schema = Arc::new(Self::history_schema(self.embedding_dim)?);
+
+        let entry_type_str = match entry.entry_type {
+            EntryType::Search => "search",
+            EntryType::Scrape => "scrape",
+        };
+
+        let vector_len: i32 = self
+            .embedding_dim
+            .try_into()
+            .context("Embedding dimension too large")?;
+
+        let vector = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+            std::iter::once(Some(
+                embedding.iter().map(|v| Some(*v)).collect::<Vec<_>>(),
+            )),
+            vector_len,
+        );
+
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(StringArray::from(vec![entry.id.clone()])),
+                Arc::new(StringArray::from(vec![entry_type_str.to_string()])),
+                Arc::new(StringArray::from(vec![entry.query.clone()])),
+                Arc::new(StringArray::from(vec![entry.topic.clone()])),
+                Arc::new(StringArray::from(vec![entry.summary.clone()])),
+                Arc::new(StringArray::from(vec![entry.full_result.to_string()])),
+                Arc::new(Int64Array::from(vec![entry.timestamp.timestamp_millis()])),
+                Arc::new(StringArray::from(vec![entry.domain.clone()])),
+                Arc::new(StringArray::from(vec![entry.source_type.clone()])),
+                Arc::new(vector),
+            ],
+        )
+        .context("Failed to build Arrow RecordBatch")?;
+
+        Ok(batch)
     }
 
     /// PROFESSIONAL UPGRADE: Chunk large content to prevent context window overload
@@ -246,56 +328,66 @@ impl MemoryManager {
         min_similarity: f32,
         entry_type_filter: Option<EntryType>,
     ) -> Result<Vec<(HistoryEntry, f32)>> {
-        // Generate query embedding for vector search
+        // Special case: empty query means "scan" (used by analytics helpers like get_top_domains)
+        if query.trim().is_empty() {
+            let mut scan = self.table.query().limit(max_results);
+            if let Some(entry_type) = entry_type_filter {
+                let filter_value = match entry_type {
+                    EntryType::Search => "search",
+                    EntryType::Scrape => "scrape",
+                };
+                scan = scan.only_if(format!("entry_type = '{}'", filter_value));
+            }
+
+            let stream = scan.execute().await.context("Failed to scan LanceDB")?;
+            let batches: Vec<RecordBatch> = stream.try_collect().await.context("Failed to read scan results")?;
+            let mut out = Vec::new();
+            for batch in batches {
+                out.extend(Self::batches_to_entries(&batch, None)?);
+            }
+            return Ok(out.into_iter().map(|(e, _)| (e, 0.0)).collect());
+        }
+
         let query_embedding = self.embed_text(query).await?;
 
-        // Use enhanced vector search with payload consideration
-        // Qdrant will auto-boost results where query keywords appear in text fields
-        let mut search_request = qdrant_client::qdrant::SearchPoints {
-            collection_name: self.collection_name.clone(),
-            vector: query_embedding,
-            limit: max_results as u64,
-            with_payload: Some(true.into()),
-            score_threshold: Some(min_similarity),
-            ..Default::default()
-        };
+        let mut vector_query = self
+            .table
+            .query()
+            .nearest_to(query_embedding.as_slice())
+            .context("Failed to build vector query")?
+            .distance_type(lancedb::DistanceType::Cosine)
+            .limit(max_results);
 
-        // Add entry type filter if specified
         if let Some(entry_type) = entry_type_filter {
             let filter_value = match entry_type {
                 EntryType::Search => "search",
                 EntryType::Scrape => "scrape",
             };
-            search_request.filter = Some(qdrant_client::qdrant::Filter {
-                must: vec![qdrant_client::qdrant::Condition::matches(
-                    "entry_type",
-                    filter_value.to_string(),
-                )],
-                ..Default::default()
-            });
+            vector_query = vector_query.only_if(format!("entry_type = '{}'", filter_value));
         }
 
-        // Execute search
-        let results = self
-            .qdrant
-            .search_points(search_request)
+        let stream = vector_query
+            .execute()
             .await
-            .context("Failed to search Qdrant")?;
+            .context("Failed to search LanceDB")?;
+        let batches: Vec<RecordBatch> = stream
+            .try_collect()
+            .await
+            .context("Failed to read search results")?;
 
-        // Parse results and apply keyword boosting for better agent results
         let query_lower = query.to_lowercase();
         let query_keywords: Vec<&str> = query_lower.split_whitespace().collect();
 
-        let mut entries: Vec<(HistoryEntry, f32)> = results
-            .result
-            .into_iter()
-            .filter_map(|point| {
-                let mut score = point.score;
-                let payload = point.payload;
-                let value = serde_json::to_value(&payload).ok()?;
-                let entry: HistoryEntry = serde_json::from_value(value).ok()?;
+        let mut entries: Vec<(HistoryEntry, f32)> = Vec::new();
+        for batch in batches {
+            for (entry, mut score) in Self::batches_to_entries(&batch, Some("_distance"))? {
+                // Convert distance (smaller=better) into a similarity-like score (larger=better)
+                // For cosine distance, similarity ~= 1 - distance
+                if score.is_nan() {
+                    score = 0.0;
+                }
 
-                // Boost score if exact keywords match (hybrid approach)
+                // Keyword boosting (hybrid approach) to preserve prior behavior
                 let entry_text = format!(
                     "{} {} {}",
                     entry.query.to_lowercase(),
@@ -310,17 +402,17 @@ impl MemoryManager {
                     }
                 }
 
-                // Boost score based on keyword matches (up to +15%)
-                if keyword_matches > 0 {
+                if !query_keywords.is_empty() && keyword_matches > 0 {
                     let boost = (keyword_matches as f32 / query_keywords.len() as f32) * 0.15;
                     score = (score + boost).min(1.0);
                 }
 
-                Some((entry, score))
-            })
-            .collect();
+                if score >= min_similarity {
+                    entries.push((entry, score));
+                }
+            }
+        }
 
-        // Re-sort by boosted scores
         entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         tracing::info!(
@@ -329,6 +421,7 @@ impl MemoryManager {
             query,
             min_similarity
         );
+
         Ok(entries)
     }
 
@@ -390,19 +483,133 @@ impl MemoryManager {
 
     /// Get collection statistics
     pub async fn get_stats(&self) -> Result<(u64, u64)> {
-        let collection_info = self
-            .qdrant
-            .collection_info(&self.collection_name)
+        let total = self
+            .table
+            .count_rows(None)
             .await
-            .context("Failed to get collection info")?;
+            .context("Failed to get LanceDB row count")?;
+        Ok((total as u64, total as u64))
+    }
 
-        let total = collection_info
-            .result
-            .and_then(|r| r.points_count)
-            .unwrap_or(0);
+    fn batches_to_entries(
+        batch: &RecordBatch,
+        distance_column: Option<&str>,
+    ) -> Result<Vec<(HistoryEntry, f32)>> {
+        let id_col = batch
+            .column_by_name("id")
+            .context("Missing column: id")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("Invalid type for column: id")?;
+        let entry_type_col = batch
+            .column_by_name("entry_type")
+            .context("Missing column: entry_type")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("Invalid type for column: entry_type")?;
+        let query_col = batch
+            .column_by_name("query")
+            .context("Missing column: query")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("Invalid type for column: query")?;
+        let topic_col = batch
+            .column_by_name("topic")
+            .context("Missing column: topic")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("Invalid type for column: topic")?;
+        let summary_col = batch
+            .column_by_name("summary")
+            .context("Missing column: summary")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("Invalid type for column: summary")?;
+        let full_result_col = batch
+            .column_by_name("full_result")
+            .context("Missing column: full_result")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("Invalid type for column: full_result")?;
+        let ts_col = batch
+            .column_by_name("timestamp_ms")
+            .context("Missing column: timestamp_ms")?
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .context("Invalid type for column: timestamp_ms")?;
+        let domain_col = batch
+            .column_by_name("domain")
+            .context("Missing column: domain")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("Invalid type for column: domain")?;
+        let source_type_col = batch
+            .column_by_name("source_type")
+            .context("Missing column: source_type")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("Invalid type for column: source_type")?;
 
-        // Count by type (simplified - just return total for both)
-        Ok((total, total))
+        let distance_col: Option<&Float32Array> = distance_column
+            .and_then(|name| batch.column_by_name(name))
+            .and_then(|arr| arr.as_any().downcast_ref::<Float32Array>());
+
+        let mut out = Vec::with_capacity(batch.num_rows());
+        for row in 0..batch.num_rows() {
+            let entry_type_raw = entry_type_col
+                .value(row)
+                .to_string();
+            let entry_type = match entry_type_raw.as_str() {
+                "search" => EntryType::Search,
+                "scrape" => EntryType::Scrape,
+                other => {
+                    tracing::debug!("Unknown entry_type '{}', defaulting to search", other);
+                    EntryType::Search
+                }
+            };
+
+            let timestamp_ms = ts_col.value(row);
+            let timestamp = DateTime::<Utc>::from_timestamp_millis(timestamp_ms)
+                .unwrap_or_else(|| Utc::now());
+
+            let full_result_str = full_result_col.value(row);
+            let full_result = serde_json::from_str(full_result_str)
+                .unwrap_or_else(|_| serde_json::json!({"_raw": full_result_str}));
+
+            let domain = if domain_col.is_null(row) {
+                None
+            } else {
+                Some(domain_col.value(row).to_string())
+            };
+            let source_type = if source_type_col.is_null(row) {
+                None
+            } else {
+                Some(source_type_col.value(row).to_string())
+            };
+
+            let entry = HistoryEntry {
+                id: id_col.value(row).to_string(),
+                entry_type,
+                query: query_col.value(row).to_string(),
+                topic: topic_col.value(row).to_string(),
+                summary: summary_col.value(row).to_string(),
+                full_result,
+                timestamp,
+                domain,
+                source_type,
+            };
+
+            let score = if let Some(dist) = distance_col {
+                let d = dist.value(row);
+                (1.0 - d).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+
+            out.push((entry, score));
+        }
+
+        Ok(out)
     }
 
     /// Check for recent duplicate searches (within last N hours)

@@ -21,7 +21,7 @@ This guide provides a comprehensive, step-by-step procedure to set up **ShadowCr
     ```
 
 3.  **Install Docker Desktop:**
-    Required for the support services (Qdrant, SearXNG, Browserless).
+  Required for the support services (SearXNG, Browserless).
     - [Download Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)
 
 4.  **Install a Browser (Brave Recommended):**
@@ -67,7 +67,6 @@ docker compose -f docker-compose-local.yml up -d
 **Verify services are running:**
 - **SearXNG**: http://localhost:8890
 - **Browserless**: http://localhost:3010
-- **Qdrant**: http://localhost:6333 (Dashboard)
 
 ---
 
@@ -84,7 +83,7 @@ This configuration connects VS Code to your local ShadowCrawl binary.
 ```json
 {
   "servers": {
-    "shadowcrawl-local": {
+    "shadowcrawl": {
       "type": "stdio",
       "command": "c:\\Users\\YOUR_USER\\Downloads\\ShadowCrawl\\mcp-server\\target\\release\\shadowcrawl-mcp.exe",
       "args": [],
@@ -93,7 +92,7 @@ This configuration connects VS Code to your local ShadowCrawl binary.
         "SEARXNG_URL": "http://localhost:8890",
         "BROWSERLESS_URL": "http://localhost:3010",
         "BROWSERLESS_TOKEN": "mcp_stealth_session",
-        "QDRANT_URL": "http://localhost:6344",
+        "LANCEDB_URI": "c:\\Users\\YOUR_USER\\Downloads\\ShadowCrawl\\lancedb",
         "HTTP_TIMEOUT_SECS": "30",
         "HTTP_CONNECT_TIMEOUT_SECS": "10",
         "OUTBOUND_LIMIT": "32",
@@ -115,7 +114,7 @@ This configuration connects VS Code to your local ShadowCrawl binary.
 ## 🧪 5. Verification
 
 1.  **Restart VS Code** to reload the MCP configuration.
-2.  Open the MCP servers view (icon in sidebar) to confirm `shadowcrawl-local` is connected (green dot).
+2.  Open the MCP servers view (icon in sidebar) to confirm `shadowcrawl` is connected (green dot).
 3.  Open a Chat in VS Code (e.g., using GitHub Copilot or an MCP-enabled chat agent).
 4.  Ask: *"Search the web for 'Rust programming 2026' using ShadowCrawl"*
     - **Result:** Should return search results from SearXNG.

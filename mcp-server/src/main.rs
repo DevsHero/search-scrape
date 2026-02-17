@@ -68,10 +68,10 @@ async fn main() -> anyhow::Result<()> {
     // Create application state
     let mut state = AppState::new(searxng_url, http_client);
 
-    // Initialize memory if QDRANT_URL is set
-    if let Ok(qdrant_url) = env::var("QDRANT_URL") {
-        info!("Initializing memory with Qdrant at: {}", qdrant_url);
-        match shadowcrawl::history::MemoryManager::new(&qdrant_url).await {
+    // Initialize semantic memory if LANCEDB_URI is set
+    if let Ok(lancedb_uri) = env::var("LANCEDB_URI") {
+        info!("Initializing memory with LanceDB at: {}", lancedb_uri);
+        match shadowcrawl::history::MemoryManager::new(&lancedb_uri).await {
             Ok(memory) => {
                 state = state.with_memory(Arc::new(memory));
                 info!("Memory initialized successfully");
@@ -84,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     } else {
-        info!("QDRANT_URL not set. Memory feature disabled.");
+        info!("LANCEDB_URI not set. Memory feature disabled.");
     }
 
     // Initialize proxy manager if ip.txt exists

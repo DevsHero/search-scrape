@@ -106,7 +106,7 @@ Each build creates multiple tags:
 Configure the container with:
 ```bash
 docker run -e SEARXNG_URL=http://searxng:8080 \
-           -e QDRANT_URL=http://qdrant:6334 \
+           -e LANCEDB_URI=/home/appuser/lancedb \
            -e RUST_LOG=info \
            -e MAX_CONTENT_CHARS=10000 \
            ghcr.io/YOUR_USERNAME/shadowcrawl:latest

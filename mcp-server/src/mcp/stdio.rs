@@ -1,51 +1,13 @@
-use super::handlers;
-use super::tooling::schema_to_object_map;
-use crate::mcp::McpCallResponse;
-use crate::types::ErrorResponse;
+use crate::mcp::http::{list_tools_for_state, McpCallRequest};
 use crate::{history, AppState};
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::Json;
-use rmcp::{model::*, ServiceExt};
-use serde_json::Value;
-use std::borrow::Cow;
+use serde_json::{json, Value};
 use std::env;
 use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tracing::{info, warn};
-
-fn status_code_to_error_code(status: StatusCode) -> ErrorCode {
-    match status {
-        StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY => ErrorCode::INVALID_PARAMS,
-        StatusCode::NOT_FOUND => ErrorCode::METHOD_NOT_FOUND,
-        _ => ErrorCode::INTERNAL_ERROR,
-    }
-}
-
-fn mcp_call_response_to_stdio_result(response: McpCallResponse) -> CallToolResult {
-    let content = response
-        .content
-        .into_iter()
-        .map(|item| Content::text(item.text))
-        .collect();
-
-    if response.is_error {
-        CallToolResult::error(content)
-    } else {
-        CallToolResult::success(content)
-    }
-}
-
-fn convert_http_handler_result(
-    result: Result<Json<McpCallResponse>, (StatusCode, Json<ErrorResponse>)>,
-) -> Result<CallToolResult, ErrorData> {
-    match result {
-        Ok(Json(response)) => Ok(mcp_call_response_to_stdio_result(response)),
-        Err((status, Json(err))) => Err(ErrorData::new(
-            status_code_to_error_code(status),
-            err.error,
-            None,
-        )),
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct McpService {
@@ -90,9 +52,9 @@ impl McpService {
 
         let mut state = AppState::new(searxng_url, http_client);
 
-        if let Ok(qdrant_url) = env::var("QDRANT_URL") {
-            info!("Initializing memory with Qdrant at: {}", qdrant_url);
-            match history::MemoryManager::new(&qdrant_url).await {
+        if let Ok(lancedb_uri) = env::var("LANCEDB_URI") {
+            info!("Initializing memory with LanceDB at: {}", lancedb_uri);
+            match history::MemoryManager::new(&lancedb_uri).await {
                 Ok(memory) => {
                     state = state.with_memory(Arc::new(memory));
                     info!("Memory initialized successfully");
@@ -103,7 +65,7 @@ impl McpService {
                 ),
             }
         } else {
-            info!("QDRANT_URL not set. Memory feature disabled.");
+            info!("LANCEDB_URI not set. Memory feature disabled.");
         }
 
         let ip_list_path = env::var("IP_LIST_PATH").unwrap_or_else(|_| "ip.txt".to_string());
@@ -133,135 +95,164 @@ impl McpService {
     }
 }
 
-impl rmcp::ServerHandler for McpService {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::LATEST,
-            server_info: Implementation {
-                title: Some("Search & Sync MCP".to_string()),
-                description: Some(
-                    "A pure Rust web research service using federated search plus high-integrity content synchronization for consistent downstream analysis."
-                        .to_string(),
-                ),
-                ..Implementation::from_build_env()
-            },
-            instructions: Some(
-                "Use these tools to discover sources and synchronize web content into consistent, analysis-ready outputs."
-                    .to_string(),
-            ),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
+fn jsonrpc_error(id: &Value, code: i64, message: impl Into<String>) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": {
+            "code": code,
+            "message": message.into()
         }
+    })
+}
+
+fn jsonrpc_result(id: &Value, result: Value) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": result
+    })
+}
+
+async fn handle_tools_list(service: &McpService, id: &Value) -> Value {
+    let tools = list_tools_for_state(service.state.as_ref());
+    match serde_json::to_value(tools) {
+        Ok(v) => jsonrpc_result(id, v),
+        Err(e) => jsonrpc_error(id, -32603, format!("failed to serialize tools: {}", e)),
     }
+}
 
-    async fn list_tools(
-        &self,
-        _page: Option<PaginatedRequestParams>,
-        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> Result<ListToolsResult, ErrorData> {
-        let tools = self
-            .state
-            .tool_registry
-            .public_specs()
-            .into_iter()
-            .map(|spec| Tool {
-                name: Cow::Owned(spec.public_name),
-                title: Some(spec.public_title),
-                description: Some(Cow::Owned(spec.public_description)),
-                input_schema: schema_to_object_map(&spec.public_input_schema),
-                output_schema: None,
-                annotations: None,
-                execution: None,
-                icons: None,
-                meta: None,
-            })
-            .collect();
+async fn handle_tools_call(service: &McpService, id: &Value, params: &Value) -> Value {
+    let name = params.get("name").and_then(|v| v.as_str());
+    let arguments = params.get("arguments");
 
-        Ok(ListToolsResult {
-            tools,
-            ..Default::default()
-        })
-    }
+    let Some(name) = name else {
+        return jsonrpc_error(id, -32602, "Missing required field: params.name");
+    };
+    let Some(arguments) = arguments else {
+        return jsonrpc_error(id, -32602, "Missing required field: params.arguments");
+    };
 
-    async fn call_tool(
-        &self,
-        request: CallToolRequestParams,
-        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> Result<CallToolResult, ErrorData> {
-        info!(
-            "MCP tool call: {} with args: {:?}",
-            request.name, request.arguments
-        );
+    let request = McpCallRequest {
+        name: name.to_string(),
+        arguments: arguments.clone(),
+    };
 
-        let args_map = request.arguments.as_ref().ok_or_else(|| {
-            ErrorData::new(
-                ErrorCode::INVALID_PARAMS,
-                "Missing required arguments object",
-                None,
-            )
-        })?;
-
-        let internal_name = self
-            .state
-            .tool_registry
-            .resolve_incoming_tool_name(request.name.as_ref())
-            .ok_or_else(|| {
-                ErrorData::new(
-                    ErrorCode::METHOD_NOT_FOUND,
-                    format!("Unknown tool: {}", request.name),
-                    None,
-                )
-            })?;
-
-        // rmcp stdio arguments are an object map; mcp_handlers expect a serde_json::Value.
-        // Clone is fine here (tool inputs are small) and keeps handler API consistent across transports.
-        let public_args = Value::Object(args_map.clone());
-        let internal_args = self
-            .state
-            .tool_registry
-            .map_public_arguments_to_internal(&internal_name, public_args);
-
-        match internal_name.as_str() {
-            "search_web" => convert_http_handler_result(
-                handlers::search_web::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "search_structured" => convert_http_handler_result(
-                handlers::search_structured::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "scrape_url" => convert_http_handler_result(
-                handlers::scrape_url::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "crawl_website" => convert_http_handler_result(
-                handlers::crawl_website::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "scrape_batch" => convert_http_handler_result(
-                handlers::scrape_batch::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "extract_structured" => convert_http_handler_result(
-                handlers::extract_structured::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "research_history" => convert_http_handler_result(
-                handlers::research_history::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "proxy_manager" => convert_http_handler_result(
-                handlers::proxy_manager::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "non_robot_search" => convert_http_handler_result(
-                handlers::non_robot_search::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            _ => Err(ErrorData::new(
-                ErrorCode::METHOD_NOT_FOUND,
-                format!("Unknown tool: {}", request.name),
-                None,
-            )),
+    let result = crate::mcp::call_tool(State(Arc::clone(&service.state)), Json(request)).await;
+    match result {
+        Ok(Json(response)) => match serde_json::to_value(response) {
+            Ok(v) => jsonrpc_result(id, v),
+            Err(e) => jsonrpc_error(id, -32603, format!("failed to serialize result: {}", e)),
+        },
+        Err((status, Json(err))) => {
+            // Map HTTP-ish errors to JSON-RPC codes.
+            let code = match status {
+                StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY => -32602,
+                StatusCode::NOT_FOUND => -32601,
+                _ => -32603,
+            };
+            jsonrpc_error(id, code, err.error)
         }
     }
 }
 
 pub async fn run() -> anyhow::Result<()> {
     let service = McpService::new().await?;
-    let running = service.serve(rmcp::transport::stdio()).await?;
     info!("MCP stdio server initialized; waiting for client session");
-    let quit_reason = running.waiting().await?;
-    warn!("MCP stdio server stopped: {:?}", quit_reason);
+
+    let stdin = tokio::io::stdin();
+    let mut lines = BufReader::new(stdin).lines();
+    let mut stdout = tokio::io::stdout();
+
+    let mut has_initialize = false;
+    let mut is_initialized = false;
+    let mut shutdown_requested = false;
+
+    while let Some(line) = lines.next_line().await? {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let Ok(msg) = serde_json::from_str::<Value>(trimmed) else {
+            continue;
+        };
+
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        let id = msg.get("id").cloned().unwrap_or(Value::Null);
+        let is_request = msg.get("id").is_some();
+        let params = msg.get("params").cloned().unwrap_or(Value::Null);
+
+        // Notifications
+        if !is_request {
+            match method {
+                // MCP: client sends this after it receives initialize response.
+                // Some clients send params omitted or {}, accept both.
+                "initialized" => {
+                    has_initialize = true;
+                    is_initialized = true;
+                    continue;
+                }
+                "exit" => {
+                    if shutdown_requested {
+                        break;
+                    }
+                    continue;
+                }
+                _ => continue,
+            }
+        }
+
+        // Requests
+        let response = match method {
+            "initialize" => {
+                has_initialize = true;
+                // Do not mark initialized until we get the notification.
+                let server_info = json!({
+                    "name": "shadowcrawl",
+                    "title": "Search & Sync MCP",
+                    "version": env!("CARGO_PKG_VERSION")
+                });
+                jsonrpc_result(
+                    &id,
+                    json!({
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {"tools": {}},
+                        "serverInfo": server_info
+                    }),
+                )
+            }
+            "shutdown" => {
+                shutdown_requested = true;
+                jsonrpc_result(&id, Value::Null)
+            }
+            "tools/list" => {
+                if !has_initialize || !is_initialized {
+                    jsonrpc_error(&id, -32002, "Server not initialized")
+                } else {
+                    handle_tools_list(&service, &id).await
+                }
+            }
+            "tools/call" => {
+                if !has_initialize || !is_initialized {
+                    jsonrpc_error(&id, -32002, "Server not initialized")
+                } else {
+                    handle_tools_call(&service, &id, &params).await
+                }
+            }
+            _ => jsonrpc_error(&id, -32601, format!("Method not found: {}", method)),
+        };
+
+        let out = serde_json::to_string(&response).unwrap_or_else(|e| {
+            serde_json::to_string(&jsonrpc_error(&id, -32603, format!("serialize error: {}", e)))
+                .unwrap_or_else(|_| "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32603,\"message\":\"serialize error\"}}".to_string())
+        });
+
+        stdout.write_all(out.as_bytes()).await?;
+        stdout.write_all(b"\n").await?;
+        stdout.flush().await?;
+    }
+
+    warn!("MCP stdio server stopped");
     Ok(())
 }

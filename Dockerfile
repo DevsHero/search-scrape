@@ -68,7 +68,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Create app user and cache directories
 RUN useradd -r -s /bin/false appuser && \
-    mkdir -p /home/appuser/.cache/fastembed /home/appuser/.cache/huggingface && \
+    mkdir -p /home/appuser/.cache/huggingface /home/appuser/lancedb && \
     chown -R appuser:appuser /home/appuser
 
 # Copy binaries from builder stage
@@ -87,8 +87,8 @@ EXPOSE 5000
 # Set environment variables
 ENV RUST_LOG=info
 ENV SEARXNG_URL=http://searxng:8080
-ENV FASTEMBED_CACHE_DIR=/home/appuser/.cache/fastembed
 ENV HF_HOME=/home/appuser/.cache/huggingface
+ENV LANCEDB_URI=/home/appuser/lancedb
 
 # Start the application
 CMD ["shadowcrawl"]

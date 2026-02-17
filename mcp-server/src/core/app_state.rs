@@ -50,7 +50,7 @@ impl AppState {
                 .time_to_live(std::time::Duration::from_secs(60 * 30))
                 .build(),
             outbound_limit: std::sync::Arc::new(tokio::sync::Semaphore::new(outbound_limit)),
-            memory: None,        // Will be initialized if QDRANT_URL is set
+            memory: None,        // Will be initialized if LANCEDB_URI is set
             proxy_manager: None, // Will be initialized if IP_LIST_PATH exists
             non_robot_search_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
         }

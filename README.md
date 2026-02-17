@@ -71,7 +71,7 @@ We don't just claim to bypass—we provide the receipts. All evidence below was 
 | --- | --- |
 | **Search & Discovery** | Federated search via SearXNG. Finds what Google hides. |
 | **Deep Crawling** | Recursive, bounded crawling to map entire subdomains. |
-| **Semantic Memory** | (Optional) Qdrant integration for long-term research recall. |
+| **Semantic Memory** | (Optional) Embedded LanceDB + Model2Vec for long-term research recall (no separate DB container). (Rust: https://github.com/MinishLab/model2vec-rs) |
 | **Proxy Master** | Native rotation logic for HTTP/SOCKS5 pools. |
 | **Hydration Scraper** | Specialized logic to extract "hidden" JSON data from React/Next.js sites. |
 | **Universal Janitor** | Automatic removal of popups, cookie banners, and overlays. |
@@ -140,7 +140,7 @@ Ubuntu:
 ShadowCrawl can run as an MCP server in 2 modes:
 
 - **Docker MCP server**: great for normal scraping/search tools, but **cannot** do HITL/GUI (`non_robot_search`).
-- **Local MCP server (`shadowcrawl-local`)**: required for HITL tools (a visible Brave/Chrome window).
+- **Local MCP server (`shadowcrawl`)**: required for HITL tools (a visible Brave/Chrome window).
 
 ### Option A: Docker MCP server (no non_robot_search)
 
@@ -176,7 +176,7 @@ VS Code MCP config example ("servers" format):
 ```jsonc
 {
   "servers": {
-    "shadowcrawl-local": {
+    "shadowcrawl": {
       "type": "stdio",
       "command": "env",
       "args": [
@@ -186,7 +186,13 @@ VS Code MCP config example ("servers" format):
         "SEARXNG_URL=http://localhost:8890",
         "BROWSERLESS_URL=http://localhost:3010",
         "BROWSERLESS_TOKEN=mcp_stealth_session",
-        "QDRANT_URL=http://localhost:6344",
+        // Optional semantic memory (embedded LanceDB on local filesystem):
+        "LANCEDB_URI=/YOUR_PATH/shadowcrawl/lancedb",
+
+        // Note: Qdrant is no longer used. Remove any legacy `QDRANT_URL=...` from your MCP config.
+
+        // Optional: choose a Model2Vec model (HF repo id or local path)
+        // "MODEL2VEC_MODEL=minishlab/potion-base-8M",
 
         // Network + limits:
         "HTTP_TIMEOUT_SECS=30",

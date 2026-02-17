@@ -1,7 +1,7 @@
 # Node
 .env
 *.log
-
+.context-slicer
 # Rust
 mcp-server/target
 
@@ -17,7 +17,10 @@ scrapy-service/webspider/.scrapy/
 # Docker
 *.pid
 .DS_Store
-.fastembed_cache/
+
+# Local vector DB data (LanceDB)
+lancedb/
+.lancedb/
 mcp-server/.mcpregistry_github_token
 mcp-server/.mcpregistry_registry_token
 # Secrets / registry auth

@@ -21,19 +21,6 @@ services:
     ports:
       - "8890:8080"
 
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: qdrant-fork
-    ports:
-      - "6343:6333"  # HTTP API
-      - "6344:6334"  # gRPC API (optional)
-    volumes:
-      - qdrant_storage_fork:/qdrant/storage
-    environment:
-      - QDRANT__SERVICE__HTTP_PORT=6333
-      - QDRANT__SERVICE__GRPC_PORT=6334
-    restart: unless-stopped
-
   browserless:
     image: ghcr.io/browserless/chromium:latest 
     container_name: browserless-chromium
@@ -60,11 +47,10 @@ services:
       - "5001:5000"
     environment:
       - SEARXNG_URL=http://searxng:8080
-      - QDRANT_URL=http://qdrant:6334
+      - LANCEDB_URI=/home/appuser/lancedb
       - BROWSERLESS_URL=http://browserless:3000
       - BROWSERLESS_TOKEN=mcp_stealth_session
       - SEARXNG_CLIENT_IP=127.0.0.1
-      - FASTEMBED_CACHE_DIR=/home/appuser/.cache/fastembed
       - HF_HOME=/home/appuser/.cache/huggingface
       - RUST_LOG=info
       - HTTP_TIMEOUT_SECS=30
@@ -79,13 +65,12 @@ services:
       - IP_LIST_DEFAULT_SCHEME=auto
       - PROXY_SOURCE_PATH=/home/appuser/proxy_source.json
     volumes:
-      - fastembed_cache:/home/appuser/.cache/fastembed
       - huggingface_cache:/home/appuser/.cache/huggingface
+      - lancedb_data:/home/appuser/lancedb
       - ${IP_LIST_HOST_PATH:-./ip.txt}:/home/appuser/ip.txt:rw
       - ${PROXY_SOURCE_HOST_PATH:-./proxy_source.json}:/home/appuser/proxy_source.json:rw
     depends_on:
       - searxng
-      - qdrant
       - browserless
     restart: unless-stopped
     networks:
@@ -103,11 +88,9 @@ networks:
     driver: bridge
     
 volumes:
-  qdrant_storage_fork:
-    driver: local
-  fastembed_cache:
-    driver: local
   huggingface_cache:
+    driver: local
+  lancedb_data:
     driver: local
 
   # Note: MCP server runs natively for better performance and compatibility
@@ -115,6 +98,6 @@ volumes:
   # 1. Build: cargo build --release
   # 2. HTTP server: SEARXNG_URL=http://localhost:8888 ./target/release/shadowcrawl
   # 3. MCP stdio server (with history): 
-  #    SEARXNG_URL=http://localhost:8888 QDRANT_URL=http://localhost:6333 ./target/release/shadowcrawl-mcp
+  #    SEARXNG_URL=http://localhost:8888 LANCEDB_URI=./lancedb ./target/release/shadowcrawl-mcp
   # 4. MCP stdio server (without history):
   #    SEARXNG_URL=http://localhost:8888 ./target/release/shadowcrawl-mcp

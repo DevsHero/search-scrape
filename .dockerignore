@@ -8,8 +8,6 @@ smithery.config-schema.json
 smithery.yaml
 docs
 .github
-.fastembed_cache
 .smithery
-sample-results
 LICENSE
 README.md
