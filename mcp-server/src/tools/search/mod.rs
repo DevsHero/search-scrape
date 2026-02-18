@@ -44,7 +44,7 @@ impl InternalSearchService {
         engines
             .unwrap_or_else(|| {
                 std::env::var("SEARCH_ENGINES")
-                    .unwrap_or_else(|_| "google,bing,duckduckgo".to_string())
+                    .unwrap_or_else(|_| "google,bing,duckduckgo,brave".to_string())
             })
             .split(',')
             .map(|s| s.trim().to_ascii_lowercase())
@@ -64,6 +64,7 @@ impl InternalSearchService {
             "duckduckgo" | "ddg" => engines::duckduckgo::search(client, query, max_results).await,
             "bing" => engines::bing::search(client, query, max_results).await,
             "google" => engines::google::search(client, query, max_results).await,
+            "brave" => engines::brave::search(client, query, max_results).await,
             other => {
                 debug!("unknown search engine requested: {}", other);
                 return Vec::new();
@@ -124,6 +125,11 @@ impl InternalSearchService {
                     .append_pair("num", &max_results.min(10).max(5).to_string());
                 u
             }
+            "brave" => {
+                let mut u = reqwest::Url::parse("https://search.brave.com/search").ok()?;
+                u.query_pairs_mut().append_pair("q", query);
+                u
+            }
             _ => return None,
         };
 
@@ -146,6 +152,7 @@ impl InternalSearchService {
                     "duckduckgo" | "ddg" => engines::duckduckgo::parse_results(&html, max_results),
                     "bing" => engines::bing::parse_results(&html, max_results),
                     "google" => engines::google::parse_results(&html, max_results),
+                    "brave" => engines::brave::parse_results(&html, max_results),
                     _ => Vec::new(),
                 };
                 if parsed.is_empty() {
@@ -185,7 +192,7 @@ impl SearchService for InternalSearchService {
     ) -> Result<Vec<SearchResult>> {
         let mut engines_override = overrides.as_ref().and_then(|o| o.engines.clone());
 
-        // Context-based forcing (roughly equivalent to old SearXNG engine forcing).
+        // Context-based forcing (roughly equivalent to the legacy external search engine forcing).
         let query_lower = query.to_lowercase();
         let mut effective_query = query.to_string();
         if engines_override.is_none()
@@ -245,12 +252,36 @@ fn dedup_and_score_results(results: Vec<SearchResult>) -> Vec<SearchResult> {
 
     let mut map: HashMap<String, Acc> = HashMap::new();
     for mut r in results {
-        let engine = r.engine.clone().unwrap_or_else(|| "unknown".to_string());
+        // Normalize engine source fields (older callers may only set `engine`).
+        if r.engine_source.is_none() {
+            r.engine_source = r.engine.clone();
+        }
+        if r.engine_sources.is_empty() {
+            if let Some(ref e) = r.engine_source {
+                r.engine_sources = vec![e.clone()];
+            }
+        }
+
+        if r.breadcrumbs.is_empty() {
+            r.breadcrumbs = breadcrumbs_from_url(&r.url);
+        }
+
+        let engine = r
+            .engine_source
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
         let key = normalize_url_key(&r.url);
 
         map.entry(key)
             .and_modify(|acc| {
                 acc.engines.insert(engine.clone());
+
+                // Keep a full set of corroborating engines.
+                for src in &r.engine_sources {
+                    if !src.trim().is_empty() {
+                        acc.engines.insert(src.clone());
+                    }
+                }
 
                 if acc.result.title.trim().is_empty() && !r.title.trim().is_empty() {
                     acc.result.title = std::mem::take(&mut r.title);
@@ -266,6 +297,32 @@ fn dedup_and_score_results(results: Vec<SearchResult>) -> Vec<SearchResult> {
                 if acc.result.source_type.is_none() {
                     acc.result.source_type = r.source_type.clone();
                 }
+
+                if acc.result.published_at.is_none() {
+                    acc.result.published_at = r.published_at.clone();
+                }
+
+                if acc.result.rich_snippet.is_none() {
+                    acc.result.rich_snippet = r.rich_snippet.clone();
+                }
+
+                if acc.result.breadcrumbs.is_empty() && !r.breadcrumbs.is_empty() {
+                    acc.result.breadcrumbs = r.breadcrumbs.clone();
+                } else if !r.breadcrumbs.is_empty() {
+                    // Union, keep order stable-ish.
+                    let mut seen = HashSet::new();
+                    let mut merged = Vec::new();
+                    for b in acc.result.breadcrumbs.iter().chain(r.breadcrumbs.iter()) {
+                        let k = b.trim().to_ascii_lowercase();
+                        if k.is_empty() {
+                            continue;
+                        }
+                        if seen.insert(k) {
+                            merged.push(b.clone());
+                        }
+                    }
+                    acc.result.breadcrumbs = merged;
+                }
             })
             .or_insert_with(|| {
                 let mut engines = HashSet::new();
@@ -278,24 +335,37 @@ fn dedup_and_score_results(results: Vec<SearchResult>) -> Vec<SearchResult> {
         .into_values()
         .map(|mut acc| {
             let engine_count = acc.engines.len().max(1);
-            let mut engines: Vec<String> = acc.engines.into_iter().collect();
-            engines.sort();
+            let mut engine_sources: Vec<String> = acc.engines.into_iter().collect();
+            engine_sources.sort();
 
-            // Confidence scoring: multi-engine corroboration + domain/source weighting.
+            // Confidence scoring: multi-engine corroboration + domain/source + breadcrumbs + recency.
             // This score is intentionally coarse; semantic reranker still runs later.
             let corroboration_bonus = (engine_count as f64 - 1.0).max(0.0) * 0.35;
-            let domain_weight = domain_weight(&acc.result.domain, &acc.result.source_type);
-            let base = 1.0 * domain_weight + corroboration_bonus;
+            let mut domain_weight = domain_weight(&acc.result.domain, &acc.result.source_type);
+            if breadcrumbs_have_high_value_keywords(&acc.result.breadcrumbs) {
+                domain_weight *= 1.20;
+            }
+
+            let recency_bonus = recency_bonus(&acc.result.published_at);
+            let base = 1.0 * domain_weight + corroboration_bonus + recency_bonus;
             acc.result.score = Some(base);
 
+            acc.result.engine_source = if engine_count == 1 {
+                engine_sources.first().cloned()
+            } else {
+                None
+            };
+
             acc.result.engine = Some(if engine_count == 1 {
-                engines
+                engine_sources
                     .first()
                     .cloned()
                     .unwrap_or_else(|| "unknown".to_string())
             } else {
-                format!("multi:{}", engines.join(","))
+                format!("multi:{}", engine_sources.join(","))
             });
+
+            acc.result.engine_sources = engine_sources;
 
             acc.result
         })
@@ -308,6 +378,107 @@ fn dedup_and_score_results(results: Vec<SearchResult>) -> Vec<SearchResult> {
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     out
+}
+
+pub(crate) fn breadcrumbs_from_url(url_str: &str) -> Vec<String> {
+    let Ok(url) = url::Url::parse(url_str) else {
+        return Vec::new();
+    };
+
+    let mut parts = Vec::new();
+    if let Some(host) = url.host_str() {
+        parts.push(host.to_string());
+    }
+
+    let mut segs = url
+        .path_segments()
+        .map(|s| {
+            s.filter(|p| !p.trim().is_empty())
+                .take(3)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for s in segs.drain(..) {
+        parts.push(s.to_string());
+    }
+    parts
+}
+
+pub(crate) fn extract_published_at_from_text(text: &str) -> Option<String> {
+    // Best-effort: pull the first date-like token from a snippet.
+    // We intentionally return a string for downstream use and optional parsing.
+    let t = text.trim();
+    if t.is_empty() {
+        return None;
+    }
+
+    // Fast path: ISO-like date.
+    if let Some(m) = regex::Regex::new(r"\b(20\d{2}-\d{2}-\d{2})\b")
+        .ok()
+        .and_then(|re| re.find(t))
+    {
+        return Some(m.as_str().to_string());
+    }
+
+    // Month name patterns: "Jan 2, 2026" or "January 2, 2026".
+    if let Some(m) = regex::Regex::new(
+        r"\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},\s+20\d{2}\b",
+    )
+    .ok()
+    .and_then(|re| re.find(t))
+    {
+        return Some(m.as_str().to_string());
+    }
+
+    None
+}
+
+fn breadcrumbs_have_high_value_keywords(breadcrumbs: &[String]) -> bool {
+    let needles = [
+        "docs",
+        "documentation",
+        "manual",
+        "reference",
+        "api",
+        "github",
+        "wiki",
+    ];
+    breadcrumbs.iter().any(|b| {
+        let lower = b.to_ascii_lowercase();
+        needles.iter().any(|n| lower.contains(n))
+    })
+}
+
+fn recency_bonus(published_at: &Option<String>) -> f64 {
+    let Some(s) = published_at.as_ref() else {
+        return 0.0;
+    };
+
+    // Parse a few common formats.
+    let now = chrono::Utc::now().date_naive();
+
+    let parsed = chrono::DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|dt| dt.date_naive())
+        .or_else(|| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+        .or_else(|| chrono::NaiveDate::parse_from_str(s, "%b %d, %Y").ok())
+        .or_else(|| chrono::NaiveDate::parse_from_str(s, "%B %d, %Y").ok());
+
+    let Some(date) = parsed else {
+        return 0.0;
+    };
+
+    let days = (now - date).num_days();
+    if days < 0 {
+        // Future date (clock skew / SERP quirks).
+        return 0.05;
+    }
+
+    match days {
+        0..=30 => 0.25,
+        31..=365 => 0.10,
+        _ => 0.0,
+    }
 }
 
 fn normalize_url_key(url: &str) -> String {
@@ -494,7 +665,7 @@ pub async fn search_web_with_params(
         }
     }
 
-    // Internal engines don't provide SearXNG-style extras; keep only rewrite+dup warning.
+    // Internal engines don't provide external-backend "extras"; keep only rewrite+dup warning.
     let extras = SearchExtras {
         query_rewrite: Some(rewrite_result),
         duplicate_warning,

@@ -129,7 +129,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         },
        ToolCatalogEntry {
         name: "research_history",
-        title: "Search Past Research", // เปลี่ยนจาก Research History เป็นกริยา
+        title: "Search Past Research", 
         description: "Access your memory of previous searches and scrapes. Use this to retrieve information you already found earlier in this session or past sessions. Search by meaning to avoid re-searching or re-scraping the same URLs.",
         input_schema: serde_json::json!({
             "type": "object",

@@ -29,9 +29,21 @@ pub struct SearchResult {
     pub title: String,
     pub content: String,
     pub engine: Option<String>,
+    /// Primary engine label for this result (single source).
+    #[serde(default)]
+    pub engine_source: Option<String>,
+    /// All corroborating engine labels (multi-source).
+    #[serde(default)]
+    pub engine_sources: Vec<String>,
     pub score: Option<f64>,
     #[serde(default)]
     pub published_at: Option<String>,
+    /// Best-effort breadcrumb-like path (domain + path segments, or SERP-provided hints).
+    #[serde(default)]
+    pub breadcrumbs: Vec<String>,
+    /// Best-effort extra SERP metadata (e.g., fact rows) beyond the normal snippet.
+    #[serde(default)]
+    pub rich_snippet: Option<String>,
     // New Priority 2 fields for better filtering
     #[serde(default)]
     pub domain: Option<String>,
@@ -284,50 +296,4 @@ pub struct ExtractResponse {
     pub duration_ms: u64,
     #[serde(default)]
     pub warnings: Vec<String>,
-}
-
-// SearXNG API types
-#[derive(Debug, Deserialize)]
-pub struct SearxngResponse {
-    pub query: String,
-    pub number_of_results: u32,
-    pub results: Vec<SearxngResult>,
-    #[serde(default)]
-    pub infoboxes: Option<serde_json::Value>,
-    #[serde(default)]
-    pub suggestions: Option<serde_json::Value>,
-    #[serde(default)]
-    pub answers: Option<serde_json::Value>,
-    #[serde(default)]
-    pub corrections: Option<serde_json::Value>,
-    #[serde(default)]
-    pub unresponsive_engines: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SearxngResult {
-    pub url: String,
-    pub title: String,
-    pub content: String,
-    pub engine: String,
-    #[serde(default)]
-    pub parsed_url: Option<Vec<String>>,
-    #[serde(default)]
-    pub template: Option<String>,
-    #[serde(default)]
-    pub engines: Option<Vec<String>>,
-    #[serde(default)]
-    pub positions: Option<serde_json::Value>,
-    #[serde(default)]
-    pub score: Option<f64>,
-    #[serde(default)]
-    pub category: Option<String>,
-    #[serde(default)]
-    pub thumbnail: Option<String>,
-    #[serde(default)]
-    pub img_src: Option<String>,
-    #[serde(default)]
-    pub priority: Option<String>,
-    #[serde(rename = "publishedDate", default)]
-    pub published_date: Option<serde_json::Value>,
 }

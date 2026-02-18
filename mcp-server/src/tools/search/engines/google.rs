@@ -95,6 +95,8 @@ pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
             }
 
             let snippet = extract_snippet(&container);
+            let published_at = crate::tools::search::extract_published_at_from_text(&snippet);
+            let breadcrumbs = crate::tools::search::breadcrumbs_from_url(&url);
             let (domain, source_type) = crate::tools::search::classify_search_result(&url);
 
             out.push(SearchResult {
@@ -102,8 +104,12 @@ pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
                 title,
                 content: snippet,
                 engine: Some("google".to_string()),
+                engine_source: Some("google".to_string()),
+                engine_sources: vec!["google".to_string()],
                 score: None,
-                published_at: None,
+                published_at,
+                breadcrumbs,
+                rich_snippet: None,
                 domain,
                 source_type: Some(source_type),
             });

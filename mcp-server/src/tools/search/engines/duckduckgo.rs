@@ -33,14 +33,21 @@ pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
             .unwrap_or_default();
         let snippet = snippet.split_whitespace().collect::<Vec<_>>().join(" ");
 
+        let published_at = crate::tools::search::extract_published_at_from_text(&snippet);
+        let breadcrumbs = crate::tools::search::breadcrumbs_from_url(&href);
+
         let (domain, source_type) = crate::tools::search::classify_search_result(&href);
         out.push(SearchResult {
             url: href,
             title,
             content: snippet,
             engine: Some("duckduckgo".to_string()),
+            engine_source: Some("duckduckgo".to_string()),
+            engine_sources: vec!["duckduckgo".to_string()],
             score: None,
-            published_at: None,
+            published_at,
+            breadcrumbs,
+            rich_snippet: None,
             domain,
             source_type: Some(source_type),
         });

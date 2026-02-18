@@ -8,6 +8,7 @@ pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
     let sel_item = Selector::parse("li.b_algo").unwrap();
     let sel_link = Selector::parse("h2 a").unwrap();
     let sel_snip = Selector::parse("div.b_caption p").unwrap();
+    let sel_fact = Selector::parse("div.b_factrow, div.b_vlist2col").unwrap();
 
     let mut out = Vec::new();
     for item in doc.select(&sel_item) {
@@ -31,14 +32,27 @@ pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
             .unwrap_or_default();
         let snippet = snippet.split_whitespace().collect::<Vec<_>>().join(" ");
 
+        let published_at = crate::tools::search::extract_published_at_from_text(&snippet);
+        let breadcrumbs = crate::tools::search::breadcrumbs_from_url(&href);
+        let rich_snippet = item
+            .select(&sel_fact)
+            .next()
+            .map(|n| n.text().collect::<Vec<_>>().join(" "))
+            .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
+            .filter(|s| !s.is_empty());
+
         let (domain, source_type) = crate::tools::search::classify_search_result(&href);
         out.push(SearchResult {
             url: href,
             title,
             content: snippet,
             engine: Some("bing".to_string()),
+            engine_source: Some("bing".to_string()),
+            engine_sources: vec!["bing".to_string()],
             score: None,
-            published_at: None,
+            published_at,
+            breadcrumbs,
+            rich_snippet,
             domain,
             source_type: Some(source_type),
         });
