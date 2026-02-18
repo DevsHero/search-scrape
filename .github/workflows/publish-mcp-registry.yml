@@ -118,7 +118,7 @@ jobs:
             exit 0
           fi
           # Treat "already published" or conflict (409) as a non-fatal success.
-          if echo "$output" | grep -qiE '(already (published|exists)|409|conflict)'; then
+          if echo "$output" | grep -qiE '(already (published|exists)|duplicate version|cannot publish duplicate version|409|conflict)'; then
             echo "⚠️  Server already published at this version — skipping (idempotent)." >&2
             exit 0
           fi

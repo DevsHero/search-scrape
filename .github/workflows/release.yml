@@ -64,6 +64,39 @@ jobs:
           # ── 3. Guard: server.json must be valid JSON ─────────────────────────
           python3 -c 'import json, pathlib; json.loads(pathlib.Path("server.json").read_text(encoding="utf-8")); print("✅ server.json is valid JSON")'
 
+      - name: Install mcp-publisher (validate only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64)  ARCH_SLUG="amd64" ;;
+            aarch64) ARCH_SLUG="arm64" ;;
+            arm64)   ARCH_SLUG="arm64" ;;
+            *)       echo "❌ Unsupported arch: $ARCH" >&2; exit 1 ;;
+          esac
+          URL="https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_${OS}_${ARCH_SLUG}.tar.gz"
+          echo "Downloading $URL" >&2
+          curl -fsSL "$URL" | tar xz mcp-publisher
+          chmod +x ./mcp-publisher
+
+      - name: Validate server.json (MCP Registry schema)
+        shell: bash
+        run: ./mcp-publisher validate server.json
+
+      - name: Validate smithery.yaml
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c 'import yaml, pathlib; obj=yaml.safe_load(pathlib.Path("smithery.yaml").read_text(encoding="utf-8")); assert isinstance(obj, dict); sc=obj.get("startCommand"); assert isinstance(sc, dict); assert sc.get("type") == "stdio"; assert "configSchema" in sc; assert "commandFunction" in sc; print("✅ smithery.yaml OK")'
+
+      - name: Validate smithery.config-schema.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c 'import json, pathlib; obj=json.loads(pathlib.Path("smithery.config-schema.json").read_text(encoding="utf-8")); assert obj.get("type") == "object"; assert isinstance(obj.get("properties"), dict); print("✅ smithery.config-schema.json OK")'
+
   create-release:
     name: Create tag + GitHub Release
     runs-on: ubuntu-latest
@@ -172,7 +205,7 @@ jobs:
 
           - name: macos-x64
             platform: macos-x64
-            os: macos-13
+            os: macos-15-large   # macOS 15 Intel x64 (macos-13 deprecated Dec 2025)
             target: x86_64-apple-darwin
             exe_ext: ""
             archive: tar.gz
@@ -181,7 +214,7 @@ jobs:
 
           - name: macos-arm64
             platform: macos-arm64
-            os: macos-14
+            os: macos-15         # macOS 15 arm64 (macos-14 still available but 15 is current)
             target: aarch64-apple-darwin
             exe_ext: ""
             archive: tar.gz
