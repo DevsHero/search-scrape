@@ -9,6 +9,7 @@ use anyhow::{anyhow, Result};
 use futures::future::join_all;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::{debug, info, warn};
 
 pub use service::SearchService;
@@ -60,13 +61,31 @@ impl InternalSearchService {
         max_results: usize,
     ) -> Vec<SearchResult> {
         let client = &state.http_client;
-        let res = match engine {
-            "duckduckgo" | "ddg" => engines::duckduckgo::search(client, query, max_results).await,
-            "bing" => engines::bing::search(client, query, max_results).await,
-            "google" => engines::google::search(client, query, max_results).await,
-            "brave" => engines::brave::search(client, query, max_results).await,
-            other => {
-                debug!("unknown search engine requested: {}", other);
+        let timeout = engine_timeout(engine);
+
+        let fut = async {
+            match engine {
+                "duckduckgo" | "ddg" => {
+                    engines::duckduckgo::search(client, query, max_results).await
+                }
+                "bing" => engines::bing::search(client, query, max_results).await,
+                "google" => engines::google::search(client, query, max_results).await,
+                "brave" => engines::brave::search(client, query, max_results).await,
+                other => {
+                    debug!("unknown search engine requested: {}", other);
+                    return Ok(Vec::new());
+                }
+            }
+        };
+
+        let res = match tokio::time::timeout(timeout, fut).await {
+            Ok(v) => v,
+            Err(_) => {
+                warn!(
+                    "engine '{}' timed out after {}ms (tail latency pruned)",
+                    engine,
+                    timeout.as_millis()
+                );
                 return Vec::new();
             }
         };
@@ -239,11 +258,11 @@ impl SearchService for InternalSearchService {
             results.extend(community_batches.into_iter().flatten());
         }
 
-        Ok(dedup_and_score_results(results))
+        Ok(dedup_and_score_results(results, query))
     }
 }
 
-fn dedup_and_score_results(results: Vec<SearchResult>) -> Vec<SearchResult> {
+fn dedup_and_score_results(results: Vec<SearchResult>, query: &str) -> Vec<SearchResult> {
     #[derive(Default)]
     struct Acc {
         result: SearchResult,
@@ -306,6 +325,10 @@ fn dedup_and_score_results(results: Vec<SearchResult>) -> Vec<SearchResult> {
                     acc.result.rich_snippet = r.rich_snippet.clone();
                 }
 
+                if acc.result.top_answer.is_none() {
+                    acc.result.top_answer = r.top_answer.clone();
+                }
+
                 if acc.result.breadcrumbs.is_empty() && !r.breadcrumbs.is_empty() {
                     acc.result.breadcrumbs = r.breadcrumbs.clone();
                 } else if !r.breadcrumbs.is_empty() {
@@ -341,7 +364,8 @@ fn dedup_and_score_results(results: Vec<SearchResult>) -> Vec<SearchResult> {
             // Confidence scoring: multi-engine corroboration + domain/source + breadcrumbs + recency.
             // This score is intentionally coarse; semantic reranker still runs later.
             let corroboration_bonus = (engine_count as f64 - 1.0).max(0.0) * 0.35;
-            let mut domain_weight = domain_weight(&acc.result.domain, &acc.result.source_type);
+            let mut domain_weight =
+                domain_weight(query, &acc.result.domain, &acc.result.source_type);
             if breadcrumbs_have_high_value_keywords(&acc.result.breadcrumbs) {
                 domain_weight *= 1.20;
             }
@@ -378,6 +402,54 @@ fn dedup_and_score_results(results: Vec<SearchResult>) -> Vec<SearchResult> {
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     out
+}
+
+fn engine_timeout(engine: &str) -> Duration {
+    let default_ms = std::env::var("SEARCH_ENGINE_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(2_500);
+
+    let key = format!("SEARCH_ENGINE_TIMEOUT_MS_{}", engine.to_ascii_uppercase());
+    let ms = std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(default_ms);
+
+    Duration::from_millis(ms.max(250))
+}
+
+pub(crate) fn split_date_prefix(snippet: &str) -> (Option<String>, String) {
+    let s = snippet.trim();
+    if s.is_empty() {
+        return (None, String::new());
+    }
+
+    // Common patterns:
+    // - "Jan 10, 2024 — ..."
+    // - "2024-01-10 · ..."
+    // - "January 10, 2024 - ..."
+    let patterns = [
+        r"^(20\d{2}-\d{2}-\d{2})\s*(?:[-—·|]|\u00b7)\s+(.+)$",
+        r"^((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},\s+20\d{2})\s*(?:[-—·|]|\u00b7)\s+(.+)$",
+    ];
+
+    for pat in patterns {
+        if let Ok(re) = regex::Regex::new(pat) {
+            if let Some(cap) = re.captures(s) {
+                let date = cap.get(1).map(|m| m.as_str().to_string());
+                let rest = cap
+                    .get(2)
+                    .map(|m| m.as_str().trim().to_string())
+                    .unwrap_or_default();
+                if !rest.is_empty() {
+                    return (date, rest);
+                }
+            }
+        }
+    }
+
+    (None, s.to_string())
 }
 
 pub(crate) fn breadcrumbs_from_url(url_str: &str) -> Vec<String> {
@@ -517,7 +589,9 @@ fn normalize_url_key(url: &str) -> String {
     parsed.to_string()
 }
 
-fn domain_weight(domain: &Option<String>, source_type: &Option<String>) -> f64 {
+fn domain_weight(query: &str, domain: &Option<String>, source_type: &Option<String>) -> f64 {
+    let topic = classify_query_topic(query);
+
     let mut weight: f64 = match source_type.as_deref().unwrap_or("other") {
         "repo" => 1.40_f64,
         "docs" => 1.35_f64,
@@ -532,13 +606,48 @@ fn domain_weight(domain: &Option<String>, source_type: &Option<String>) -> f64 {
     if let Some(d) = domain.as_ref() {
         let d = d.to_ascii_lowercase();
         if d.ends_with(".gov") {
-            weight *= 1.20;
+            weight *= 1.50;
         } else if d.ends_with(".edu") {
-            weight *= 1.15;
+            weight *= 1.50;
+        }
+
+        // High-authority standards bodies / official references.
+        if d == "ietf.org" || d.ends_with(".ietf.org") {
+            weight *= 1.50;
+        }
+        if d == "w3.org" || d.ends_with(".w3.org") {
+            weight *= 1.50;
+        }
+        if d.ends_with(".rust-lang.org") || d == "rust-lang.org" {
+            weight *= 1.35;
+        }
+        if d.ends_with("learn.microsoft.com") {
+            weight *= 1.25;
         }
 
         if d.contains("wikipedia.org") {
-            weight *= 1.25;
+            weight *= 1.30;
+        }
+
+        // Topic-specific boosts.
+        match topic {
+            QueryTopic::Code => {
+                if d.contains("github.com") || d.contains("stackoverflow.com") {
+                    weight *= 1.25;
+                }
+                if d.contains("docs.rs") {
+                    weight *= 1.30;
+                }
+            }
+            QueryTopic::News => {
+                if d.contains("reuters.com") || d.contains("apnews.com") {
+                    weight *= 1.25;
+                }
+                if d.contains("bbc.co") || d.contains("bbc.com") {
+                    weight *= 1.10;
+                }
+            }
+            QueryTopic::General => {}
         }
 
         // Light penalties for common low-signal domains.
@@ -548,9 +657,56 @@ fn domain_weight(domain: &Option<String>, source_type: &Option<String>) -> f64 {
         if d.contains("medium.com") {
             weight *= 0.95;
         }
+
+        // Ads / tracking domains: aggressively downrank.
+        if d.contains("doubleclick.net")
+            || d.contains("googleadservices.com")
+            || d.contains("googlesyndication.com")
+        {
+            weight *= 0.10;
+        }
     }
 
     weight.clamp(0.10_f64, 3.0_f64)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum QueryTopic {
+    Code,
+    News,
+    General,
+}
+
+fn classify_query_topic(query: &str) -> QueryTopic {
+    let q = query.to_ascii_lowercase();
+    let code_needles = [
+        "rust",
+        "python",
+        "javascript",
+        "typescript",
+        "golang",
+        "error",
+        "exception",
+        "stack trace",
+        "crate",
+        "npm",
+        "api",
+        "sdk",
+        "how to",
+        "tutorial",
+    ];
+    if code_needles.iter().any(|n| q.contains(n)) {
+        return QueryTopic::Code;
+    }
+
+    let news_needles = [
+        "news", "latest", "today", "breaking", "report", "2026", "2025",
+    ];
+    if news_needles.iter().any(|n| q.contains(n)) {
+        return QueryTopic::News;
+    }
+
+    QueryTopic::General
 }
 
 pub async fn search_web(

@@ -46,8 +46,35 @@ fn extract_snippet(container: &ElementRef<'_>) -> String {
     String::new()
 }
 
+fn extract_top_answer(doc: &Html) -> Option<String> {
+    // Best-effort featured snippet / answer box extraction.
+    // Markup changes often; try a few common containers.
+    let selectors = [
+        "div[data-attrid='wa:/description']",
+        "div[data-attrid='wa:/short_answer']",
+        "div.V3FYCf",
+        "div.kno-rdesc",
+    ];
+
+    for css in selectors {
+        if let Ok(sel) = Selector::parse(css) {
+            if let Some(n) = doc.select(&sel).next() {
+                let txt = n.text().collect::<Vec<_>>().join(" ");
+                let cleaned = txt.split_whitespace().collect::<Vec<_>>().join(" ");
+                if cleaned.len() >= 40 {
+                    return Some(cleaned);
+                }
+            }
+        }
+    }
+
+    None
+}
+
 pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
     let doc = Html::parse_document(html);
+
+    let top_answer = extract_top_answer(&doc);
 
     let container_selectors = ["div#search div.MjjYud", "div#search div.g"];
     let link_sel = Selector::parse("a").unwrap();
@@ -94,10 +121,19 @@ pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
                 continue;
             }
 
-            let snippet = extract_snippet(&container);
-            let published_at = crate::tools::search::extract_published_at_from_text(&snippet);
+            let snippet_raw = extract_snippet(&container);
+            let (published_prefix, snippet) = crate::tools::search::split_date_prefix(&snippet_raw);
+            let published_at = published_prefix
+                .or_else(|| crate::tools::search::extract_published_at_from_text(&snippet_raw));
             let breadcrumbs = crate::tools::search::breadcrumbs_from_url(&url);
             let (domain, source_type) = crate::tools::search::classify_search_result(&url);
+
+            // Attach top_answer only to the first organic result (best-effort).
+            let top_answer_for_this = if out.is_empty() {
+                top_answer.clone()
+            } else {
+                None
+            };
 
             out.push(SearchResult {
                 url,
@@ -110,6 +146,7 @@ pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
                 published_at,
                 breadcrumbs,
                 rich_snippet: None,
+                top_answer: top_answer_for_this,
                 domain,
                 source_type: Some(source_type),
             });

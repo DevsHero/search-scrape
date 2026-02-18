@@ -26,14 +26,16 @@ pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
         let title = link.text().collect::<Vec<_>>().join(" ");
         let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
 
-        let snippet = item
+        let snippet_raw = item
             .select(&sel_snip)
             .next()
             .map(|n| n.text().collect::<Vec<_>>().join(" "))
             .unwrap_or_default();
-        let snippet = snippet.split_whitespace().collect::<Vec<_>>().join(" ");
+        let snippet_raw = snippet_raw.split_whitespace().collect::<Vec<_>>().join(" ");
+        let (published_prefix, snippet) = crate::tools::search::split_date_prefix(&snippet_raw);
 
-        let published_at = crate::tools::search::extract_published_at_from_text(&snippet);
+        let published_at = published_prefix
+            .or_else(|| crate::tools::search::extract_published_at_from_text(&snippet_raw));
         let breadcrumbs = crate::tools::search::breadcrumbs_from_url(&href);
 
         let (domain, source_type) = crate::tools::search::classify_search_result(&href);
@@ -48,6 +50,7 @@ pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
             published_at,
             breadcrumbs,
             rich_snippet: None,
+            top_answer: None,
             domain,
             source_type: Some(source_type),
         });

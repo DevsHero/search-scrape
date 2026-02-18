@@ -44,6 +44,9 @@ pub struct SearchResult {
     /// Best-effort extra SERP metadata (e.g., fact rows) beyond the normal snippet.
     #[serde(default)]
     pub rich_snippet: Option<String>,
+    /// Best-effort top answer (featured snippet / answer box / PAA extraction).
+    #[serde(default)]
+    pub top_answer: Option<String>,
     // New Priority 2 fields for better filtering
     #[serde(default)]
     pub domain: Option<String>,

@@ -75,8 +75,10 @@ pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
         }
 
         // Snippet: use parent container heuristics.
-        let snippet = extract_snippet(&a);
-        let published_at = crate::tools::search::extract_published_at_from_text(&snippet);
+        let snippet_raw = extract_snippet(&a);
+        let (published_prefix, snippet) = crate::tools::search::split_date_prefix(&snippet_raw);
+        let published_at = published_prefix
+            .or_else(|| crate::tools::search::extract_published_at_from_text(&snippet_raw));
         let breadcrumbs = crate::tools::search::breadcrumbs_from_url(&url);
         let (domain, source_type) = crate::tools::search::classify_search_result(&url);
 
@@ -91,6 +93,7 @@ pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
             published_at,
             breadcrumbs,
             rich_snippet: None,
+            top_answer: None,
             domain,
             source_type: Some(source_type),
         });
