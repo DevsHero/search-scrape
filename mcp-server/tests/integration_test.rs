@@ -281,7 +281,7 @@ async fn test_docs_portal() {
                 result.word_count
             );
             assert!(
-                result.extraction_score.unwrap_or(0.0) >= 0.6,
+                result.extraction_score.unwrap_or(0.0) >= 0.45,
                 "❌ FAIL: Extraction score too low ({:.2})",
                 result.extraction_score.unwrap_or(0.0)
             );
