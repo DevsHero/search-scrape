@@ -2,40 +2,12 @@ name: Publish to Official MCP Registry
 
 on:
   push:
-    branches:
-      - main
-      - master
+    tags:
+      - v*
 
 jobs:
-  check-trigger:
-    name: Check [build] trigger
-    runs-on: ubuntu-latest
-    outputs:
-      should_publish: ${{ steps.check.outputs.should_publish }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check if commit message contains [build]
-        id: check
-        shell: bash
-        run: |
-          set -euo pipefail
-          msg="$(git log -1 --pretty=%B | tr -d '\r')"
-          if echo "$msg" | grep -q "\[build\]"; then
-            echo "should_publish=true" >> "$GITHUB_OUTPUT"
-            echo "✅ Publish triggered: commit contains [build]" >&2
-          else
-            echo "should_publish=false" >> "$GITHUB_OUTPUT"
-            echo "⏭️  Skipping: commit does not contain [build]" >&2
-          fi
-
   publish:
     runs-on: ubuntu-latest
-    needs: check-trigger
-    if: ${{ needs['check-trigger'].outputs.should_publish == 'true' }}
     permissions:
       id-token: write
       contents: read
@@ -46,6 +18,24 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Guard tag matches version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          version="$(python3 -c 'import tomllib, pathlib; obj=tomllib.loads(pathlib.Path("mcp-server/Cargo.toml").read_text(encoding="utf-8")); v=obj.get("package",{}).get("version",""); assert v; print(v)')"
+          expected="v${version}"
+          if [[ "$tag" != "$expected" ]]; then
+            echo "❌ Tag/version mismatch: tag=$tag expected=$expected" >&2
+            exit 1
+          fi
+          server_ver="$(python3 -c 'import json, pathlib; obj=json.loads(pathlib.Path("server.json").read_text(encoding="utf-8")); v=obj.get("version",""); assert v; print(v)')"
+          if [[ "$server_ver" != "$version" ]]; then
+            echo "❌ server.json version mismatch: Cargo.toml=$version server.json=$server_ver" >&2
+            exit 1
+          fi
+          echo "✅ Tag matches versions: $tag" >&2
+
       - name: Wait for GitHub Release to exist
         shell: bash
         env:
@@ -53,8 +43,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          version="$(python3 -c 'import tomllib, pathlib; obj=tomllib.loads(pathlib.Path("mcp-server/Cargo.toml").read_text(encoding="utf-8")); v=obj.get("package",{}).get("version",""); assert v, "Missing [package].version"; print(v)')"
-          tag="v${version}"
+          tag="${GITHUB_REF#refs/tags/}"
 
           repo="${GITHUB_REPOSITORY}"
           url="https://api.github.com/repos/${repo}/releases/tags/${tag}"

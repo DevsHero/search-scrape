@@ -36,3 +36,15 @@ docs/stdio_probe.py
 docs/local_stdio_test.py
 advice.txt
 .smithery
+
+# Local-only release / CI / publish helpers (keep out of the public repo)
+/publish/
+/Makefile
+/ci/
+/local_release.sh
+docs/RELEASING.md
+
+# Scratch / temporary folders
+/workflows/
+/errors/
+/dist/
