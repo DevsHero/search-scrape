@@ -589,6 +589,7 @@ async fn run_flow(
     // Detect interstitial/verification gates; if it persists beyond grace period, enter HITL.
     log_state(NonRobotState::ChallengeDetection);
     let start = Instant::now();
+    let mut hitl_triggered = false;
     loop {
         abort_if_needed(abort_rx)?;
         if session.is_closed() {
@@ -601,25 +602,59 @@ async fn run_flow(
             break;
         }
 
-        let challenged = detect_challenge_dom(&session.page).await.unwrap_or(false)
-            || detect_interstitial_like(&session.page)
-                .await
-                .unwrap_or(false);
+        let challenged = match is_challenged_conservative(&session.page).await {
+            Ok(v) => v,
+            Err(e) => {
+                // Be conservative: if we can't evaluate the DOM (often due to navigation / execution context
+                // destruction during Cloudflare flows), treat it as still challenged.
+                warn!(
+                    "non_robot_search: challenge detection failed (treating as challenged): {}",
+                    e
+                );
+                true
+            }
+        };
+        // Don't exit early the moment we see "not challenged". Some bot walls (notably Cloudflare)
+        // can inject challenge scripts a few seconds after initial navigation.
         if !challenged {
-            break;
-        }
-
-        if start.elapsed() >= cfg.captcha_grace {
+            if start.elapsed() >= cfg.captcha_grace {
+                break;
+            }
+        } else if start.elapsed() >= cfg.captcha_grace {
             log_state(NonRobotState::HitlTrigger);
             request_human_help(session, input_controller).await?;
             log_state(NonRobotState::UserActionCompletionDetection);
             wait_for_human_resolution(session, cfg.human_timeout, abort_rx).await?;
             // After resolved, re-lock input and continue.
             input_controller.lock().ok();
+            hitl_triggered = true;
             break;
         }
 
         tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+
+    // Final pre-extract safety: if a challenge appeared late (after our initial checks), trigger HITL.
+    // This avoids spending 20s in network-idle and then extracting interstitial HTML.
+    if !hitl_triggered {
+        let challenged_now = match is_challenged_conservative(&session.page).await {
+            Ok(v) => v,
+            Err(e) => {
+                warn!(
+                    "non_robot_search: pre-extract challenge detection failed (treating as challenged): {}",
+                    e
+                );
+                true
+            }
+        };
+
+        if challenged_now {
+            log_state(NonRobotState::HitlTrigger);
+            request_human_help(session, input_controller).await?;
+            log_state(NonRobotState::UserActionCompletionDetection);
+            wait_for_human_resolution(session, cfg.human_timeout, abort_rx).await?;
+            input_controller.lock().ok();
+        }
     }
 
     abort_if_needed(abort_rx)?;
@@ -860,6 +895,17 @@ async fn run_flow(
 
     // Ensure max_chars in handler layer; keep full here.
     Ok(scraped)
+}
+
+#[cfg(feature = "non_robot_search")]
+async fn is_challenged_conservative(page: &chromiumoxide::Page) -> anyhow::Result<bool> {
+    // Prefer explicit challenge detection first.
+    if detect_challenge_dom(page).await? {
+        return Ok(true);
+    }
+
+    // Fall back to generic "interstitial-like" heuristics.
+    Ok(detect_interstitial_like(page).await?)
 }
 
 #[cfg(feature = "non_robot_search")]
@@ -1643,10 +1689,18 @@ async fn wait_for_human_resolution(
         }
 
         // Consider it resolved if verification markers are gone and the page is no longer an interstitial.
-        let challenged = detect_challenge_dom(&session.page).await.unwrap_or(false)
-            || detect_interstitial_like(&session.page)
-                .await
-                .unwrap_or(false);
+        // Be conservative: transient evaluation errors during redirects/navigation should not be treated
+        // as "resolved".
+        let challenged = match is_challenged_conservative(&session.page).await {
+            Ok(v) => v,
+            Err(e) => {
+                warn!(
+                    "non_robot_search: human-resolution detection failed (treating as challenged): {}",
+                    e
+                );
+                true
+            }
+        };
         if !challenged {
             play_tone(Tone::Success);
             // Remove overlay.
@@ -1737,6 +1791,16 @@ async fn detect_challenge_dom(page: &chromiumoxide::Page) -> anyhow::Result<bool
         const iframes = Array.from(document.querySelectorAll('iframe'));
         const srcs = iframes.map(i => (i.getAttribute('src') || '') + ' ' + (i.getAttribute('title') || '')).join(' ').toLowerCase();
         const body = (document.body?.innerText || '').toLowerCase();
+        const scripts = Array.from(document.scripts || []);
+        const scriptSrcs = scripts.map(s => (s.src || '')).join(' ').toLowerCase();
+        const scriptText = scripts.map(s => (s.textContent || '')).join(' ').toLowerCase();
+
+        // Cloudflare JS challenge / Turnstile / bot walls often include these.
+        const hasCloudflareChallenge = scriptSrcs.includes('/cdn-cgi/challenge-platform/')
+            || scriptText.includes('__cf')
+            || scriptText.includes('challenge-platform')
+            || body.includes('cf-error')
+            || title.includes('just a moment');
         const hasIframe = srcs.includes('challenge')
             || srcs.includes('verify')
             || srcs.includes('verification');
@@ -1748,7 +1812,7 @@ async fn detect_challenge_dom(page: &chromiumoxide::Page) -> anyhow::Result<bool
             || title.includes('just a moment')
             || title.includes('access denied')
             || title.includes('denied');
-        return Boolean(hasIframe || hasText || hasTitle);
+        return Boolean(hasCloudflareChallenge || hasIframe || hasText || hasTitle);
     })()"#;
 
     let val = page.evaluate(js).await?;
@@ -1765,6 +1829,10 @@ async fn detect_interstitial_like(page: &chromiumoxide::Page) -> anyhow::Result<
         const body = bodyText.toLowerCase();
         const bodyLen = bodyText.length;
 
+        const scripts = Array.from(document.scripts || []);
+        const scriptSrcs = scripts.map(s => (s.src || '')).join(' ').toLowerCase();
+        const hasCdnCgiChallenge = scriptSrcs.includes('/cdn-cgi/challenge-platform/');
+
         const titleLooksHolding = title.includes('just a moment')
             || title.includes('access denied')
             || title.includes('denied')
@@ -1780,7 +1848,7 @@ async fn detect_interstitial_like(page: &chromiumoxide::Page) -> anyhow::Result<
         // Avoid false positives on legitimate small pages (e.g., example.com).
         // Only treat "too short" as interstitial when there are other holding signals.
         const tooShortAndHolding = tooShort && (titleLooksHolding || textLooksHolding);
-        return Boolean(titleLooksHolding || textLooksHolding || tooShortAndHolding);
+        return Boolean(hasCdnCgiChallenge || titleLooksHolding || textLooksHolding || tooShortAndHolding);
     })()"#;
 
     let val = page.evaluate(js).await?;

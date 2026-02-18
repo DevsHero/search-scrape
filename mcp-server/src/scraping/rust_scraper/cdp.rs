@@ -2,9 +2,6 @@ use super::RustScraper;
 use crate::scraping::browser_manager;
 use crate::types::ScrapeResponse;
 use anyhow::{anyhow, Result};
-use chromiumoxide::browser::BrowserConfig;
-use chromiumoxide::handler::viewport::Viewport;
-use chromiumoxide::Browser;
 use chrono::Utc;
 use futures::StreamExt;
 use scraper::Html;
@@ -24,33 +21,16 @@ impl RustScraper {
 
         warn!("🚀 Direct CDP Stealth Mode: {} (browser: {})", url, exe);
 
-        let mut config = BrowserConfig::builder()
-            .chrome_executable(&exe)
-            .viewport(Viewport {
-                width: 1920,
-                height: 1080,
-                device_scale_factor: Some(1.0),
-                emulating_mobile: false,
-                is_landscape: false,
-                has_touch: false,
-            })
-            .window_size(1920, 1080)
-            .arg("--disable-gpu")
-            .arg("--no-sandbox")
-            .arg("--disable-dev-shm-usage")
-            .arg("--no-first-run");
+        let config = browser_manager::build_headless_config(
+            &exe,
+            proxy_url.as_deref(),
+            1920,
+            1080,
+        )?;
 
-        if let Some(proxy) = proxy_url {
-            config = config.arg(format!("--proxy-server={}", proxy));
-        }
-
-        let (mut browser, mut handler) = Browser::launch(
-            config
-                .build()
-                .map_err(|e| anyhow!("Failed to build browser config: {}", e))?,
-        )
-        .await
-        .map_err(|e| anyhow!("Failed to launch browser ({}): {}", exe, e))?;
+        let (mut browser, mut handler) = chromiumoxide::Browser::launch(config)
+            .await
+            .map_err(|e| anyhow!("Failed to launch browser ({}): {}", exe, e))?;
 
         let handle = tokio::spawn(async move {
             while let Some(event) = handler.next().await {
@@ -153,6 +133,11 @@ impl RustScraper {
             dist.sample(&mut rng)
         };
         tokio::time::sleep(Duration::from_millis(final_wait)).await;
+
+        // Smart dynamic hydration: wait for network to settle, then auto-scroll
+        // to trigger lazy-loaded content before capturing HTML.
+        browser_manager::wait_until_stable(&page, 1500, 8000).await.ok();
+        browser_manager::auto_scroll(&page).await.ok();
 
         let content = page
             .content()

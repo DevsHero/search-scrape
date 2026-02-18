@@ -17,6 +17,9 @@ pub struct AppState {
 
     // Serialize high-fidelity browser sessions to avoid Chromium profile lock conflicts.
     pub non_robot_search_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
+
+    // Shared persistent browser instance (tab reuse — avoids launch overhead per request).
+    pub browser_pool: Option<std::sync::Arc<crate::scraping::browser_manager::BrowserPool>>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -54,6 +57,7 @@ impl AppState {
             memory: None,        // Will be initialized if LANCEDB_URI is set
             proxy_manager: None, // Will be initialized if IP_LIST_PATH exists
             non_robot_search_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
+            browser_pool: crate::scraping::browser_manager::BrowserPool::new_auto(),
         }
     }
 

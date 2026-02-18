@@ -126,15 +126,53 @@ async fn main() -> anyhow::Result<()> {
         .route("/mcp/call", post(mcp::call_tool))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .with_state(state);
+        .with_state(state.clone());
 
     // Start server
     let listener = tokio::net::TcpListener::bind("0.0.0.0:5000").await?;
     info!("MCP Server listening on http://0.0.0.0:5000");
 
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal(state.clone()))
+        .await?;
 
     Ok(())
+}
+
+async fn shutdown_signal(state: Arc<AppState>) {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut sigterm = signal(SignalKind::terminate()).ok();
+        let mut sigint = signal(SignalKind::interrupt()).ok();
+
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {},
+            _ = async {
+                if let Some(ref mut s) = sigterm {
+                    s.recv().await;
+                } else {
+                    futures::future::pending::<()>().await;
+                }
+            } => {},
+            _ = async {
+                if let Some(ref mut s) = sigint {
+                    s.recv().await;
+                } else {
+                    futures::future::pending::<()>().await;
+                }
+            } => {},
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+
+    if let Some(pool) = state.browser_pool.as_ref() {
+        pool.shutdown().await;
+    }
 }
 
 async fn health_check() -> Json<serde_json::Value> {

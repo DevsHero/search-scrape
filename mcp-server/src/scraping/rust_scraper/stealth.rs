@@ -57,12 +57,45 @@ Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
 // ====== UNIVERSAL STEALTH ENGINE ======
 // Injected before page load for ALL sites (site-agnostic)
 
+// 0. Navigator hardening (webdriver + languages) — do this before anything else
+(() => {
+    try {
+        const proto = Navigator.prototype;
+
+        // webdriver: prefer "absent" (undefined) over false
+        try {
+            Object.defineProperty(proto, 'webdriver', {
+                get: () => undefined,
+                configurable: true,
+            });
+        } catch (e) {}
+        try { delete navigator.webdriver; } catch (e) {}
+
+        // languages: realistic list
+        try {
+            Object.defineProperty(proto, 'languages', {
+                get: () => ['en-US', 'en'],
+                configurable: true,
+            });
+        } catch (e) {}
+
+        // plugins: simple non-empty stub
+        try {
+            Object.defineProperty(proto, 'plugins', {
+                get: () => [1, 2, 3, 4, 5],
+                configurable: true,
+            });
+        } catch (e) {}
+    } catch (e) {}
+})();
+
 // 1. Chrome Runtime (CDP detection bypass)
 if (!window.chrome) {
     window.chrome = {};
 }
 if (!window.chrome.runtime) {
     window.chrome.runtime = {
+        // Many detectors only check for presence + basic callability.
         connect: function() { return { onDisconnect: { addListener: function() {} } }; },
         sendMessage: function() {},
     };
@@ -70,12 +103,7 @@ if (!window.chrome.runtime) {
 window.chrome.csi = function() { return { startE: Date.now(), onloadT: Date.now() + 100 }; };
 window.chrome.loadTimes = function() { return { requestTime: Date.now() / 1000, finishDocumentLoadTime: (Date.now() + 500) / 1000 }; };
 
-// 2. Navigator Overrides (webdriver detection bypass)
-Object.defineProperty(navigator, 'webdriver', { get: () => false });
-Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-
-// 3. Permissions Query (notification permission bypass)
+// 2. Permissions Query (notification permission bypass)
 const originalQuery = window.navigator.permissions && window.navigator.permissions.query;
 if (originalQuery) {
     window.navigator.permissions.query = (parameters) => (
@@ -85,7 +113,7 @@ if (originalQuery) {
     );
 }
 
-// 4. Canvas Fingerprint Noise Injection
+// 3. Canvas Fingerprint Noise Injection
 const originalGetContext = HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext = function(type, ...args) {
     const context = originalGetContext.apply(this, [type, ...args]);
@@ -102,7 +130,7 @@ HTMLCanvasElement.prototype.getContext = function(type, ...args) {
     return context;
 };
 
-// 5. WebGL Vendor/Renderer Spoofing (SwiftShader masking)
+// 4. WebGL Vendor/Renderer Spoofing (SwiftShader masking)
 const getParameter = WebGLRenderingContext.prototype.getParameter;
 WebGLRenderingContext.prototype.getParameter = function(parameter) {
     if (parameter === 37445) return 'Intel Inc.';
@@ -119,14 +147,14 @@ if (typeof WebGL2RenderingContext !== 'undefined') {
     };
 }
 
-// 6. Playwright/Puppeteer Markers Cleanup
+// 5. Playwright/Puppeteer Markers Cleanup
 delete window.__playwright;
 delete window.__puppeteer;
 delete window.__selenium;
 delete window.callPhantom;
 delete window._phantom;
 
-// 7. User-Agent Data (Client Hints) for Chromium 90+
+// 6. User-Agent Data (Client Hints) for Chromium 90+
 if (navigator.userAgentData) {
     Object.defineProperty(navigator, 'userAgentData', {
         get: () => ({

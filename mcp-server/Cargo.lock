@@ -6931,6 +6931,7 @@ name = "shadowcrawl"
 version = "2.2.0"
 dependencies = [
  "accessibility-sys",
+ "aho-corasick",
  "anyhow",
  "arrow-array",
  "arrow-schema",
