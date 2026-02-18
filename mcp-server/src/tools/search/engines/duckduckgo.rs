@@ -1,7 +1,41 @@
 use crate::types::SearchResult;
 use scraper::{Html, Selector};
 
-use super::{detect_block_reason, fetch_html, EngineError};
+use super::{fetch_serp_html, EngineError};
+
+fn normalize_ddg_href(href: &str) -> Option<String> {
+    let href = href.trim();
+    if href.is_empty() {
+        return None;
+    }
+
+    // Protocol-relative URLs.
+    let candidate = if href.starts_with("//") {
+        format!("https:{}", href)
+    } else if href.starts_with('/') {
+        format!("https://duckduckgo.com{}", href)
+    } else {
+        href.to_string()
+    };
+
+    // If it's a DuckDuckGo redirect link, extract the real destination.
+    if let Ok(url) = url::Url::parse(&candidate) {
+        if matches!(url.host_str(), Some("duckduckgo.com")) && url.path().starts_with("/l/") {
+            for (k, v) in url.query_pairs() {
+                if k == "uddg" && !v.trim().is_empty() {
+                    return Some(v.to_string());
+                }
+            }
+        }
+    }
+
+    // Otherwise, accept absolute http(s) only.
+    if candidate.starts_with("http://") || candidate.starts_with("https://") {
+        return Some(candidate);
+    }
+
+    None
+}
 
 pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
     let doc = Html::parse_document(html);
@@ -19,10 +53,10 @@ pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
             Some(l) => l,
             None => continue,
         };
-        let href = link.value().attr("href").unwrap_or("").to_string();
-        if href.is_empty() {
+        let href_raw = link.value().attr("href").unwrap_or("").to_string();
+        let Some(href) = normalize_ddg_href(&href_raw) else {
             continue;
-        }
+        };
         let title = link.text().collect::<Vec<_>>().join(" ");
         let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
 
@@ -68,13 +102,7 @@ pub async fn search(
         .map_err(|e| EngineError::Fatal(e.to_string()))?;
     url.query_pairs_mut().append_pair("q", query);
 
-    let (status, body) = fetch_html(client, url)
-        .await
-        .map_err(|e| EngineError::Transient(e.to_string()))?;
-
-    if let Some(reason) = detect_block_reason(status, &body) {
-        return Err(EngineError::Blocked { reason });
-    }
+    let (_status, body) = fetch_serp_html(client, url, "duckduckgo").await?;
 
     Ok(parse_results(&body, max_results))
 }

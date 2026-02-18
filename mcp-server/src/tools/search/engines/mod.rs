@@ -5,6 +5,7 @@ pub mod google;
 
 use anyhow::Result;
 use reqwest::StatusCode;
+use tracing::warn;
 
 #[derive(Debug)]
 pub enum EngineError {
@@ -38,6 +39,16 @@ pub fn detect_block_reason(status: StatusCode, body: &str) -> Option<String> {
 
     let lower = body.to_lowercase();
     let maybe = [
+        // DuckDuckGo anomaly / bot-check flow often returns HTTP 200 with no SERP markup.
+        ("duckduckgo.com/anomaly.js", "captcha"),
+        ("/anomaly.js", "captcha"),
+        ("anomaly-modal", "captcha"),
+        // Cloudflare / Turnstile / PerimeterX style blocks (often HTTP 200)
+        ("cf-chl-", "cloudflare"),
+        ("cf-turnstile", "cloudflare"),
+        ("turnstile", "cloudflare"),
+        ("perimeterx", "captcha"),
+        ("px-captcha", "captcha"),
         ("unusual traffic", "unusual_traffic"),
         (
             "our systems have detected unusual traffic",
@@ -67,6 +78,86 @@ pub fn detect_block_reason(status: StatusCode, body: &str) -> Option<String> {
     }
 
     None
+}
+
+fn env_truthy(key: &str, default: bool) -> bool {
+    match std::env::var(key) {
+        Ok(v) => {
+            let v = v.trim().to_ascii_lowercase();
+            !(v.is_empty() || v == "0" || v == "false" || v == "no" || v == "off")
+        }
+        Err(_) => default,
+    }
+}
+
+fn browserless_fallback_enabled() -> bool {
+    env_truthy("SEARCH_BROWSERLESS_FALLBACK", true) && std::env::var("BROWSERLESS_URL").is_ok()
+}
+
+fn should_simulate_block(engine: &str) -> bool {
+    let Ok(v) = std::env::var("SEARCH_SIMULATE_BLOCK") else {
+        return false;
+    };
+    let v = v.trim().to_ascii_lowercase();
+    if v.is_empty() {
+        return false;
+    }
+    if v == "all" || v == "*" {
+        return true;
+    }
+    v.split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .any(|s| s == engine)
+}
+
+pub async fn fetch_serp_html(
+    client: &reqwest::Client,
+    url: reqwest::Url,
+    engine: &'static str,
+) -> Result<(StatusCode, String), EngineError> {
+    if should_simulate_block(engine) {
+        warn!("Simulating blocked engine: {}", engine);
+        if !browserless_fallback_enabled() {
+            return Err(EngineError::Blocked {
+                reason: "simulated_block".to_string(),
+            });
+        }
+    }
+
+    let direct = fetch_html(client, url.clone())
+        .await
+        .map_err(|e| EngineError::Transient(e.to_string()))?;
+
+    let direct_block = detect_block_reason(direct.0, &direct.1)
+        .or_else(|| should_simulate_block(engine).then_some("simulated_block".to_string()));
+
+    if let Some(reason) = direct_block {
+        if browserless_fallback_enabled() {
+            warn!(
+                "Engine {} looks blocked ({}); trying Browserless fallback",
+                engine, reason
+            );
+            let scraper = crate::scraping::rust_scraper::RustScraper::new();
+            let (status_u16, html) = scraper
+                .fetch_html_with_browserless(url.as_str(), None)
+                .await
+                .map_err(|e| EngineError::Transient(e.to_string()))?;
+
+            let status = StatusCode::from_u16(status_u16).unwrap_or(StatusCode::OK);
+            if let Some(reason2) = detect_block_reason(status, &html) {
+                return Err(EngineError::Blocked {
+                    reason: format!("{}; browserless:{}", reason, reason2),
+                });
+            }
+
+            return Ok((status, html));
+        }
+
+        return Err(EngineError::Blocked { reason });
+    }
+
+    Ok(direct)
 }
 
 pub async fn fetch_html(

@@ -1,7 +1,52 @@
 use crate::types::SearchResult;
+use base64::Engine as _;
 use scraper::{Html, Selector};
 
-use super::{detect_block_reason, fetch_html, EngineError};
+use super::{fetch_serp_html, EngineError};
+
+fn normalize_bing_href(href: &str) -> Option<String> {
+    let href = href.trim();
+    if href.is_empty() {
+        return None;
+    }
+
+    if !(href.starts_with("http://") || href.starts_with("https://")) {
+        return None;
+    }
+
+    let Ok(url) = url::Url::parse(href) else {
+        return Some(href.to_string());
+    };
+
+    if matches!(url.host_str(), Some("www.bing.com") | Some("bing.com"))
+        && url.path().starts_with("/ck/")
+    {
+        for (k, v) in url.query_pairs() {
+            if k == "u" && !v.trim().is_empty() {
+                // Observed format: u=a1<base64(url)>
+                let mut raw = v.to_string();
+                if raw.starts_with("a1") {
+                    raw = raw.trim_start_matches("a1").to_string();
+                }
+
+                if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(raw) {
+                    if let Ok(decoded_str) = String::from_utf8(decoded) {
+                        let decoded_str = decoded_str.trim().to_string();
+                        if decoded_str.starts_with("http://") || decoded_str.starts_with("https://")
+                        {
+                            return Some(decoded_str);
+                        }
+                    }
+                }
+
+                // Fall back to original when decoding fails.
+                break;
+            }
+        }
+    }
+
+    Some(href.to_string())
+}
 
 pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
     let doc = Html::parse_document(html);
@@ -19,10 +64,10 @@ pub fn parse_results(html: &str, max_results: usize) -> Vec<SearchResult> {
             Some(l) => l,
             None => continue,
         };
-        let href = link.value().attr("href").unwrap_or("").to_string();
-        if href.is_empty() {
+        let href_raw = link.value().attr("href").unwrap_or("").to_string();
+        let Some(href) = normalize_bing_href(&href_raw) else {
             continue;
-        }
+        };
         let title = link.text().collect::<Vec<_>>().join(" ");
         let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
         let snippet_raw = item
@@ -76,13 +121,7 @@ pub async fn search(
         qp.append_pair("q", query);
     }
 
-    let (status, body) = fetch_html(client, url)
-        .await
-        .map_err(|e| EngineError::Transient(e.to_string()))?;
-
-    if let Some(reason) = detect_block_reason(status, &body) {
-        return Err(EngineError::Blocked { reason });
-    }
+    let (_status, body) = fetch_serp_html(client, url, "bing").await?;
 
     Ok(parse_results(&body, max_results))
 }

@@ -288,6 +288,78 @@ impl RustScraper {
         self.scrape_with_browserless_advanced(url, None).await
     }
 
+    /// Fetch raw HTML via Browserless without running the full extraction pipeline.
+    /// Intended for lightweight use cases like search-engine SERP fetching.
+    pub async fn fetch_html_with_browserless(
+        &self,
+        url: &str,
+        custom_wait: Option<u32>,
+    ) -> Result<(u16, String)> {
+        let browserless_url = std::env::var("BROWSERLESS_URL")
+            .unwrap_or_else(|_| "http://localhost:3000".to_string());
+        let browserless_token = std::env::var("BROWSERLESS_TOKEN").ok();
+
+        let domain = url::Url::parse(url)
+            .ok()
+            .and_then(|u| u.host_str().map(|s| s.to_lowercase()));
+
+        let (wait_time, needs_scroll) = self.detect_domain_strategy(&domain);
+        let final_wait = custom_wait.unwrap_or(wait_time);
+        let is_boss_domain = self.is_boss_domain(&domain);
+        let extra_params = self.extra_browserless_query_params(&domain);
+
+        antibot::apply_request_delay().await;
+
+        let primary_user_agent = antibot::get_browserless_user_agent();
+        let mut extended_wait = if needs_scroll {
+            final_wait.saturating_add(3000)
+        } else {
+            final_wait
+        };
+        if is_boss_domain {
+            extended_wait = extended_wait
+                .saturating_add(antibot::boss_domain_post_load_delay_ms() as u32);
+        }
+
+        let (mut html, mut status_code) = self
+            .fetch_browserless_content(
+                url,
+                extended_wait,
+                &browserless_url,
+                browserless_token.clone(),
+                is_boss_domain,
+                primary_user_agent,
+                None,
+                &extra_params,
+                None,
+            )
+            .await?;
+
+        if self.detect_block_reason(&html).is_some() {
+            // Pass 2: Try Mobile Safari profile (universal fallback)
+            let mobile = antibot::get_mobile_stealth_config();
+            if let Ok((retry_html, retry_status)) = self
+                .fetch_browserless_content(
+                    url,
+                    final_wait.saturating_add(2000),
+                    &browserless_url,
+                    browserless_token.clone(),
+                    is_boss_domain,
+                    mobile.user_agent,
+                    Some(&mobile),
+                    &extra_params,
+                    None,
+                )
+                .await
+            {
+                html = retry_html;
+                status_code = retry_status;
+            }
+        }
+
+        Ok((status_code, html))
+    }
+
     /// Advanced Browserless scraping with custom actions and domain detection
     pub async fn scrape_with_browserless_advanced(
         &self,

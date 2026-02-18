@@ -1,7 +1,7 @@
 use crate::types::SearchResult;
 use scraper::{ElementRef, Html, Selector};
 
-use super::{detect_block_reason, fetch_html, EngineError};
+use super::{fetch_serp_html, EngineError};
 
 fn normalize_href(href: &str) -> Option<String> {
     let href = href.trim();
@@ -111,13 +111,7 @@ pub async fn search(
         .map_err(|e| EngineError::Fatal(e.to_string()))?;
     url.query_pairs_mut().append_pair("q", query);
 
-    let (status, body) = fetch_html(client, url)
-        .await
-        .map_err(|e| EngineError::Transient(e.to_string()))?;
-
-    if let Some(reason) = detect_block_reason(status, &body) {
-        return Err(EngineError::Blocked { reason });
-    }
+    let (_status, body) = fetch_serp_html(client, url, "brave").await?;
 
     Ok(parse_results(&body, max_results))
 }

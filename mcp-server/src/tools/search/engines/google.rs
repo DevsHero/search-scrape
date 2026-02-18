@@ -2,7 +2,7 @@ use crate::types::SearchResult;
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use scraper::{ElementRef, Html, Selector};
 
-use super::{detect_block_reason, fetch_html, EngineError};
+use super::{fetch_serp_html, EngineError};
 
 fn normalize_google_href(href: &str) -> Option<String> {
     if href.is_empty() {
@@ -174,13 +174,7 @@ pub async fn search(
     ))
     .map_err(|e| EngineError::Fatal(e.to_string()))?;
 
-    let (status, body) = fetch_html(client, url)
-        .await
-        .map_err(|e| EngineError::Transient(e.to_string()))?;
-
-    if let Some(reason) = detect_block_reason(status, &body) {
-        return Err(EngineError::Blocked { reason });
-    }
+    let (_status, body) = fetch_serp_html(client, url, "google").await?;
 
     Ok(parse_results(&body, max_results))
 }

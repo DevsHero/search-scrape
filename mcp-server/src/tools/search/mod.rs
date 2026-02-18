@@ -405,16 +405,23 @@ fn dedup_and_score_results(results: Vec<SearchResult>, query: &str) -> Vec<Searc
 }
 
 fn engine_timeout(engine: &str) -> Duration {
-    let default_ms = std::env::var("SEARCH_ENGINE_TIMEOUT_MS")
+    let base_default_ms = std::env::var("SEARCH_ENGINE_TIMEOUT_MS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(2_500);
+
+    // Built-in per-engine defaults (can be overridden by env).
+    let builtin_ms = match engine {
+        "duckduckgo" | "ddg" => 4_500,
+        "brave" => 3_500,
+        _ => base_default_ms,
+    };
 
     let key = format!("SEARCH_ENGINE_TIMEOUT_MS_{}", engine.to_ascii_uppercase());
     let ms = std::env::var(key)
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(default_ms);
+        .unwrap_or(builtin_ms);
 
     Duration::from_millis(ms.max(250))
 }
