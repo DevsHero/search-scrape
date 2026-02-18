@@ -6938,6 +6938,7 @@ dependencies = [
  "atty",
  "axum",
  "backoff",
+ "base64 0.22.1",
  "chromiumoxide",
  "chrono",
  "core-foundation-sys 0.8.7",
