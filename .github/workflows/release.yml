@@ -33,12 +33,12 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Chromium
+      - name: Install Chromium + system libraries
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ca-certificates curl unzip zip
+          sudo apt-get install -y --no-install-recommends ca-certificates curl unzip zip libwayland-dev pkg-config
           if sudo apt-get install -y --no-install-recommends chromium-browser; then
             echo "CHROME_EXECUTABLE=/usr/bin/chromium-browser" >> "$GITHUB_ENV"
           else
