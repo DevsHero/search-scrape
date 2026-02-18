@@ -406,7 +406,7 @@ async fn check_network_ping(target: &str, timeout: Duration) -> SetupCheck {
             steps: vec![
                 "Verify you have internet access.".to_string(),
                 "If on a corporate network, check firewall/VPN policies.".to_string(),
-                "If running in a restricted container, allow outbound traffic.".to_string(),
+                "If running in a restricted environment, allow outbound traffic.".to_string(),
             ],
             open_url: None,
         }],

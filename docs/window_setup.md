@@ -1,4 +1,7 @@
-# ShadowCrawl Windows Installation Guide (Complete Set)
+# [DEPRECATED] ShadowCrawl Windows Installation Guide (Legacy)
+
+> This guide predates the v2.3.x migration to native Chromium/CDP (no Browserless sidecar).
+> Use it as a starting point for Windows build prerequisites, but follow the current README + docs/VSCODE_SETUP.md for runtime setup.
 
 This guide provides a comprehensive, step-by-step procedure to set up **ShadowCrawl** on Windows 10/11, enabling full **Human-in-the-Loop (HITL)** capabilities.
 
@@ -20,11 +23,7 @@ This guide provides a comprehensive, step-by-step procedure to set up **ShadowCr
     winget install Microsoft.WindowsSDK.10.0.22621
     ```
 
-3.  **Install Docker Desktop:**
-  Required for the support services (Browserless).
-    - [Download Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)
-
-4.  **Install a Browser (Brave Recommended):**
+3.  **Install a Browser (Brave Recommended):**
   - [Brave Browser](https://brave.com/) (Best for `non_robot_search` / HITL)
     - OR Google Chrome / Microsoft Edge.
 
@@ -55,19 +54,9 @@ cargo build --release --bin shadowcrawl-mcp --features non_robot_search
 
 ---
 
-## 🐳 3. Start Support Services
+## 🐳 3. Start Services
 
-Go back to the project root and start the Docker stack.
-
-```powershell
-cd ..  # Back to ShadowCrawl root
-docker compose -f docker-compose-local.yml up -d
-```
-
-**Verify services are running:**
-- **Browserless**: http://localhost:3010
-
----
+ShadowCrawl is Zero-Docker; run the binary directly.
 
 ## ⚙️ 4. Configure MCP in VS Code (The "Windows Set")
 
@@ -88,8 +77,6 @@ This configuration connects VS Code to your local ShadowCrawl binary.
       "args": [],
       "env": {
         "RUST_LOG": "info",
-        "BROWSERLESS_URL": "http://localhost:3010",
-        "BROWSERLESS_TOKEN": "mcp_stealth_session",
         "LANCEDB_URI": "c:\\Users\\YOUR_USER\\Downloads\\ShadowCrawl\\lancedb",
         "HTTP_TIMEOUT_SECS": "30",
         "HTTP_CONNECT_TIMEOUT_SECS": "10",

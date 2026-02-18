@@ -17,18 +17,20 @@ The older `proxies.yaml` registry approach is deprecated/removed.
   - Public proxy list sources.
   - Used by `proxy_manager` action `grab` (via `PROXY_SOURCE_PATH`).
 
-## Docker (docker-compose-local.yml)
+## Runtime config (Zero-Docker)
 
-The container mounts:
+Set env vars for the local binary:
 
-- `./ip.txt:/home/appuser/ip.txt`
-- `./proxy_source.json:/home/appuser/proxy_source.json`
+- `IP_LIST_PATH=/absolute/path/to/ip.txt`
+- `PROXY_SOURCE_PATH=/absolute/path/to/proxy_source.json`
 
-And sets:
+Example:
 
-- `IP_LIST_PATH=/home/appuser/ip.txt`
-- `PROXY_SOURCE_PATH=/home/appuser/proxy_source.json`
-- `IP_LIST_DEFAULT_SCHEME=auto`
+```bash
+IP_LIST_PATH="$PWD/ip.txt" \
+PROXY_SOURCE_PATH="$PWD/proxy_source.json" \
+./mcp-server/target/release/shadowcrawl-mcp
+```
 
 ## MCP tool
 

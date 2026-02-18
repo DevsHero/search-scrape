@@ -186,12 +186,12 @@ run_flow() → panic → Drop trait
 
 ### Git Commit
 ```bash
-[main f28eba9] Safety Kill Switch: Force-kill browser after scrape [build]
+[main f28eba9] Safety Kill Switch: Force-kill browser after scrape
  2 files changed, 391 insertions(+)
  create mode 100644 docs/SAFETY_KILL_SWITCH.md
 ```
 
-**Commit includes `[build]` suffix** → Triggers Docker CI build automatically
+Releases are cut by pushing a `v*` git tag (GitHub Actions builds and uploads cross-platform binaries).
 
 ### Files Changed
 - `mcp-server/src/features/non_robot_search.rs`: +391 insertions (core implementation)
@@ -232,7 +232,7 @@ run_flow() → panic → Drop trait
 - [Safety Kill Switch Details](SAFETY_KILL_SWITCH.md)
 - [Non-Robot Search Guide](NON_ROBOT_SEARCH.md)
 - [IDE Setup](IDE_SETUP.md)
-- [Docker Deployment](DOCKER_DEPLOYMENT.md)
+- [Binary Release Guide](DOCKER_DEPLOYMENT.md)
 
 ---
 

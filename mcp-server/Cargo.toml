@@ -1,6 +1,6 @@
 [package]
 name = "shadowcrawl"
-version = "2.2.0"
+version = "2.3.0"
 edition = "2021"
 description = "God-Tier stealth intelligence engine for AI agents — zero-dependency parallel meta-search (Google/Bing/DDG/Brave), universal anti-bot bypass, native Chromium CDP (zero-Docker standalone), semantic research memory, and HITL nuclear option. Self-hosted, 100% private, MCP-native."
 repository = "https://github.com/DevsHero/ShadowCrawl"
@@ -18,7 +18,7 @@ path = "src/main.rs"
 name = "shadowcrawl-mcp"
 path = "src/bin/mcp-stdio.rs"
 
-# ── Dev / benchmark tools (auto-discovered by Cargo; not shipped in Docker image)
+# ── Dev / benchmark tools (auto-discovered by Cargo; not shipped in releases)
 [[bin]]
 name = "search-compare"
 path = "src/bin/search-compare.rs"
@@ -76,7 +76,7 @@ chromiumoxide = "0.8"
 # Setup / preflight
 dirs = "6.0"
 which = "8.0"
-rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
+rfd = { version = "0.15", optional = true, default-features = false, features = ["xdg-portal", "tokio"] }
 
 # --- Optional: non_robot_search (visible browser + HITL) ---
 rodio = { version = "0.21", optional = true }
@@ -96,7 +96,7 @@ core-foundation-sys = "0.8"
 [features]
 # Keep default builds lean; enable HITL "nuclear option" explicitly.
 default = []
-non_robot_search = ["dep:rodio", "dep:notify-rust", "dep:crossterm", "dep:atty", "dep:rdev", "dep:sysinfo"]
+non_robot_search = ["dep:rodio", "dep:notify-rust", "dep:crossterm", "dep:atty", "dep:rdev", "dep:sysinfo", "dep:rfd"]
 
 [dev-dependencies]
 tokio-test = "0.4"

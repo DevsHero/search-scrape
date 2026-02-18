@@ -1,15 +1,29 @@
 use crate::setup::os::{action_block, interactive_hint};
-use crate::setup::{CheckStatus, SetupCheck, SetupOptions, SetupRunMode};
+use crate::setup::{CheckStatus, SetupCheck, SetupOptions};
+
+#[cfg(feature = "non_robot_search")]
+use crate::setup::SetupRunMode;
+
+#[cfg(feature = "non_robot_search")]
 use rfd::{MessageButtons, MessageDialog, MessageLevel};
 
-use accessibility_sys::{
-    kAXTrustedCheckOptionPrompt, AXIsProcessTrusted, AXIsProcessTrustedWithOptions,
-};
+use accessibility_sys::AXIsProcessTrusted;
+
+#[cfg(feature = "non_robot_search")]
+use accessibility_sys::{kAXTrustedCheckOptionPrompt, AXIsProcessTrustedWithOptions};
+
+#[cfg(feature = "non_robot_search")]
 use core_foundation_sys::base::{kCFAllocatorDefault, CFRelease};
+
+#[cfg(feature = "non_robot_search")]
 use core_foundation_sys::dictionary::{
     kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks, CFDictionaryCreate,
 };
+
+#[cfg(feature = "non_robot_search")]
 use core_foundation_sys::number::kCFBooleanTrue;
+
+#[cfg(feature = "non_robot_search")]
 use std::ffi::c_void;
 
 pub async fn check(options: &SetupOptions) -> Vec<SetupCheck> {
@@ -41,6 +55,8 @@ fn check_accessibility(options: &SetupOptions) -> SetupCheck {
         Some(settings_url.to_string()),
     )];
 
+    // Interactive dialog is only relevant for HITL input hooks.
+    #[cfg(feature = "non_robot_search")]
     if matches!(options.mode, SetupRunMode::SetupFlag) {
         let result = MessageDialog::new()
             .set_level(MessageLevel::Info)
@@ -87,6 +103,7 @@ fn check_accessibility(options: &SetupOptions) -> SetupCheck {
     }
 }
 
+#[cfg(feature = "non_robot_search")]
 fn request_accessibility_prompt() -> bool {
     unsafe {
         // Build a CFDictionary { kAXTrustedCheckOptionPrompt: true }

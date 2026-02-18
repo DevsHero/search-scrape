@@ -1,56 +1,6 @@
 use super::RustScraper;
 
 impl RustScraper {
-    /// Generate Canvas/WebGL spoofing script for God Level domains
-    pub(super) fn get_canvas_spoof_script(&self) -> String {
-        r#"
-// Canvas Fingerprint Spoofing
-const originalGetContext = HTMLCanvasElement.prototype.getContext;
-HTMLCanvasElement.prototype.getContext = function(type, ...args) {
-    const context = originalGetContext.apply(this, [type, ...args]);
-    if (type === '2d' || type === 'webgl' || type === 'webgl2') {
-        if (context) {
-            // Add noise to canvas fingerprinting
-            const originalToDataURL = this.toDataURL;
-            this.toDataURL = function(...args) {
-                const data = originalToDataURL.apply(this, args);
-                return data.replace(/.$/, String.fromCharCode(Math.random() * 10 | 0));
-            };
-        }
-    }
-    return context;
-};
-
-// WebGL Fingerprint Spoofing - Mask "Google SwiftShader"
-const getParameter = WebGLRenderingContext.prototype.getParameter;
-WebGLRenderingContext.prototype.getParameter = function(parameter) {
-    if (parameter === 37445) {  // UNMASKED_VENDOR_WEBGL
-        return 'Intel Inc.';
-    }
-    if (parameter === 37446) {  // UNMASKED_RENDERER_WEBGL
-        return 'Intel Iris OpenGL Engine';
-    }
-    return getParameter.apply(this, arguments);
-};
-
-// WebGL2 support
-if (typeof WebGL2RenderingContext !== 'undefined') {
-    const getParameter2 = WebGL2RenderingContext.prototype.getParameter;
-    WebGL2RenderingContext.prototype.getParameter = function(parameter) {
-        if (parameter === 37445) return 'Intel Inc.';
-        if (parameter === 37446) return 'Intel Iris OpenGL Engine';
-        return getParameter2.apply(this, arguments);
-    };
-}
-
-// Navigator properties spoofing
-Object.defineProperty(navigator, 'webdriver', {get: () => false});
-Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-"#
-        .to_string()
-    }
-
     /// Universal stealth script for ALL sites - Protocol-level anti-detection
     pub(super) fn get_universal_stealth_script(&self) -> String {
         r#"

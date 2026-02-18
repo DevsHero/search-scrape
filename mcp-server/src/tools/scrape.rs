@@ -59,7 +59,7 @@ pub async fn scrape_url_with_options(
         .await
         .expect("semaphore closed");
 
-    // 🚀 UNIVERSAL CDP STRATEGY: Try native CDP (no Docker dependency)
+    // 🚀 UNIVERSAL CDP STRATEGY: Try native CDP
     let cdp_available = crate::scraping::browser_manager::native_browser_available();
 
     if cdp_available {
@@ -445,13 +445,11 @@ pub async fn scrape_url_with_options(
     .await?;
 
     // PHASE 3: Adaptive native-CDP fallback for low-quality extractions
-    let should_use_browserless = (result.extraction_score.map(|s| s < 0.35).unwrap_or(false)
+    let should_use_native_cdp = (result.extraction_score.map(|s| s < 0.35).unwrap_or(false)
         || result.word_count < 50)
-        && !result
-            .warnings
-            .contains(&"browserless_rendered".to_string());
+        && !result.warnings.contains(&"native_cdp_rendered".to_string());
 
-    if should_use_browserless {
+    if should_use_native_cdp {
         if crate::scraping::browser_manager::native_browser_available() {
             info!(
                 "Low quality extraction (score: {:.2}, words: {}), attempting native CDP fallback",
@@ -460,22 +458,22 @@ pub async fn scrape_url_with_options(
             );
 
             match rust_scraper.scrape_with_browserless(&url_owned).await {
-                Ok(browserless_result) => {
-                    if browserless_result.word_count > result.word_count + 20 {
+                Ok(cdp_result) => {
+                    if cdp_result.word_count > result.word_count + 20 {
                         info!(
                             "✨ Native CDP improved extraction: {} → {} words",
-                            result.word_count, browserless_result.word_count
+                            result.word_count, cdp_result.word_count
                         );
-                        result = browserless_result;
+                        result = cdp_result;
                     } else {
-                        info!("Native CDP didn't improve extraction significantly, keeping original");
+                        info!(
+                            "Native CDP didn't improve extraction significantly, keeping original"
+                        );
                     }
                 }
                 Err(e) => {
                     info!("Native CDP fallback failed: {}, using static result", e);
-                    result
-                        .warnings
-                        .push("cdp_fallback_failed".to_string());
+                    result.warnings.push("cdp_fallback_failed".to_string());
                 }
             }
         } else {

@@ -90,9 +90,14 @@ fn env_truthy(key: &str, default: bool) -> bool {
     }
 }
 
-fn browserless_fallback_enabled() -> bool {
-    env_truthy("SEARCH_BROWSERLESS_FALLBACK", true)
-        && crate::scraping::browser_manager::native_browser_available()
+fn cdp_fallback_enabled() -> bool {
+    // Preferred name (native CDP). Keep the legacy env var as an alias for backwards compatibility.
+    let enabled = match std::env::var("SEARCH_CDP_FALLBACK") {
+        Ok(_) => env_truthy("SEARCH_CDP_FALLBACK", true),
+        Err(_) => env_truthy("SEARCH_BROWSERLESS_FALLBACK", true),
+    };
+
+    enabled && crate::scraping::browser_manager::native_browser_available()
 }
 
 fn should_simulate_block(engine: &str) -> bool {
@@ -119,7 +124,7 @@ pub async fn fetch_serp_html(
 ) -> Result<(StatusCode, String), EngineError> {
     if should_simulate_block(engine) {
         warn!("Simulating blocked engine: {}", engine);
-        if !browserless_fallback_enabled() {
+        if !cdp_fallback_enabled() {
             return Err(EngineError::Blocked {
                 reason: "simulated_block".to_string(),
             });
@@ -134,7 +139,7 @@ pub async fn fetch_serp_html(
         .or_else(|| should_simulate_block(engine).then_some("simulated_block".to_string()));
 
     if let Some(reason) = direct_block {
-        if browserless_fallback_enabled() {
+        if cdp_fallback_enabled() {
             warn!(
                 "Engine {} looks blocked ({}); trying native CDP fallback",
                 engine, reason
@@ -148,7 +153,7 @@ pub async fn fetch_serp_html(
             let status = StatusCode::from_u16(status_u16).unwrap_or(StatusCode::OK);
             if let Some(reason2) = detect_block_reason(status, &html) {
                 return Err(EngineError::Blocked {
-                    reason: format!("{}; browserless:{}", reason, reason2),
+                    reason: format!("{}; cdp:{}", reason, reason2),
                 });
             }
 

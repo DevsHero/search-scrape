@@ -79,7 +79,6 @@ impl QueryRewriter {
                 "mongodb",
                 "redis",
                 "sqlite",
-                "docker",
                 "kubernetes",
                 "ci",
                 "cd",

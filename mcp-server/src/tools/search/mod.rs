@@ -36,6 +36,12 @@ pub struct SearchExtras {
 
 pub struct InternalSearchService;
 
+impl Default for InternalSearchService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InternalSearchService {
     pub fn new() -> Self {
         Self
@@ -73,7 +79,7 @@ impl InternalSearchService {
                 "brave" => engines::brave::search(client, query, max_results).await,
                 other => {
                     debug!("unknown search engine requested: {}", other);
-                    return Ok(Vec::new());
+                    Ok(Vec::new())
                 }
             }
         };
@@ -117,10 +123,9 @@ impl InternalSearchService {
         use crate::rust_scraper::QualityMode;
 
         // Best-effort: only when explicitly enabled (to avoid unexpected HITL prompts).
-        if std::env::var("SEARCH_TIER2_NON_ROBOT")
+        if !std::env::var("SEARCH_TIER2_NON_ROBOT")
             .unwrap_or_else(|_| "true".to_string())
-            .to_ascii_lowercase()
-            != "true"
+            .eq_ignore_ascii_case("true")
         {
             return None;
         }
@@ -141,7 +146,7 @@ impl InternalSearchService {
                 u.query_pairs_mut().append_pair("q", query);
                 u.query_pairs_mut().append_pair("hl", "en");
                 u.query_pairs_mut()
-                    .append_pair("num", &max_results.min(10).max(5).to_string());
+                    .append_pair("num", &max_results.clamp(5, 10).to_string());
                 u
             }
             "brave" => {
@@ -612,9 +617,7 @@ fn domain_weight(query: &str, domain: &Option<String>, source_type: &Option<Stri
 
     if let Some(d) = domain.as_ref() {
         let d = d.to_ascii_lowercase();
-        if d.ends_with(".gov") {
-            weight *= 1.50;
-        } else if d.ends_with(".edu") {
+        if d.ends_with(".gov") || d.ends_with(".edu") {
             weight *= 1.50;
         }
 

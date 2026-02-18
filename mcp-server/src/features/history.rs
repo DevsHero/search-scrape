@@ -584,7 +584,7 @@ impl MemoryManager {
 
             let timestamp_ms = ts_col.value(row);
             let timestamp =
-                DateTime::<Utc>::from_timestamp_millis(timestamp_ms).unwrap_or_else(|| Utc::now());
+                DateTime::<Utc>::from_timestamp_millis(timestamp_ms).unwrap_or_else(Utc::now);
 
             let full_result_str = full_result_col.value(row);
             let full_result = serde_json::from_str(full_result_str)

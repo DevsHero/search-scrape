@@ -1,37 +1,44 @@
-# VS Code MCP Setup (macOS-tested)
+# VS Code MCP Setup (Zero-Docker)
 
-This repo exposes an MCP server over **stdio** via the `shadowcrawl-mcp` binary.
+ShadowCrawl is **pure binary** and exposes an MCP server over **stdio** via the `shadowcrawl-mcp` executable.
 
-Recommended setup: run via Docker Compose so Browserless is already wired.
+## 1) Get the binary
 
-## 1) Start the stack
+Choose one:
+
+- Download `shadowcrawl-mcp` from GitHub Releases
+- Or build it locally:
 
 ```bash
-docker compose -f docker-compose-local.yml up -d --build
+cd mcp-server
+cargo build --release --features non_robot_search --bin shadowcrawl-mcp
 ```
 
 ## 2) Configure VS Code MCP
 
-In VS Code settings (workspace `settings.json`), add an MCP server pointing at the running container:
+In VS Code settings (workspace `settings.json`), add an MCP server pointing at your local binary:
 
 ```json
 {
   "mcp.servers": {
     "shadowcrawl": {
-      "command": "docker",
+      "type": "stdio",
+      "command": "env",
       "args": [
-        "compose",
-        "-f",
-        "/absolute/path/to/search-scrape/docker-compose-local.yml",
-        "exec",
-        "-i",
-        "-T",
-        "shadowcrawl",
-        "shadowcrawl-mcp"
-      ],
-      "env": {
-        "RUST_LOG": "info"
-      }
+        "RUST_LOG=info",
+        "SEARCH_ENGINES=google,bing,duckduckgo,brave",
+        "SEARCH_CDP_FALLBACK=true",
+        "SEARCH_TIER2_NON_ROBOT=true",
+        "LANCEDB_URI=/absolute/path/to/search-scrape/lancedb",
+        "HTTP_TIMEOUT_SECS=30",
+        "HTTP_CONNECT_TIMEOUT_SECS=10",
+        "OUTBOUND_LIMIT=32",
+        "MAX_CONTENT_CHARS=10000",
+        "MAX_LINKS=100",
+        "IP_LIST_PATH=/absolute/path/to/search-scrape/ip.txt",
+        "PROXY_SOURCE_PATH=/absolute/path/to/search-scrape/proxy_source.json",
+        "/absolute/path/to/search-scrape/mcp-server/target/release/shadowcrawl-mcp"
+      ]
     }
   }
 }
@@ -40,6 +47,7 @@ In VS Code settings (workspace `settings.json`), add an MCP server pointing at t
 ## 3) Restart VS Code (tool cache)
 
 VS Code caches tool lists. If tools don’t appear or look stale:
+
 - fully quit (Cmd+Q)
 - reopen VS Code
 
@@ -53,15 +61,12 @@ VS Code caches tool lists. If tools don’t appear or look stale:
 `non_robot_search` opens a **local visible GUI browser** (Brave/Chrome) and may require user interaction.
 
 - ✅ Tested: macOS
-- ⚠️ Not supported via `docker compose exec ... shadowcrawl-mcp` for typical setups (no GUI browser in the container)
-
-If you want to use HITL in VS Code, run a **native** MCP stdio server built with the feature flag and point VS Code to the local binary.
+- ⚠️ Requires a local desktop session (GUI browser)
 
 Full guide (Brave/profile/consent/kill-switch):
 - [docs/NON_ROBOT_SEARCH.md](docs/NON_ROBOT_SEARCH.md)
 
 ## Troubleshooting
 
-- Container logs: `docker compose -f docker-compose-local.yml logs -f shadowcrawl`
-- Health check: `curl -fsS http://localhost:5001/health`
-- macOS preflight (especially for HITL): `docker compose -f docker-compose-local.yml exec -T shadowcrawl shadowcrawl --setup`
+- If tools don’t appear: restart VS Code (Cmd+Q).
+- macOS preflight (especially for HITL): run `shadowcrawl-mcp --setup` (or `shadowcrawl --setup`).

@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
                         metrics.top_answer_present
                     );
 
-                    if let Some(r0) = warm_resp.results.get(0) {
+                    if let Some(r0) = warm_resp.results.first() {
                         println!("  #1: {}", truncate(&r0.title, 90));
                         println!("      {}", r0.url);
                         println!("      snippet: {}", truncate(&r0.content, 140));
@@ -258,7 +258,7 @@ fn normalize_url_key(url: &str) -> String {
 }
 
 fn truncate(s: &str, n: usize) -> String {
-    let s = s.replace('\n', " ").replace('\r', " ");
+    let s = s.replace(['\n', '\r'], " ");
     if s.chars().count() <= n {
         return s;
     }

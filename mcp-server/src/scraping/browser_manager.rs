@@ -8,10 +8,15 @@
 //! * Smart `wait_until_stable` / `auto_scroll` for SPA / lazy pages (Step 4).
 //!
 //! All other modules (cdp.rs, search engines, scrape tool, etc.) use this
-//! module.  The external Browserless Docker service is no longer required.
+//! module. No external headless-browser sidecar is required.
+//!
+//! Stealth model:
+//! - This module provides *process-level* defaults (user-agent rotation, browser flags).
+//! - JS-level stealth injection is applied in the CDP pipeline (see `rust_scraper/stealth.rs`
+//!   and `rust_scraper/cdp.rs`).
 
-use anyhow::{anyhow, Result};
 use aho_corasick::AhoCorasick;
+use anyhow::{anyhow, Result};
 use chromiumoxide::browser::BrowserConfig;
 use chromiumoxide::handler::viewport::Viewport;
 use chromiumoxide::{Browser, Page};
@@ -57,8 +62,7 @@ pub fn random_user_agent() -> &'static str {
 /// Find a usable Chromium-family browser executable.
 ///
 /// Resolution order:
-/// 1. `CHROME_EXECUTABLE` env var (works great in Docker:
-///    `CHROME_EXECUTABLE=/usr/bin/chromium`)
+/// 1. `CHROME_EXECUTABLE` env var (explicit override)
 /// 2. PATH scan – finds package-manager installs on all platforms.
 /// 3. OS-specific well-known install paths.
 pub fn find_chrome_executable() -> Option<String> {
@@ -142,8 +146,7 @@ pub fn find_chrome_executable() -> Option<String> {
 }
 
 /// Returns `true` when a usable browser binary is present on this machine.
-/// Use this anywhere you previously checked `BROWSERLESS_URL` as a proxy for
-/// "can we do JS rendering?".
+/// Use this to gate JS rendering / CDP features.
 pub fn native_browser_available() -> bool {
     find_chrome_executable().is_some()
 }
@@ -153,7 +156,7 @@ pub fn native_browser_available() -> bool {
 /// Build a `BrowserConfig` for headless operation with stealth defaults.
 ///
 /// Flags chosen for:
-/// * Docker compatibility (`--no-sandbox`, `--disable-dev-shm-usage`).
+/// * Compatibility with CI / restricted environments (`--no-sandbox`, `--disable-dev-shm-usage`).
 /// * Stealth — `--disable-blink-features=AutomationControlled` hides the
 ///   `navigator.webdriver` flag; UA is randomly drawn from `DESKTOP_USER_AGENTS`.
 pub fn build_headless_config(
@@ -177,9 +180,9 @@ pub fn build_headless_config(
         .window_size(width, height)
         // Headless flags compatible with both Chrome/Chromium and Brave
         .arg("--disable-gpu")
-        .arg("--no-sandbox") // required in Docker / CI environments
+        .arg("--no-sandbox") // often required in CI / restricted environments
         .arg("--disable-setuid-sandbox")
-        .arg("--disable-dev-shm-usage") // avoids /dev/shm OOM in Docker
+        .arg("--disable-dev-shm-usage") // avoids /dev/shm OOM in constrained environments
         .arg("--disable-extensions")
         .arg("--disable-background-networking")
         .arg("--disable-sync")
@@ -288,17 +291,35 @@ impl BrowserPool {
 // ── Ad-block / network interception (Step 3) ─────────────────────────────────
 
 const AD_BLOCK_PATTERNS: &[&str] = &[
-    "doubleclick.net",       "googlesyndication.com", "googletagmanager.com",
-    "googletagservices.com", "adservice.google.",     "amazon-adsystem.com",
-    "ads.twitter.com",       "ads.linkedin.com",      "advertising.com",
-    "criteo.com",            "taboola.com",           "outbrain.com",
-    "moatads.com",           "adnxs.com",
-    "google-analytics.com",  "analytics.google.com",
-    "segment.com/v1/t",      "segment.io/v1",         "mixpanel.com/track",
-    "hotjar.com",            "mouseflow.com",          "fullstory.com",
-    "newrelic.com/",         "nr-data.net",
-    "connect.facebook.net",  "platform.twitter.com/widgets",
-    "cookielaw.org",         "cookiebot.com",          "onetrust.com",
+    "doubleclick.net",
+    "googlesyndication.com",
+    "googletagmanager.com",
+    "googletagservices.com",
+    "adservice.google.",
+    "amazon-adsystem.com",
+    "ads.twitter.com",
+    "ads.linkedin.com",
+    "advertising.com",
+    "criteo.com",
+    "taboola.com",
+    "outbrain.com",
+    "moatads.com",
+    "adnxs.com",
+    "google-analytics.com",
+    "analytics.google.com",
+    "segment.com/v1/t",
+    "segment.io/v1",
+    "mixpanel.com/track",
+    "hotjar.com",
+    "mouseflow.com",
+    "fullstory.com",
+    "newrelic.com/",
+    "nr-data.net",
+    "connect.facebook.net",
+    "platform.twitter.com/widgets",
+    "cookielaw.org",
+    "cookiebot.com",
+    "onetrust.com",
 ];
 
 static AD_BLOCK_MATCHER: OnceLock<AhoCorasick> = OnceLock::new();
@@ -321,8 +342,8 @@ pub fn should_block_url(url: &str, block_images: bool) -> bool {
     if block_images {
         let lower = url.to_lowercase();
         for ext in [
-            ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico",
-            ".mp4", ".webm", ".ogg", ".mp3", ".woff", ".woff2", ".ttf",
+            ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".mp4", ".webm", ".ogg",
+            ".mp3", ".woff", ".woff2", ".ttf",
         ] {
             if lower.contains(ext) {
                 return true;
@@ -432,7 +453,9 @@ pub async fn auto_scroll(page: &Page) -> Result<()> {
     for i in 0..=steps {
         let y = i * step;
         if let Err(e) = page
-            .evaluate(format!("window.scrollTo({{top: {y}, behavior: 'smooth'}});"))
+            .evaluate(format!(
+                "window.scrollTo({{top: {y}, behavior: 'smooth'}});"
+            ))
             .await
         {
             warn!("auto_scroll: step {} error: {}", i, e);
@@ -446,8 +469,8 @@ pub async fn auto_scroll(page: &Page) -> Result<()> {
 
 /// Fetch the rendered HTML of `url` using a **native headless browser**.
 ///
-/// This is the lightweight alternative to the old Browserless `/content` HTTP
-/// call.  It launches a fresh browser, navigates, waits, captures HTML, then
+/// This is the lightweight alternative to the old HTTP headless-browser sidecar.
+/// It launches a fresh browser, navigates, waits, captures HTML, then
 /// closes.  The full stealth-scraping pipeline (mouse simulation, human scroll,
 /// etc.) lives in `cdp.rs`; this function is intentionally minimal and fast.
 ///

@@ -1,4 +1,4 @@
-# 🥷 ShadowCrawl MCP — v2.2.0
+# 🥷 ShadowCrawl MCP — v2.3.0
 
 <div align="center">
 <img src="media/logo.svg" alt="ShadowCrawl Logo" width="180">
@@ -9,7 +9,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 [![MCP](https://img.shields.io/badge/Protocol-MCP-blue.svg)](https://modelcontextprotocol.io/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://hub.docker.com/)
 </div>
 
 ---
@@ -20,9 +19,9 @@ When every other tool gets blocked, ShadowCrawl doesn't retreat — it **escalat
 
 ---
 
-## ⚡ God-Tier Internal Meta-Search (v2.2.0)
+## ⚡ God-Tier Internal Meta-Search (v2.3.0)
 
-ShadowCrawl v2.2.0 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
+ShadowCrawl v2.3.0 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
 
 | Engine | Coverage | Notes |
 |--------|----------|-------|
@@ -71,13 +70,7 @@ ShadowCrawl v2.2.0 ships a **100% Rust-native metasearch engine** that queries 4
 
 ## 🏗 Zero-Bloat Architecture
 
-The Docker stack is a **single container** — no extra sidecars:
-
-| Service | Role |
-|---------|------|
-| `shadowcrawl` | Main MCP + HTTP server, internal search + bundled Chromium CDP |
-
-Internal search engines (Google / Bing / DuckDuckGo / Brave) **and** the headless Chromium browser all run **inside the `shadowcrawl` binary / container**.
+ShadowCrawl is **pure binary**: a single Rust executable exposes MCP tools (stdio) and an optional HTTP server — no Docker, no sidecars.
 
 ---
 
@@ -92,7 +85,7 @@ Automation hits a wall? ShadowCrawl **uses a real human** when it matters.
 - 🔄 **Session Continuity** — `SHADOWCRAWL_RENDER_PROFILE_DIR` persists cookies between runs
 - 📈 **Automatic Escalation** — Normal scrape → native Chromium CDP → HITL. You control the ceiling.
 
-> ⚠️ HITL requires the binary running **natively on macOS/Linux** (not inside Docker). The visible browser needs access to your host display, keyboard hooks, and OS permissions.
+> ⚠️ HITL requires the binary running **natively** (desktop session). The visible browser needs access to your host display, keyboard hooks, and OS permissions.
 
 ---
 
@@ -115,40 +108,39 @@ We don't claim — we show receipts. All captured with `non_robot_search` + Safe
 
 ## 📦 Quick Start
 
-### Option A — Docker (Recommended for Most Users)
+### Option A — Download Prebuilt Binaries (Recommended)
 
-Two services only.
+Download the latest release assets from GitHub Releases and run one of:
+
+- `shadowcrawl-mcp` — MCP stdio server (recommended for VS Code / Cursor / Claude Desktop)
+- `shadowcrawl` — HTTP server (default port `5000`; override via `--port`, `PORT`, or `SHADOWCRAWL_PORT`)
+
+Confirm the HTTP server is alive:
+```bash
+./shadowcrawl --port 5000
+curl http://localhost:5000/health
+```
+
+### Option B — Build / Install from Source
 
 ```bash
 git clone https://github.com/DevsHero/shadowcrawl.git
 cd shadowcrawl
-docker compose up -d --build
 ```
 
-Confirm it's alive:
-```bash
-curl http://localhost:5001/health
-# {"service":"shadowcrawl","status":"healthy","version":"2.2.0"}
-```
-
-Fire a search:
-```bash
-curl -s -X POST http://localhost:5001/search \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"Rust 2025 features"}' | python3 -m json.tool | head -30
-```
-
-> Docker mode uses the internal search engines and native Chromium CDP fully (Chromium is bundled in the image). `non_robot_search` (HITL) is not available inside a container — use Option B for that.
-
-### Option B — Native Rust Binary (Required for HITL)
-
+Build:
 ```bash
 cd mcp-server
-cargo build --release --all-features
+cargo build --release --features non_robot_search --bin shadowcrawl --bin shadowcrawl-mcp
+```
+
+Or install (puts binaries into your Cargo bin directory):
+```bash
+cargo install --path mcp-server --locked
 ```
 
 Binaries land at:
-- `target/release/shadowcrawl` — HTTP server on port `5000`
+- `target/release/shadowcrawl` — HTTP server (default port `5000`; override via `--port`, `PORT`, or `SHADOWCRAWL_PORT`)
 - `target/release/shadowcrawl-mcp` — MCP stdio server
 
 Prerequisites for HITL:
@@ -158,7 +150,7 @@ Prerequisites for HITL:
 
 Platform guides: [WINDOWS_DESKTOP.md](docs/WINDOWS_DESKTOP.md) · [UBUNTU_DESKTOP.md](docs/UBUNTU_DESKTOP.md)
 
-> After any binary rebuild or Docker image update, **restart your MCP client session** to pick up new tool definitions.
+> After any binary rebuild/update, **restart your MCP client session** to pick up new tool definitions.
 
 ---
 
@@ -191,21 +183,9 @@ Add to your MCP config (`~/.config/Code/User/mcp.json`):
 }
 ```
 
-### Cursor / Claude Desktop (Docker mode)
+### Cursor / Claude Desktop
 
-```json
-{
-  "mcpServers": {
-    "shadowcrawl": {
-      "command": "docker",
-      "args": [
-        "compose", "-f", "/YOUR_PATH/shadowcrawl/docker-compose.yml",
-        "exec", "-i", "-T", "shadowcrawl", "shadowcrawl-mcp"
-      ]
-    }
-  }
-}
-```
+Use the same stdio setup as VS Code (run `shadowcrawl-mcp` locally and pass env vars via `env` or your client’s `env` field).
 
 📖 Full multi-IDE guide: [docs/IDE_SETUP.md](docs/IDE_SETUP.md)
 
@@ -218,7 +198,7 @@ Add to your MCP config (`~/.config/Code/User/mcp.json`):
 | `CHROME_EXECUTABLE` | auto-detected | Override path to Chromium/Chrome/Brave binary |
 | `SEARCH_ENGINES` | `google,bing,duckduckgo,brave` | Active search engines (comma-separated) |
 | `SEARCH_MAX_RESULTS_PER_ENGINE` | `10` | Results per engine before merge |
-| `SEARCH_BROWSERLESS_FALLBACK` | `true` if browser found | Auto-retry blocked engines via native Chromium CDP |
+| `SEARCH_CDP_FALLBACK` | `true` if browser found | Auto-retry blocked engines via native Chromium CDP (alias: `SEARCH_BROWSERLESS_FALLBACK`) |
 | `SEARCH_SIMULATE_BLOCK` | — | Force blocked path for testing: `duckduckgo,bing` or `all` |
 | `LANCEDB_URI` | — | Path for semantic research memory (optional) |
 | `HTTP_TIMEOUT_SECS` | `30` | Per-request timeout |
@@ -231,7 +211,7 @@ Add to your MCP config (`~/.config/Code/User/mcp.json`):
 
 ## 🏆 Comparison
 
-| Feature | Firecrawl / Jina / Tavily | ShadowCrawl v2.2.0 |
+| Feature | Firecrawl / Jina / Tavily | ShadowCrawl v2.3.0 |
 |---------|--------------------------|-------------------|
 | **Cost** | $49–$499/mo | **$0 — self-hosted** |
 | **Privacy** | They see your queries | **100% private, local-only** |
@@ -243,7 +223,6 @@ Add to your MCP config (`~/.config/Code/User/mcp.json`):
 | **Semantic Memory** | None | **Embedded LanceDB + Model2Vec** |
 | **Proxy Support** | Paid add-on | **Native SOCKS5/HTTP rotation** |
 | **MCP Native** | Partial | **Full MCP stdio + HTTP** |
-| **Docker containers** | N/A | **1 only (shadowcrawl, Chromium bundled)** |
 
 
 

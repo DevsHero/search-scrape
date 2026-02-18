@@ -1,13 +1,13 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.DevsHero/shadow-crawl",
+  "name": "io.github.DevsHero/ShadowCrawl",
   "title": "ShadowCrawl",
-  "description": "God-tier stealth intelligence engine for AI agents — parallel meta-search (Google/Bing/DDG/Brave), universal anti-bot bypass, Browserless/HITL fallback, and semantic research memory. Self-hosted & MCP-native.",
+  "description": "God-tier stealth intelligence engine for AI agents — parallel meta-search (Google/Bing/DDG/Brave), universal anti-bot bypass, native Chromium CDP + HITL fallback, and semantic research memory. Self-hosted & MCP-native.",
   "repository": {
     "url": "https://github.com/DevsHero/ShadowCrawl",
     "source": "github"
   },
-  "version": "2.2.0",
+  "version": "2.3.0",
   "remotes": [
     {
       "type": "streamable-http",

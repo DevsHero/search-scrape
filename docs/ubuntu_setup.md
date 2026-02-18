@@ -7,7 +7,7 @@ This document focuses on running ShadowCrawl’s **visible-browser HITL** mode (
 - Linux preflight checks already exist in [mcp-server/src/setup/os/linux.rs](../mcp-server/src/setup/os/linux.rs):
   - Detects X11/Wayland display env.
   - Checks `/dev/input/event*` readability for global input hooks.
-- Browser discovery includes common Linux paths in `find_chrome_executable()`.
+- Browser discovery includes common Linux paths via `scraping::browser_manager::find_chrome_executable()`.
 
 ## Ubuntu Desktop requirements
 
@@ -41,13 +41,10 @@ Notes:
 - `rodio` often needs ALSA headers (`libasound2-dev`).
 - Input and GUI stacks vary by distro; add packages as compiler errors indicate.
 
-### Dialogs (rfd / xdg portal)
+### Desktop notifications
 
-ShadowCrawl uses `rfd` with `xdg-portal` enabled. For best results on Ubuntu:
-
-```bash
-sudo apt-get install -y xdg-desktop-portal xdg-desktop-portal-gtk
-```
+`notify-rust` requires a functional desktop notification stack (DBus + a notification daemon).
+If unavailable, HITL still works; you just may not see toast notifications.
 
 ## Permissions: `/dev/input` access (kill switch / input locking)
 
@@ -89,9 +86,8 @@ cargo build --release --bin shadowcrawl-mcp --features non_robot_search
    - `notify-rust` requires a functional desktop notification stack (DBus + notification daemon).
    - The feature should degrade gracefully (no-op if unavailable).
 
-3. **Hardcoded Chromium path in CDP scraper (non-HITL path)**
-   - [mcp-server/src/scraping/rust_scraper/cdp.rs](../mcp-server/src/scraping/rust_scraper/cdp.rs) currently sets `.chrome_executable("/usr/bin/chromium")`.
-   - For cross-distro Ubuntu support, use `CHROME_EXECUTABLE` override or a shared discovery helper.
+3. **Browser discovery**
+  - If auto-discovery fails, set `CHROME_EXECUTABLE` explicitly (e.g., `/usr/bin/google-chrome`).
 
 ## Engineering plan (Ubuntu Desktop)
 

@@ -92,7 +92,7 @@ pub async fn handle(
                     • Page is JavaScript-heavy (requires browser execution)\n\
                     • Content is behind authentication/paywall\n\
                     • Site blocks automated access\n\n\
-                    **Suggestion:** For JS-heavy sites, enable Browserless (`BROWSERLESS_URL`) and retry with `use_proxy: true` if needed."
+                    **Suggestion:** For JS-heavy sites, install Brave/Chrome/Chromium and set `CHROME_EXECUTABLE` if auto-discovery fails. For bot walls, use `non_robot_search` (HITL) and retry with `use_proxy: true` if needed."
                         .to_string()
                 } else if content.word_count < 10 {
                     format!(

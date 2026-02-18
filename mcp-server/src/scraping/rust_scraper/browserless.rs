@@ -122,7 +122,10 @@ impl RustScraper {
         {
             return Some("Bot Detected");
         }
-        if lower.contains("cf-chl-") || lower.contains("cf-turnstile") || lower.contains("turnstile") {
+        if lower.contains("cf-chl-")
+            || lower.contains("cf-turnstile")
+            || lower.contains("turnstile")
+        {
             return Some("Cloudflare");
         }
         if lower.contains("perimeterx") || lower.contains("px-captcha") {

@@ -170,7 +170,7 @@ pub async fn search(
     let url = reqwest::Url::parse(&format!(
         "https://www.google.com/search?q={}&hl=en&num={}",
         encoded,
-        max_results.min(10).max(5)
+        max_results.clamp(5, 10)
     ))
     .map_err(|e| EngineError::Fatal(e.to_string()))?;
 

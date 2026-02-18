@@ -1,3 +1,16 @@
+//! Human-in-the-loop (HITL) scraping for hard anti-bot / verification gates.
+//!
+//! This feature is intentionally conservative:
+//! - Requires explicit user consent before launching a visible browser.
+//! - Includes a **Safety Kill Switch** (hold `ESC` ~3 seconds) to abort and clean up.
+//! - Times out (`human_timeout`) if the user doesn't respond.
+//!
+//! Stealth model:
+//! - `non_robot_search` runs a *real, visible* user browser (Brave/Chrome/Chromium) and lets
+//!   the human complete verification.
+//! - The headless CDP pipeline uses JS stealth injection (see `rust_scraper/stealth.rs`).
+//!   HITL mode focuses on safety + cleanup rather than aggressive automation.
+
 use crate::types::ScrapeResponse;
 use crate::AppState;
 use std::sync::Arc;
@@ -13,8 +26,6 @@ use crate::rust_scraper::RustScraper;
 use anyhow::anyhow;
 #[cfg(feature = "non_robot_search")]
 use rand::distr::{Distribution, Uniform};
-#[cfg(feature = "non_robot_search")]
-use std::path::Path;
 #[cfg(feature = "non_robot_search")]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "non_robot_search")]
@@ -905,7 +916,7 @@ async fn is_challenged_conservative(page: &chromiumoxide::Page) -> anyhow::Resul
     }
 
     // Fall back to generic "interstitial-like" heuristics.
-    Ok(detect_interstitial_like(page).await?)
+    detect_interstitial_like(page).await
 }
 
 #[cfg(feature = "non_robot_search")]
@@ -1914,9 +1925,10 @@ impl BrowserSession {
             kill_debug_browser_zombies(debugging_port, std::path::Path::new(""));
         }
 
-        let chrome_exe = find_chrome_executable().ok_or_else(|| {
-            anyhow!("Browser executable not found (tried Brave, Chrome, Chromium)")
-        })?;
+        let chrome_exe =
+            crate::scraping::browser_manager::find_chrome_executable().ok_or_else(|| {
+                anyhow!("Browser executable not found (tried Brave, Chrome, Chromium)")
+            })?;
 
         // Minimal flags - keep it as close to a normal user browser as possible.
         let mut args = vec![
@@ -2112,9 +2124,10 @@ impl BrowserSession {
             kill_debug_browser_zombies(debugging_port, std::path::Path::new(""));
         }
 
-        let chrome_exe = find_chrome_executable().ok_or_else(|| {
-            anyhow!("Browser executable not found (tried Brave, Chrome, Chromium)")
-        })?;
+        let chrome_exe =
+            crate::scraping::browser_manager::find_chrome_executable().ok_or_else(|| {
+                anyhow!("Browser executable not found (tried Brave, Chrome, Chromium)")
+            })?;
 
         // Minimal flags - keep it as close to a normal user browser as possible.
         let mut args = vec![
@@ -2531,85 +2544,6 @@ fn expand_tilde(raw: &str) -> String {
         }
     }
     raw.to_string()
-}
-
-#[cfg(feature = "non_robot_search")]
-fn find_chrome_executable() -> Option<String> {
-    if let Ok(p) = std::env::var("CHROME_EXECUTABLE") {
-        if Path::new(&p).exists() {
-            return Some(p);
-        }
-    }
-
-    // PATH-based discovery first (Linux/Windows/macOS all benefit from this when installed via package managers).
-    // Keep this minimal to avoid adding a new dependency.
-    if let Ok(path) = std::env::var("PATH") {
-        let candidates = [
-            "brave-browser",
-            "brave",
-            "google-chrome",
-            "chromium",
-            "chromium-browser",
-            "chrome",
-        ];
-        for dir in std::env::split_paths(&path) {
-            for exe in candidates {
-                let full = dir.join(exe);
-                if full.exists() {
-                    return Some(full.to_string_lossy().to_string());
-                }
-            }
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        // Prioritize Brave Browser for better human-centric experience
-        let candidates = [
-            "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-            "/Applications/Chromium.app/Contents/MacOS/Chromium",
-            "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
-        ];
-        for c in candidates {
-            if Path::new(c).exists() {
-                return Some(c.to_string());
-            }
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let candidates = [
-            "/usr/bin/brave-browser",
-            "/usr/bin/brave",
-            "/usr/bin/chromium",
-            "/usr/bin/chromium-browser",
-            "/usr/bin/google-chrome",
-        ];
-        for c in candidates {
-            if Path::new(c).exists() {
-                return Some(c.to_string());
-            }
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let candidates = [
-            r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
-            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-        ];
-        for c in candidates {
-            if Path::new(c).exists() {
-                return Some(c.to_string());
-            }
-        }
-    }
-
-    None
 }
 
 #[cfg(feature = "non_robot_search")]

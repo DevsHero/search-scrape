@@ -35,9 +35,9 @@ async fn boss_1_linkedin_job_description() {
     println!("URL: {}", url);
     println!("Challenge: Extract job listings without login wall");
 
-    // Check if Browserless is available
-    let browserless_available = std::env::var("BROWSERLESS_URL").is_ok();
-    println!("🌐 Browserless Available: {}", browserless_available);
+    // Check if native browser/CDP is available for JS-heavy pages
+    let cdp_available = shadowcrawl::scraping::browser_manager::native_browser_available();
+    println!("🌐 Native CDP Available: {}", cdp_available);
 
     match scrape_url(&state, url).await {
         Ok(result) => {
@@ -48,12 +48,6 @@ async fn boss_1_linkedin_job_description() {
                 result.extraction_score.unwrap_or(0.0)
             );
             println!("⚠️  Warnings: {:?}", result.warnings);
-
-            // Check if Browserless was used
-            let browserless_used = result
-                .warnings
-                .contains(&"browserless_rendered".to_string());
-            println!("🎭 Browserless Used: {}", browserless_used);
 
             // LinkedIn is challenging, accept lower threshold
             if result.word_count > 50 {
@@ -143,9 +137,9 @@ async fn boss_3_substack_full_article() {
 
     println!("\n🎯 BOSS LEVEL 3: Substack Newsletter Homepage");
     println!("URL: {}", url);
-    println!("Challenge: Extract content with Browserless + JS rendering");
+    println!("Challenge: Extract content with native CDP + JS rendering");
 
-    let browserless_available = std::env::var("BROWSERLESS_URL").is_ok();
+    let cdp_available = shadowcrawl::scraping::browser_manager::native_browser_available();
 
     match scrape_url(&state, url).await {
         Ok(result) => {
@@ -157,11 +151,6 @@ async fn boss_3_substack_full_article() {
             );
             println!("⚠️  Warnings: {:?}", result.warnings);
 
-            let browserless_used = result
-                .warnings
-                .contains(&"browserless_rendered".to_string());
-            println!("🎭 Browserless Used: {}", browserless_used);
-
             // Substack articles should be substantial
             if result.word_count > 200 {
                 println!(
@@ -170,8 +159,8 @@ async fn boss_3_substack_full_article() {
                 );
             } else {
                 println!("⚠️  INCOMPLETE: Only {} words", result.word_count);
-                if !browserless_available {
-                    println!("   💡 TIP: Enable Browserless for better JS-heavy extraction");
+                if !cdp_available {
+                    println!("   💡 TIP: Install Brave/Chrome/Chromium and set CHROME_EXECUTABLE if needed");
                 }
             }
 

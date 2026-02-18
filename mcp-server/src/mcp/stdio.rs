@@ -86,7 +86,7 @@ impl McpService {
 
         let mut state = AppState::new(http_client);
 
-        if let Ok(lancedb_uri) = env::var("LANCEDB_URI") {
+        if let Some(lancedb_uri) = crate::core::config::lancedb_uri() {
             info!("Initializing memory with LanceDB at: {}", lancedb_uri);
             match history::MemoryManager::new(&lancedb_uri).await {
                 Ok(memory) => {

@@ -14,10 +14,9 @@ This tool is intentionally interactive (HITL = Human-In-The-Loop). It is **not**
 - ✅ **Tested:** Windows 10/11 (see verified setup guide below)
 - ⚠️ **Not the primary test target:** Linux (may work, but expect rough edges)
   - Ubuntu Desktop notes: docs/ubuntu_setup.md
-  - Windows notes: docs/WINDOWS_SETUP.md
-- ⚠️ **Container note:** `non_robot_search` launches a **local GUI browser** (Brave/Chrome). Running it inside the Docker container is not supported for typical setups.
+  - Windows notes: docs/window_setup.md
 
-If you only run Docker-based MCP, you still get the other tools (`web_search`, `scrape_url`, `crawl_website`, …). Use a native desktop for HITL.
+`non_robot_search` launches a **local GUI browser** (Brave/Chrome). Run it in a local desktop session.
 
 ## What it does (at a high level)
 
@@ -49,15 +48,9 @@ cargo build --release --features non_robot_search --bin shadowcrawl --bin shadow
 
 ## Run recommendations (macOS)
 
-### Option A (recommended): run Docker stack for dependencies + run HITL tool natively
+### Option A (recommended): run HITL tool natively
 
-1) Start the stack services (Browserless):
-
-```bash
-docker compose -f docker-compose-local.yml up -d --build
-```
-
-2) Run the MCP stdio server locally (so it can open Brave/Chrome):
+Run the MCP stdio server locally (so it can open Brave/Chrome):
 
 ```bash
 cd mcp-server
@@ -67,8 +60,7 @@ RUST_LOG=info \
 ```
 
 Notes:
-- Host port in `docker-compose-local.yml` is `3010` (Browserless).
-- `non_robot_search` itself does not require Browserless.
+- `non_robot_search` requires a native desktop session (GUI browser).
 
 ### Option B: run HTTP server locally
 

@@ -16,17 +16,14 @@ impl RustScraper {
         url: &str,
         proxy_url: Option<String>,
     ) -> Result<(String, u16)> {
-        let exe = browser_manager::find_chrome_executable()
-            .ok_or_else(|| anyhow!("No browser found for CDP stealth mode. Install Brave, Chrome, or Chromium."))?;
+        let exe = browser_manager::find_chrome_executable().ok_or_else(|| {
+            anyhow!("No browser found for CDP stealth mode. Install Brave, Chrome, or Chromium.")
+        })?;
 
         warn!("🚀 Direct CDP Stealth Mode: {} (browser: {})", url, exe);
 
-        let config = browser_manager::build_headless_config(
-            &exe,
-            proxy_url.as_deref(),
-            1920,
-            1080,
-        )?;
+        let config =
+            browser_manager::build_headless_config(&exe, proxy_url.as_deref(), 1920, 1080)?;
 
         let (mut browser, mut handler) = chromiumoxide::Browser::launch(config)
             .await
@@ -136,7 +133,9 @@ impl RustScraper {
 
         // Smart dynamic hydration: wait for network to settle, then auto-scroll
         // to trigger lazy-loaded content before capturing HTML.
-        browser_manager::wait_until_stable(&page, 1500, 8000).await.ok();
+        browser_manager::wait_until_stable(&page, 1500, 8000)
+            .await
+            .ok();
         browser_manager::auto_scroll(&page).await.ok();
 
         let content = page

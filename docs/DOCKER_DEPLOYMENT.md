@@ -1,179 +1,58 @@
-# Docker Build and Deployment Guide
+# Binary Build and Release Guide (Zero-Docker)
 
-## Local Build and Test
+This repo ships **pure binaries** (no Docker images).
 
-### Build Docker Image
+GitHub Actions builds cross-platform artifacts and attaches them to GitHub Releases when you push a commit to `main`/`master` with `[build]` in the commit message.
+
+## Release workflow (GitHub Actions)
+
+Workflow: `.github/workflows/release.yml`
+
+Build matrix:
+
+- macOS: x86_64 + arm64
+- Windows: x86_64
+- Linux: x86_64
+
+Each release attaches archives containing:
+
+- `shadowcrawl` (HTTP server)
+- `shadowcrawl-mcp` (MCP stdio server)
+- metadata (`LICENSE`, `README.md`, `server.json`)
+
+## Cut a release
+
+1) Bump version in `mcp-server/Cargo.toml`.
+
+2) Ensure `server.json` version matches.
+
+3) Commit with `[build]` and push to `main`/`master`:
+
 ```bash
-cd search-scrape
-docker build -t shadowcrawl-mcp:latest .
-```
-
-### Test the Image
-```bash
-# Run HTTP server (host 5001 -> container 5000)
-docker run --rm \
-  -e RUST_LOG=info \
-  -p 5001:5000 \
-  shadowcrawl-mcp:latest
-
-# Or run MCP stdio server
-docker run --rm -it \
-  shadowcrawl-mcp:latest \
-  shadowcrawl-mcp
-```
-
-### Run with docker-compose
-```bash
-# Start all services (Browserless + MCP Server)
-docker compose -f docker-compose-local.yml up -d --build
-
-# Check logs
-docker compose -f docker-compose-local.yml logs -f shadowcrawl
-
-# Stop all services
-docker compose -f docker-compose-local.yml down
-```
-
-## GitHub Actions Auto-Deployment
-
-### How It Works
-The project uses GitHub Actions to automatically build and push Docker images to GitHub Container Registry (ghcr.io).
-
-**Trigger Conditions:**
-- ✅ **Manual trigger**: Run workflow manually from GitHub Actions tab
-- ✅ **Commit ending with `[build]`**: Commit messages ending with `[build]` will trigger the build
-- ❌ **Other commits**: Regular commits without `[build]` will NOT trigger builds
-
-### Usage Examples
-
-#### Trigger Build
-```bash
-# Commit message ending with [build] to trigger Docker build
-git commit -m "Release v2.2.0 [build]"
-git push
-
-# Repo convention: keep [build] at the end so it's easy to grep in history.
-```
-
-#### Skip Build
-```bash
-# Normal commits without [build] will skip Docker build
-git commit -m "Update docs"
-git push
-
-git commit -m "Fix typo"
+git commit -am "Release v2.3.0 [build]"
 git push
 ```
 
-### Manual Workflow Dispatch
-1. Go to your repository on GitHub
-2. Click **Actions** tab
-3. Select **Build and Push Docker Image** workflow
-4. Click **Run workflow** button
-5. Select branch and click **Run workflow**
+4) GitHub Actions will automatically:
 
-### Access Published Images
+- create/push tag `v<version>` from `mcp-server/Cargo.toml`
+- build binaries for each platform
+- create/update the GitHub Release for that tag
+- upload the archives as release assets
 
-Images are published to GitHub Container Registry:
+Note:
+- If tag `v<version>` already exists but points to a different commit, the workflow fails fast (bump version and retry).
+
+## Local build (developer)
+
 ```bash
-# Pull the latest image
-docker pull ghcr.io/YOUR_USERNAME/shadowcrawl:latest
-
-# Pull specific version by commit SHA
-docker pull ghcr.io/YOUR_USERNAME/shadowcrawl:main-abc1234
-
-# Pull specific branch
-docker pull ghcr.io/YOUR_USERNAME/shadowcrawl:main
+cd mcp-server
+cargo build --release --bin shadowcrawl --bin shadowcrawl-mcp
 ```
 
-**Note:** Replace `YOUR_USERNAME` with your GitHub username (lowercase).
+Optional (HITL / visible browser):
 
-### Multi-Architecture Support
-The workflow builds for both:
-- `linux/amd64` (Intel/AMD processors)
-- `linux/arm64` (ARM processors like Apple Silicon, Raspberry Pi)
-
-### Image Tags
-Each build creates multiple tags:
-- `latest` - Latest build from default branch
-- `main` - Latest build from main branch  
-- `main-abc1234` - Specific commit SHA
-- `v2.2.0` - Semantic version tags (if using git tags)
-
-### Stack Overview
-The default stack (`docker-compose.yml`) contains **2 services only** — no extra services required:
-
-| Service | Role |
-|---------|------|
-| `shadowcrawl` | Main MCP + HTTP server (internal search built-in) |
-| `browserless` | Headless Chrome for JS rendering and SERP fallback |
-
-Internal search engines (Google / Bing / DuckDuckGo / Brave) run **inside the `shadowcrawl` binary** — zero extra containers.
-
-### Environment Variables
-Configure the container with:
 ```bash
-docker run -e LANCEDB_URI=/home/appuser/lancedb \
-           -e RUST_LOG=info \
-           -e MAX_CONTENT_CHARS=10000 \
-           ghcr.io/YOUR_USERNAME/shadowcrawl:latest
+cd mcp-server
+cargo build --release --features non_robot_search --bin shadowcrawl --bin shadowcrawl-mcp
 ```
-
-## Troubleshooting
-
-### Build Failures
-Check GitHub Actions logs:
-1. Go to **Actions** tab
-2. Click on failed workflow run
-3. Expand failed job to see error details
-
-### Permission Issues
-If you get "permission denied" errors:
-1. Go to **Settings** → **Actions** → **General**
-2. Under "Workflow permissions", select "Read and write permissions"
-3. Save and re-run the workflow
-
-### Image Not Found
-Make sure the container registry package is public:
-1. Go to your repository
-2. Click **Packages** on the right sidebar
-3. Click on your package
-4. Go to **Package settings**
-5. Under "Danger Zone", click "Change visibility" → "Public"
-
-## CI/CD Best Practices
-
-### Development Workflow
-```bash
-# Regular development - no build
-git commit -m "WIP: implementing feature"
-git push
-
-# Ready for deployment - trigger build
-git commit -m "[build] Release v1.2.0 with new features"
-git push
-```
-
-### Version Tagging
-```bash
-# Create version tag to trigger versioned build
-git tag v2.2.0
-git push origin v2.2.0
-
-# This creates images with tags like: v2.2.0, latest
-```
-
-### Rollback Strategy
-```bash
-# Pull and run specific version
-docker pull ghcr.io/YOUR_USERNAME/shadowcrawl:main-abc1234
-docker run ghcr.io/YOUR_USERNAME/shadowcrawl:main-abc1234
-```
-
-## Security Notes
-
-- The workflow uses `GITHUB_TOKEN` automatically provided by GitHub Actions
-- No manual token configuration needed
-- Images are scanned for vulnerabilities
-- Use environment variables for sensitive configuration
-- Never commit secrets to repository

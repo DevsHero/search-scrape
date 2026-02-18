@@ -1,45 +1,18 @@
-# MCP Client Setup (IDE / Apps)
+# MCP Client Setup (IDE / Apps) — Zero-Docker
 
-This repo provides an MCP server over **stdio** (recommended) via the `shadowcrawl-mcp` binary.
-
-Most clients support a config that looks like:
-
-- `command`: executable to run
-- `args`: arguments
-- optional env vars
-
-This doc focuses on what differs from VS Code.
+ShadowCrawl is **pure binary**. Use the `shadowcrawl-mcp` executable (stdio MCP server).
 
 ## Prereq
 
-- Docker installed
-- Run the stack:
+Get a `shadowcrawl-mcp` binary:
+
+- Download from GitHub Releases, or
+- Build locally:
 
 ```bash
-docker compose -f docker-compose-local.yml up -d --build
+cd mcp-server
+cargo build --release --features non_robot_search --bin shadowcrawl-mcp
 ```
-
-The stdio server is executed inside the running container:
-
-```bash
-docker compose -f docker-compose-local.yml exec -i -T shadowcrawl shadowcrawl-mcp
-```
-
-Optional (enable `non_robot_search` / HITL in the container build):
-
-```bash
-SHADOWCRAWL_CARGO_FEATURES=non_robot_search \
-  docker compose -f docker-compose-local.yml up -d --build
-```
-
-Important: `non_robot_search` launches a **local GUI browser** (Brave/Chrome) and is macOS-tested.
-Even if you compile it into the container image, typical Docker deployments won’t be able to open the host browser.
-For HITL usage, run the MCP server **natively on macOS** — the visible Brave Browser needs host display access.
-
-Guide:
-- [docs/NON_ROBOT_SEARCH.md](docs/NON_ROBOT_SEARCH.md)
-
----
 
 ## Claude Desktop (macOS)
 
@@ -54,16 +27,21 @@ Example:
 {
   "mcpServers": {
     "shadowcrawl": {
-      "command": "docker",
+      "command": "env",
       "args": [
-        "compose",
-        "-f",
-        "/absolute/path/to/search-scrape/docker-compose-local.yml",
-        "exec",
-        "-i",
-        "-T",
-        "shadowcrawl",
-        "shadowcrawl-mcp"
+        "RUST_LOG=info",
+        "SEARCH_ENGINES=google,bing,duckduckgo,brave",
+        "SEARCH_CDP_FALLBACK=true",
+        "SEARCH_TIER2_NON_ROBOT=true",
+        "LANCEDB_URI=/absolute/path/to/search-scrape/lancedb",
+        "HTTP_TIMEOUT_SECS=30",
+        "HTTP_CONNECT_TIMEOUT_SECS=10",
+        "OUTBOUND_LIMIT=32",
+        "MAX_CONTENT_CHARS=10000",
+        "MAX_LINKS=100",
+        "IP_LIST_PATH=/absolute/path/to/search-scrape/ip.txt",
+        "PROXY_SOURCE_PATH=/absolute/path/to/search-scrape/proxy_source.json",
+        "/absolute/path/to/search-scrape/mcp-server/target/release/shadowcrawl-mcp"
       ]
     }
   }
@@ -85,16 +63,21 @@ Example:
 {
   "mcpServers": {
     "shadowcrawl": {
-      "command": "docker",
+      "command": "env",
       "args": [
-        "compose",
-        "-f",
-        "/absolute/path/to/search-scrape/docker-compose-local.yml",
-        "exec",
-        "-i",
-        "-T",
-        "shadowcrawl",
-        "shadowcrawl-mcp"
+        "RUST_LOG=info",
+        "SEARCH_ENGINES=google,bing,duckduckgo,brave",
+        "SEARCH_CDP_FALLBACK=true",
+        "SEARCH_TIER2_NON_ROBOT=true",
+        "LANCEDB_URI=/absolute/path/to/search-scrape/lancedb",
+        "HTTP_TIMEOUT_SECS=30",
+        "HTTP_CONNECT_TIMEOUT_SECS=10",
+        "OUTBOUND_LIMIT=32",
+        "MAX_CONTENT_CHARS=10000",
+        "MAX_LINKS=100",
+        "IP_LIST_PATH=/absolute/path/to/search-scrape/ip.txt",
+        "PROXY_SOURCE_PATH=/absolute/path/to/search-scrape/proxy_source.json",
+        "/absolute/path/to/search-scrape/mcp-server/target/release/shadowcrawl-mcp"
       ]
     }
   }
@@ -120,16 +103,21 @@ Example:
 {
   "mcpServers": {
     "shadowcrawl": {
-      "command": "docker",
+      "command": "env",
       "args": [
-        "compose",
-        "-f",
-        "/absolute/path/to/search-scrape/docker-compose-local.yml",
-        "exec",
-        "-i",
-        "-T",
-        "shadowcrawl",
-        "shadowcrawl-mcp"
+        "RUST_LOG=info",
+        "SEARCH_ENGINES=google,bing,duckduckgo,brave",
+        "SEARCH_CDP_FALLBACK=true",
+        "SEARCH_TIER2_NON_ROBOT=true",
+        "LANCEDB_URI=/absolute/path/to/search-scrape/lancedb",
+        "HTTP_TIMEOUT_SECS=30",
+        "HTTP_CONNECT_TIMEOUT_SECS=10",
+        "OUTBOUND_LIMIT=32",
+        "MAX_CONTENT_CHARS=10000",
+        "MAX_LINKS=100",
+        "IP_LIST_PATH=/absolute/path/to/search-scrape/ip.txt",
+        "PROXY_SOURCE_PATH=/absolute/path/to/search-scrape/proxy_source.json",
+        "/absolute/path/to/search-scrape/mcp-server/target/release/shadowcrawl-mcp"
       ]
     }
   }
@@ -151,31 +139,35 @@ Create: `.continue/mcpServers/shadowcrawl.yaml`
 
 ```yaml
 name: shadowcrawl
-version: 2.2.0
+version: 2.3.0
 schema: v1
 
 mcpServers:
   - name: shadowcrawl
-    command: docker
+    command: env
     args:
-      - compose
-      - -f
-      - /absolute/path/to/search-scrape/docker-compose-local.yml
-      - exec
-      - -i
-      - -T
-      - shadowcrawl
-      - shadowcrawl-mcp
+      - RUST_LOG=info
+      - SEARCH_ENGINES=google,bing,duckduckgo,brave
+      - SEARCH_CDP_FALLBACK=true
+      - SEARCH_TIER2_NON_ROBOT=true
+      - LANCEDB_URI=/absolute/path/to/search-scrape/lancedb
+      - HTTP_TIMEOUT_SECS=30
+      - HTTP_CONNECT_TIMEOUT_SECS=10
+      - OUTBOUND_LIMIT=32
+      - MAX_CONTENT_CHARS=10000
+      - MAX_LINKS=100
+      - IP_LIST_PATH=/absolute/path/to/search-scrape/ip.txt
+      - PROXY_SOURCE_PATH=/absolute/path/to/search-scrape/proxy_source.json
+      - /absolute/path/to/search-scrape/mcp-server/target/release/shadowcrawl-mcp
 ```
 
 Notes:
 - MCP can only be used in **agent** mode.
 - Continue’s MCP server configs are per-workspace.
-- If you already have a JSON MCP config (Claude/Cursor/etc), you can drop it into `.continue/mcpServers/` (for example `.continue/mcpServers/mcp.json`) and Continue will pick it up.
 
 ---
 
 ## Troubleshooting
 
-- If the client shows "no tools found", confirm the container is running and `shadowcrawl-mcp` exists.
-- If you use proxies, ensure `ip.txt` is mounted and `IP_LIST_PATH` points to it.
+- If the client shows "no tools found", confirm your `shadowcrawl-mcp` path is correct and executable.
+- If you use proxies, ensure `ip.txt` and `proxy_source.json` exist and `IP_LIST_PATH` / `PROXY_SOURCE_PATH` point to them.

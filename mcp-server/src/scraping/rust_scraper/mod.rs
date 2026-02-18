@@ -309,8 +309,8 @@ impl RustScraper {
             effective_wait = effective_wait.saturating_add(2000);
         }
         if is_boss_domain {
-            effective_wait = effective_wait
-                .saturating_add(antibot::boss_domain_post_load_delay_ms() as u32);
+            effective_wait =
+                effective_wait.saturating_add(antibot::boss_domain_post_load_delay_ms() as u32);
         }
 
         let (status, html) = browser_manager::fetch_html_native(url, Some(effective_wait)).await?;
@@ -318,8 +318,11 @@ impl RustScraper {
         // Mobile Safari retry if blocked
         if self.detect_block_reason(&html).is_some() {
             info!("Native fetch blocked, retrying with mobile profile");
-            if let Ok((retry_status, retry_html)) =
-                browser_manager::fetch_html_native_mobile(url, Some(effective_wait.saturating_add(1500))).await
+            if let Ok((retry_status, retry_html)) = browser_manager::fetch_html_native_mobile(
+                url,
+                Some(effective_wait.saturating_add(1500)),
+            )
+            .await
             {
                 return Ok((retry_status, retry_html));
             }
@@ -339,7 +342,7 @@ impl RustScraper {
     }
 
     /// Advanced native-CDP scraping with optional proxy support.
-    /// This is the v2.2.0+ replacement for the HTTP Browserless path.
+    /// This is the v2.3.0+ replacement for the legacy HTTP Browserless path.
     pub async fn scrape_with_browserless_advanced_with_proxy(
         &self,
         url: &str,
@@ -349,12 +352,18 @@ impl RustScraper {
         info!(
             "Scraping with native CDP: {}{}",
             url,
-            if proxy_url.is_some() { " [PROXY MODE]" } else { "" }
+            if proxy_url.is_some() {
+                " [PROXY MODE]"
+            } else {
+                ""
+            }
         );
 
         // Use the full stealth CDP path (scroll simulation, mouse, stealth injection)
         let (html, _status) = self.fetch_via_cdp(url, proxy_url).await?;
-        self.process_html(&html, url).await
+        let mut result = self.process_html(&html, url).await?;
+        result.warnings.push("native_cdp_rendered".to_string());
+        Ok(result)
     }
 }
 

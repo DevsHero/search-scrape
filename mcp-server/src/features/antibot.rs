@@ -128,33 +128,6 @@ pub fn get_stealth_headers() -> Vec<(String, String)> {
     ]
 }
 
-/// Headers tuned for Browserless requests to match a real Chrome profile
-pub fn get_browserless_headers() -> Vec<(String, String)> {
-    vec![
-        (
-            "User-Agent".to_string(),
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36".to_string(),
-        ),
-        (
-            "Sec-CH-UA".to_string(),
-            "\"Chromium\";v=\"121\", \"Not A(Brand\";v=\"99\", \"Google Chrome\";v=\"121\"".to_string(),
-        ),
-        ("Sec-CH-UA-Mobile".to_string(), "?0".to_string()),
-        ("Sec-CH-UA-Platform".to_string(), "\"Windows\"".to_string()),
-        ("Sec-Fetch-Site".to_string(), "cross-site".to_string()),
-        ("Sec-Fetch-Mode".to_string(), "navigate".to_string()),
-        ("Sec-Fetch-Dest".to_string(), "document".to_string()),
-        ("Accept".to_string(), "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8".to_string()),
-        ("Accept-Language".to_string(), "en-US,en;q=0.9".to_string()),
-        ("Upgrade-Insecure-Requests".to_string(), "1".to_string()),
-    ]
-}
-
-/// User-Agent string aligned with Browserless Chrome profile
-pub fn get_browserless_user_agent() -> &'static str {
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-}
-
 pub struct MobileStealthConfig {
     pub user_agent: &'static str,
     pub viewport_width: u32,

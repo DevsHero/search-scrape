@@ -13,6 +13,35 @@ use tracing::{error, info, warn};
 
 use shadowcrawl::{mcp, scrape, search, types::*, AppState};
 
+fn parse_port_from_args() -> Option<u16> {
+    let mut args = std::env::args().peekable();
+    while let Some(a) = args.next() {
+        if a == "--port" {
+            if let Some(v) = args.next() {
+                if let Ok(p) = v.parse::<u16>() {
+                    return Some(p);
+                }
+            }
+        } else if let Some(rest) = a.strip_prefix("--port=") {
+            if let Ok(p) = rest.parse::<u16>() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+fn port_from_env() -> Option<u16> {
+    for k in ["SHADOWCRAWL_PORT", "PORT"] {
+        if let Ok(v) = std::env::var(k) {
+            if let Ok(p) = v.trim().parse::<u16>() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing
@@ -64,7 +93,7 @@ async fn main() -> anyhow::Result<()> {
     let mut state = AppState::new(http_client);
 
     // Initialize semantic memory if LANCEDB_URI is set
-    if let Ok(lancedb_uri) = env::var("LANCEDB_URI") {
+    if let Some(lancedb_uri) = shadowcrawl::core::config::lancedb_uri() {
         info!("Initializing memory with LanceDB at: {}", lancedb_uri);
         match shadowcrawl::history::MemoryManager::new(&lancedb_uri).await {
             Ok(memory) => {
@@ -129,8 +158,22 @@ async fn main() -> anyhow::Result<()> {
         .with_state(state.clone());
 
     // Start server
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:5000").await?;
-    info!("MCP Server listening on http://0.0.0.0:5000");
+    let port: u16 = parse_port_from_args()
+        .or_else(port_from_env)
+        .unwrap_or(5000);
+    let bind_addr = format!("0.0.0.0:{}", port);
+    let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
+        Ok(l) => l,
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            anyhow::bail!(
+                "Address already in use: {}. Stop the existing process or run with --port {} (or set PORT/SHADOWCRAWL_PORT).",
+                bind_addr,
+                port.saturating_add(1)
+            )
+        }
+        Err(e) => return Err(e.into()),
+    };
+    info!("MCP Server listening on http://{}", bind_addr);
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal(state.clone()))

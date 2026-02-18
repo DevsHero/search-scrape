@@ -170,17 +170,16 @@ async fn test_github_readme() {
 }
 
 #[tokio::test]
-async fn test_reddit_thread_with_browserless() {
+async fn test_reddit_thread_with_native_cdp() {
     init_logger();
     let scraper = RustScraper::new();
     let url = "https://old.reddit.com/r/rust/comments/10nimss/how_do_i_start_learning_rust/";
 
-    println!("\n🧪 TEST 4: Reddit (JS-Heavy + Browserless Fallback)");
+    println!("\n🧪 TEST 4: Reddit (JS-Heavy + Native CDP Fallback)");
     println!("URL: {}", url);
 
-    // Check if Browserless is configured
-    let browserless_available = std::env::var("BROWSERLESS_URL").is_ok();
-    println!("🌐 Browserless Available: {}", browserless_available);
+    let cdp_available = shadowcrawl::scraping::browser_manager::native_browser_available();
+    println!("🌐 Native CDP Available: {}", cdp_available);
 
     match scraper.scrape_url(url).await {
         Ok(result) => {
@@ -192,12 +191,6 @@ async fn test_reddit_thread_with_browserless() {
             );
             println!("⚠️  Warnings: {:?}", result.warnings);
 
-            // Check if Browserless was triggered
-            let browserless_used = result
-                .warnings
-                .contains(&"browserless_rendered".to_string());
-            println!("🎭 Browserless Used: {}", browserless_used);
-
             // For Reddit, we expect lower scores but still some content
             assert!(
                 result.word_count > 20,
@@ -205,15 +198,7 @@ async fn test_reddit_thread_with_browserless() {
                 result.word_count
             );
 
-            // If Browserless is available and result is poor, it should have been attempted
-            if browserless_available
-                && result.word_count < 50
-                && result.extraction_score.unwrap_or(0.0) < 0.35
-            {
-                println!(
-                    "⚠️  Note: Browserless should have been triggered for this low-quality result"
-                );
-            }
+            let _ = cdp_available; // informational only
 
             // Sample content
             println!("\n📄 Content Preview:");
@@ -270,11 +255,11 @@ async fn test_medium_article() {
 }
 
 #[tokio::test]
-async fn test_docker_docs() {
+async fn test_docs_portal() {
     let scraper = RustScraper::new();
-    let url = "https://docs.docker.com/get-started/";
+    let url = "https://developer.mozilla.org/en-US/docs/Web";
 
-    println!("\n🧪 TEST 6: Docker Docs (Enterprise Docs)");
+    println!("\n🧪 TEST 6: Docs Portal (Enterprise Docs)");
     println!("URL: {}", url);
 
     match scraper.scrape_url(url).await {
@@ -315,21 +300,21 @@ async fn test_docker_docs() {
 }
 
 #[tokio::test]
-#[ignore] // Only run when Browserless is available
-async fn test_browserless_direct() {
+#[ignore] // Only run when a local browser is available
+async fn test_native_cdp_direct() {
     init_logger();
     let scraper = RustScraper::new();
 
     // Test with a JS-heavy SPA that requires rendering
     let url = "https://www.npmjs.com/package/react";
 
-    println!("\n🧪 TEST 7: Browserless Direct (JS-Heavy SPA)");
+    println!("\n🧪 TEST 7: Native CDP Direct (JS-Heavy SPA)");
     println!("URL: {}", url);
 
-    // Check if Browserless is configured
-    if std::env::var("BROWSERLESS_URL").is_err() {
-        println!("⚠️  Skipping: BROWSERLESS_URL not configured");
-        println!("   Set BROWSERLESS_URL=http://localhost:3010 to enable");
+    // Check if native CDP is available
+    if !shadowcrawl::scraping::browser_manager::native_browser_available() {
+        println!("⚠️  Skipping: no local browser found");
+        println!("   Install Brave/Chrome/Chromium or set CHROME_EXECUTABLE to enable");
         return;
     }
 
@@ -343,14 +328,6 @@ async fn test_browserless_direct() {
             );
             println!("⚠️  Warnings: {:?}", result.warnings);
 
-            // Verify Browserless was used
-            assert!(
-                result
-                    .warnings
-                    .contains(&"browserless_rendered".to_string()),
-                "❌ FAIL: Browserless warning not present"
-            );
-
             // Should extract meaningful content from JS-rendered page
             assert!(
                 result.word_count > 50,
@@ -358,7 +335,7 @@ async fn test_browserless_direct() {
                 result.word_count
             );
 
-            println!("\n✅ Browserless successfully rendered JS-heavy content");
+            println!("\n✅ Native CDP successfully rendered JS-heavy content");
 
             // Sample content
             println!("\n📄 Content Preview:");
@@ -368,7 +345,7 @@ async fn test_browserless_direct() {
             );
         }
         Err(e) => {
-            panic!("❌ FAIL: Browserless scraping failed: {}", e);
+            panic!("❌ FAIL: Native CDP scraping failed: {}", e);
         }
     }
 }

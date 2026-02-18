@@ -297,4 +297,4 @@ global_timeout = human_timeout_seconds + 30s
 
 - [Non-Robot Search Guide](NON_ROBOT_SEARCH.md)
 - [IDE Setup](IDE_SETUP.md)
-- [Docker Deployment](DOCKER_DEPLOYMENT.md)
+- [Binary Release Guide](DOCKER_DEPLOYMENT.md)
