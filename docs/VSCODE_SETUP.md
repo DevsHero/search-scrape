@@ -2,7 +2,7 @@
 
 This repo exposes an MCP server over **stdio** via the `shadowcrawl-mcp` binary.
 
-Recommended setup: run via Docker Compose so SearXNG/Browserless are already wired.
+Recommended setup: run via Docker Compose so Browserless is already wired.
 
 ## 1) Start the stack
 

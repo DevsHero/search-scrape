@@ -1,8 +1,9 @@
-# SearXNG Tuning (noise, bans, and bot friction)
+# Legacy: Search Tuning (deprecated)
 
-This repo runs SearXNG as the search backend.
+ShadowCrawl now uses a built-in Rust metasearch engine by default (no external search stack required).
+This document is kept for historical reference only.
 
-Main config: [searxng/settings.yml](../searxng/settings.yml)
+Main legacy config: [searxng/settings.yml](../searxng/settings.yml)
 
 ## Goals
 
@@ -37,7 +38,7 @@ If you see worse relevance or unexpected snippets, try toggling it:
     use_mobile_ui: false
 ```
 
-Restart SearXNG after changes.
+Restart the legacy search service after changes.
 
 ### Safe search & language
 
@@ -56,7 +57,7 @@ In [searxng/settings.yml](../searxng/settings.yml):
 - `search.max_ban_time_on_fail`
 - `search.suspended_times.*`
 
-These settings control how long SearXNG suspends engines after:
+These settings control how long the legacy search service suspends engines after:
 - access denied
 - captcha
 - too many requests

@@ -2,9 +2,9 @@ use std::env;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub searxng_url: String,
     pub http_client: reqwest::Client,
     pub tool_registry: std::sync::Arc<crate::core::tools_registry::ToolRegistry>,
+    pub search_service: std::sync::Arc<dyn crate::tools::search::SearchService>,
     // Caches for performance
     pub search_cache: moka::future::Cache<String, Vec<super::types::SearchResult>>, // key: query
     pub scrape_cache: moka::future::Cache<String, super::types::ScrapeResponse>,    // key: url
@@ -22,7 +22,6 @@ pub struct AppState {
 impl std::fmt::Debug for AppState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AppState")
-            .field("searxng_url", &self.searxng_url)
             .field("memory_enabled", &self.memory.is_some())
             .field("proxy_manager_enabled", &self.proxy_manager.is_some())
             .finish()
@@ -30,17 +29,19 @@ impl std::fmt::Debug for AppState {
 }
 
 impl AppState {
-    pub fn new(searxng_url: String, http_client: reqwest::Client) -> Self {
+    pub fn new(http_client: reqwest::Client) -> Self {
         let outbound_limit = env::var("OUTBOUND_LIMIT")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(32);
 
         let tool_registry = std::sync::Arc::new(crate::core::tools_registry::ToolRegistry::load());
+        let search_service: std::sync::Arc<dyn crate::tools::search::SearchService> =
+            std::sync::Arc::new(crate::tools::search::InternalSearchService::new());
         Self {
-            searxng_url,
             http_client,
             tool_registry,
+            search_service,
             search_cache: moka::future::Cache::builder()
                 .max_capacity(10_000)
                 .time_to_live(std::time::Duration::from_secs(60 * 10))

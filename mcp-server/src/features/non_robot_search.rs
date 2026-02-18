@@ -55,7 +55,10 @@ use crossterm::event::{self, Event as TermEvent, KeyCode, KeyEventKind};
 #[cfg(feature = "non_robot_search")]
 use notify_rust::Notification;
 // On Linux we intentionally avoid `rfd` for consent dialogs (it may hang when called from a server thread).
-#[cfg(all(feature = "non_robot_search", not(any(target_os = "macos", target_os = "linux"))))]
+#[cfg(all(
+    feature = "non_robot_search",
+    not(any(target_os = "macos", target_os = "linux"))
+))]
 use rfd::{MessageButtons, MessageDialog, MessageLevel};
 #[cfg(feature = "non_robot_search")]
 use rodio::{OutputStreamBuilder, Sink, Source};
@@ -1237,7 +1240,10 @@ fn blocking_ok_cancel_dialog(title: &str, message: &str) -> Result<(), NonRobotS
     }
 }
 
-#[cfg(all(feature = "non_robot_search", not(any(target_os = "macos", target_os = "linux"))))]
+#[cfg(all(
+    feature = "non_robot_search",
+    not(any(target_os = "macos", target_os = "linux"))
+))]
 fn rfd_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchError> {
     // rfd may panic in some environments; treat that as AutomationFailed.
     let res = std::panic::catch_unwind(|| {
@@ -1411,7 +1417,8 @@ fn linux_gui_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchE
     }
 
     Err(NonRobotSearchError::AutomationFailed(
-        "no supported linux desktop dialog found (install one of: zenity, yad, kdialog, xmessage)".to_string(),
+        "no supported linux desktop dialog found (install one of: zenity, yad, kdialog, xmessage)"
+            .to_string(),
     ))
 }
 
@@ -2207,10 +2214,7 @@ async fn close_extra_tabs_via_json(debugging_port: u16, keep_title: &str) -> any
         if id.is_empty() {
             continue;
         }
-        let _ = http
-            .get(format!("{}{}", close_base, id))
-            .send()
-            .await;
+        let _ = http.get(format!("{}{}", close_base, id)).send().await;
     }
 
     Ok(())
@@ -2238,10 +2242,7 @@ async fn close_all_tabs_via_json(debugging_port: u16) -> anyhow::Result<()> {
         if id.is_empty() {
             continue;
         }
-        let _ = http
-            .get(format!("{}{}", close_base, id))
-            .send()
-            .await;
+        let _ = http.get(format!("{}{}", close_base, id)).send().await;
     }
 
     Ok(())

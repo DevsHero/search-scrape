@@ -51,7 +51,7 @@ cargo build --release --features non_robot_search --bin shadowcrawl --bin shadow
 
 ### Option A (recommended): run Docker stack for dependencies + run HITL tool natively
 
-1) Start the stack (SearXNG / Browserless):
+1) Start the stack services (Browserless):
 
 ```bash
 docker compose -f docker-compose-local.yml up -d --build
@@ -61,21 +61,20 @@ docker compose -f docker-compose-local.yml up -d --build
 
 ```bash
 cd mcp-server
-SEARXNG_URL=http://localhost:8890 \
 LANCEDB_URI=../lancedb \
 RUST_LOG=info \
 ./target/release/shadowcrawl-mcp
 ```
 
 Notes:
-- Host port in `docker-compose-local.yml` is `8890` (SearXNG).
+- Host port in `docker-compose-local.yml` is `3010` (Browserless).
 - `non_robot_search` itself does not require Browserless.
 
 ### Option B: run HTTP server locally
 
 ```bash
 cd mcp-server
-SEARXNG_URL=http://localhost:8890 RUST_LOG=info ./target/release/shadowcrawl
+RUST_LOG=info ./target/release/shadowcrawl
 ```
 
 Then call `POST /mcp/call` with `tool=non_robot_search`.

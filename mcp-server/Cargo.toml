@@ -1,8 +1,8 @@
 [package]
 name = "shadowcrawl"
-version = "2.1.0"
+version = "2.2.0"
 edition = "2021"
-description = "The Sovereign Stealth Intelligence Engine for AI Agents - A self-hosted, private alternative to Firecrawl with universal anti-bot bypass and semantic research memory"
+description = "God-Tier stealth intelligence engine for AI agents — zero-dependency parallel meta-search (Google/Bing/DDG/Brave), universal anti-bot bypass, Browserless fallback, semantic research memory, and HITL nuclear option. Self-hosted, 100% private, MCP-native."
 repository = "https://github.com/DevsHero/ShadowCrawl"
 license = "MIT"
 
@@ -17,6 +17,15 @@ path = "src/main.rs"
 [[bin]]
 name = "shadowcrawl-mcp"
 path = "src/bin/mcp-stdio.rs"
+
+# ── Dev / benchmark tools (auto-discovered by Cargo; not shipped in Docker image)
+[[bin]]
+name = "search-compare"
+path = "src/bin/search-compare.rs"
+
+[[bin]]
+name = "shadow-sandbox"
+path = "src/bin/shadow-sandbox.rs"
 
 [dependencies]
 # Core Async & Web

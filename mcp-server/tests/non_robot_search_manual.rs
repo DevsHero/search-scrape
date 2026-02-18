@@ -41,10 +41,8 @@ async fn manual_non_robot_search_smoke() {
     println!("- If a CAPTCHA appears, solve it in the opened browser");
     println!("- Emergency abort: hold ESC for ~3 seconds");
 
-    let searxng_url =
-        std::env::var("SEARXNG_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
     let http_client = reqwest::Client::new();
-    let state = Arc::new(AppState::new(searxng_url, http_client));
+    let state = Arc::new(AppState::new(http_client));
 
     let cfg = NonRobotSearchConfig {
         url,

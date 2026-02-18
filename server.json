@@ -2,12 +2,12 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.DevsHero/shadow-crawl",
   "title": "ShadowCrawl",
-  "description": "Stealth web search and scraping MCP server with anti-bot support and research memory.",
+  "description": "God-tier stealth intelligence engine for AI agents — parallel meta-search (Google/Bing/DDG/Brave), universal anti-bot bypass, Browserless/HITL fallback, and semantic research memory. Self-hosted & MCP-native.",
   "repository": {
     "url": "https://github.com/DevsHero/ShadowCrawl",
     "source": "github"
   },
-  "version": "2.0.0-rc",
+  "version": "2.2.0",
   "remotes": [
     {
       "type": "streamable-http",

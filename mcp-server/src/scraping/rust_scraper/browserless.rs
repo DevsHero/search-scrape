@@ -149,6 +149,13 @@ impl RustScraper {
         if lower.contains("verify you are human") || lower.contains("please verify you") {
             return Some("Human Verification");
         }
+        // DuckDuckGo anomaly flow often lacks the word "captcha".
+        if lower.contains("duckduckgo.com/anomaly.js")
+            || lower.contains("/anomaly.js")
+            || lower.contains("anomaly-modal")
+        {
+            return Some("DuckDuckGo Anomaly");
+        }
         if lower.contains("access denied") || lower.contains("access to this page has been denied")
         {
             return Some("Access Denied");
@@ -164,6 +171,13 @@ impl RustScraper {
             || lower.contains("automated request")
         {
             return Some("Bot Detected");
+        }
+        if lower.contains("cf-chl-") || lower.contains("cf-turnstile") || lower.contains("turnstile")
+        {
+            return Some("Cloudflare");
+        }
+        if lower.contains("perimeterx") || lower.contains("px-captcha") {
+            return Some("PerimeterX");
         }
         if lower.contains("page crashed") || lower.contains("crashed!") {
             return Some("JS Crash");

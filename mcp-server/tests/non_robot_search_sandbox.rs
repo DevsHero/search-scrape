@@ -88,10 +88,7 @@ async fn hitl_flow_sandbox_auto_resolve() {
     });
 
     // Minimal AppState for scrape processing.
-    let state = Arc::new(AppState::new(
-        "http://localhost:8890".to_string(),
-        reqwest::Client::new(),
-    ));
+    let state = Arc::new(AppState::new(reqwest::Client::new()));
 
     // Ensure consent is non-blocking for this test.
     std::env::set_var("SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW", "1");
@@ -148,10 +145,7 @@ async fn hitl_flow_sandbox_auto_resolve_with_blocking_os_dialog() {
     });
 
     // Minimal AppState for scrape processing.
-    let state = Arc::new(AppState::new(
-        "http://localhost:8890".to_string(),
-        reqwest::Client::new(),
-    ));
+    let state = Arc::new(AppState::new(reqwest::Client::new()));
 
     // Force a blocking OS-level consent dialog even if AUTO_ALLOW is set.
     std::env::set_var("SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW", "1");

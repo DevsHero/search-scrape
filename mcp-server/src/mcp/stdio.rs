@@ -60,9 +60,6 @@ impl McpService {
             .try_init()
             .ok();
 
-        let searxng_url =
-            env::var("SEARXNG_URL").unwrap_or_else(|_| "http://localhost:8888".to_string());
-
         // Pre-flight checklist (non-interactive) at startup
         let report = crate::setup::check_all(crate::setup::SetupOptions::default()).await;
         info!("{}", report.summarize_for_logs());
@@ -72,7 +69,6 @@ impl McpService {
         }
 
         info!("Starting MCP Service");
-        info!("SearXNG URL: {}", searxng_url);
 
         let http_timeout = env::var("HTTP_TIMEOUT_SECS")
             .ok()
@@ -88,7 +84,7 @@ impl McpService {
             .connect_timeout(std::time::Duration::from_secs(connect_timeout))
             .build()?;
 
-        let mut state = AppState::new(searxng_url, http_client);
+        let mut state = AppState::new(http_client);
 
         if let Ok(lancedb_uri) = env::var("LANCEDB_URI") {
             info!("Initializing memory with LanceDB at: {}", lancedb_uri);

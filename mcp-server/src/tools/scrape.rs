@@ -693,10 +693,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_scrape_url_fallback() {
-        let state = Arc::new(AppState::new(
-            "http://localhost:8888".to_string(),
-            reqwest::Client::new(),
-        ));
+        let state = Arc::new(AppState::new(reqwest::Client::new()));
 
         let result = scrape_url_fallback(&state, "https://httpbin.org/html").await;
 

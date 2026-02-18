@@ -30,7 +30,8 @@ fn check_dialog_helper(options: &SetupOptions) -> SetupCheck {
             id: "linux_dialog".to_string(),
             title: "Linux consent dialog helper".to_string(),
             status: CheckStatus::Skip,
-            details: "No DISPLAY/WAYLAND_DISPLAY detected; skipping GUI dialog helper check.".to_string(),
+            details: "No DISPLAY/WAYLAND_DISPLAY detected; skipping GUI dialog helper check."
+                .to_string(),
             actions: vec![],
         };
     }
@@ -54,7 +55,8 @@ fn check_dialog_helper(options: &SetupOptions) -> SetupCheck {
     );
 
     let mut steps = vec![
-        "Ubuntu/Debian (recommended): `sudo apt-get update && sudo apt-get install -y zenity`".to_string(),
+        "Ubuntu/Debian (recommended): `sudo apt-get update && sudo apt-get install -y zenity`"
+            .to_string(),
         "Alternative: `sudo apt-get install -y yad`".to_string(),
         "KDE alternative: `sudo apt-get install -y kdialog`".to_string(),
         "X11 minimal alternative: `sudo apt-get install -y x11-utils` (for xmessage)".to_string(),
@@ -68,7 +70,11 @@ fn check_dialog_helper(options: &SetupOptions) -> SetupCheck {
         title: "Linux consent dialog helper".to_string(),
         status: CheckStatus::Warn,
         details,
-        actions: vec![action_block("Install a blocking dialog helper", steps, None)],
+        actions: vec![action_block(
+            "Install a blocking dialog helper",
+            steps,
+            None,
+        )],
     }
 }
 
