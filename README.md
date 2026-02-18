@@ -112,6 +112,8 @@ We don't claim — we show receipts. All captured with `non_robot_search` + Safe
 
 Download the latest release assets from GitHub Releases and run one of:
 
+Prebuilt assets are published for: `macos-x64`, `macos-arm64`, `windows-x64`, `windows-arm64`, `linux-x64`, `linux-arm64`.
+
 - `shadowcrawl-mcp` — MCP stdio server (recommended for VS Code / Cursor / Claude Desktop)
 - `shadowcrawl` — HTTP server (default port `5000`; override via `--port`, `PORT`, or `SHADOWCRAWL_PORT`)
 

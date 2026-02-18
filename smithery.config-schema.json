@@ -1,10 +1,61 @@
 {
   "type": "object",
+  "additionalProperties": false,
   "properties": {
     "RUST_LOG": {
       "type": "string",
       "description": "Logging level",
       "default": "info"
+    },
+    "SEARCH_ENGINES": {
+      "type": "string",
+      "description": "Comma-separated engines (google,bing,duckduckgo,brave)",
+      "default": "google,bing,duckduckgo,brave"
+    },
+    "SEARCH_CDP_FALLBACK": {
+      "type": "string",
+      "description": "Enable Chromium CDP fallback (true/false)",
+      "default": "true"
+    },
+    "SEARCH_TIER2_NON_ROBOT": {
+      "type": "string",
+      "description": "Allow HITL non_robot_search escalation (true/false)",
+      "default": "false"
+    },
+    "CHROME_EXECUTABLE": {
+      "type": "string",
+      "description": "Override path to Chrome/Chromium/Brave",
+      "default": ""
+    },
+    "HTTP_TIMEOUT_SECS": {
+      "type": "string",
+      "description": "Per-request timeout seconds",
+      "default": "30"
+    },
+    "OUTBOUND_LIMIT": {
+      "type": "string",
+      "description": "Max concurrent outbound connections",
+      "default": "32"
+    },
+    "MAX_CONTENT_CHARS": {
+      "type": "string",
+      "description": "Max chars per scraped document",
+      "default": "10000"
+    },
+    "LANCEDB_URI": {
+      "type": "string",
+      "description": "Optional path for semantic memory",
+      "default": ""
+    },
+    "IP_LIST_PATH": {
+      "type": "string",
+      "description": "Optional path to ip.txt",
+      "default": ""
+    },
+    "PROXY_SOURCE_PATH": {
+      "type": "string",
+      "description": "Optional path to proxy_source.json",
+      "default": ""
     }
   }
 }

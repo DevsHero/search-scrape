@@ -11,8 +11,8 @@ Workflow: `.github/workflows/release.yml`
 Build matrix:
 
 - macOS: x86_64 + arm64
-- Windows: x86_64
-- Linux: x86_64
+- Windows: x86_64 + arm64
+- Linux: x86_64 + arm64
 
 Each release attaches archives containing:
 

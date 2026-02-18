@@ -1,2 +1,93 @@
-name: shadowcrawl
-target: remote
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    additionalProperties: false
+    properties:
+      logLevel:
+        type: string
+        description: Rust log level (RUST_LOG)
+        default: info
+        enum: [error, warn, info, debug, trace]
+
+      searchEngines:
+        type: string
+        description: Comma-separated engines (SEARCH_ENGINES)
+        default: google,bing,duckduckgo,brave
+
+      searchCdpFallback:
+        type: boolean
+        description: Enable Chromium CDP fallback (SEARCH_CDP_FALLBACK)
+        default: true
+
+      searchTier2NonRobot:
+        type: boolean
+        description: Allow HITL escalation (SEARCH_TIER2_NON_ROBOT)
+        default: false
+
+      chromeExecutable:
+        type: string
+        description: Override Chrome/Brave path (CHROME_EXECUTABLE)
+        default: ""
+
+      httpTimeoutSecs:
+        type: integer
+        description: Per-request timeout (HTTP_TIMEOUT_SECS)
+        default: 30
+
+      outboundLimit:
+        type: integer
+        description: Outbound concurrency (OUTBOUND_LIMIT)
+        default: 32
+
+      maxContentChars:
+        type: integer
+        description: Max scraped chars (MAX_CONTENT_CHARS)
+        default: 10000
+
+      lancedbUri:
+        type: string
+        description: Optional LanceDB path (LANCEDB_URI)
+        default: ""
+
+      ipListPath:
+        type: string
+        description: Optional ip.txt path (IP_LIST_PATH)
+        default: ""
+
+      proxySourcePath:
+        type: string
+        description: Optional proxy_source.json path (PROXY_SOURCE_PATH)
+        default: ""
+
+  commandFunction:
+    |-
+      (config) => {
+        const env = {};
+        if (config.logLevel) env.RUST_LOG = String(config.logLevel);
+        if (config.searchEngines) env.SEARCH_ENGINES = String(config.searchEngines);
+        if (config.searchCdpFallback !== undefined) env.SEARCH_CDP_FALLBACK = String(config.searchCdpFallback);
+        if (config.searchTier2NonRobot !== undefined) env.SEARCH_TIER2_NON_ROBOT = String(config.searchTier2NonRobot);
+        if (config.chromeExecutable) env.CHROME_EXECUTABLE = String(config.chromeExecutable);
+        if (config.httpTimeoutSecs !== undefined) env.HTTP_TIMEOUT_SECS = String(config.httpTimeoutSecs);
+        if (config.outboundLimit !== undefined) env.OUTBOUND_LIMIT = String(config.outboundLimit);
+        if (config.maxContentChars !== undefined) env.MAX_CONTENT_CHARS = String(config.maxContentChars);
+        if (config.lancedbUri) env.LANCEDB_URI = String(config.lancedbUri);
+        if (config.ipListPath) env.IP_LIST_PATH = String(config.ipListPath);
+        if (config.proxySourcePath) env.PROXY_SOURCE_PATH = String(config.proxySourcePath);
+
+        return {
+          command: "shadowcrawl-mcp",
+          args: [],
+          env,
+        };
+      }
+
+  exampleConfig:
+    logLevel: info
+    searchEngines: google,bing,duckduckgo,brave
+    searchCdpFallback: true
+    searchTier2NonRobot: false
+    httpTimeoutSecs: 30
+    outboundLimit: 32
+    maxContentChars: 10000
