@@ -39,6 +39,8 @@ advice.txt
 docs/RELEASING.md
 
 # Scratch / temporary folders
-
+/mcp-publisher
+/mcp-publisher/
+/workflows/
 /errors/
 /dist/

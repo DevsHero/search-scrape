@@ -1,40 +1,46 @@
-name: Publish to Official MCP Registry
+name: Registry Sync
 
 on:
-  push:
-    tags:
-      - v*
+  workflow_run:
+    workflows:
+      - Release
+    types:
+      - completed
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: registry-sync-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
 
 jobs:
-  publish:
+  sync:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Guard tag matches version
+      - name: Read version metadata
+        id: meta
         shell: bash
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF#refs/tags/}"
           version="$(python3 -c 'import tomllib, pathlib; obj=tomllib.loads(pathlib.Path("mcp-server/Cargo.toml").read_text(encoding="utf-8")); v=obj.get("package",{}).get("version",""); assert v; print(v)')"
-          expected="v${version}"
-          if [[ "$tag" != "$expected" ]]; then
-            echo "❌ Tag/version mismatch: tag=$tag expected=$expected" >&2
-            exit 1
-          fi
+          tag="v${version}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
           server_ver="$(python3 -c 'import json, pathlib; obj=json.loads(pathlib.Path("server.json").read_text(encoding="utf-8")); v=obj.get("version",""); assert v; print(v)')"
           if [[ "$server_ver" != "$version" ]]; then
             echo "❌ server.json version mismatch: Cargo.toml=$version server.json=$server_ver" >&2
             exit 1
           fi
-          echo "✅ Tag matches versions: $tag" >&2
 
       - name: Wait for GitHub Release to exist
         shell: bash
@@ -42,31 +48,41 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-
-          tag="${GITHUB_REF#refs/tags/}"
-
+          tag="${{ steps.meta.outputs.tag }}"
           repo="${GITHUB_REPOSITORY}"
           url="https://api.github.com/repos/${repo}/releases/tags/${tag}"
           echo "Waiting for release tag ${tag} (${url})" >&2
-
-          # Poll up to ~5 minutes.
           for i in $(seq 1 30); do
             code=$(curl -sS -o /dev/null -w "%{http_code}" \
               -H "Authorization: Bearer ${GH_TOKEN}" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
               "$url" || true)
-
             if [[ "$code" == "200" ]]; then
               echo "✅ Release exists for ${tag}" >&2
               exit 0
             fi
-
             echo "... not ready yet (HTTP $code), retrying (${i}/30)" >&2
             sleep 10
           done
-
           echo "❌ Timed out waiting for GitHub Release ${tag}." >&2
           exit 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Publish to Smithery Hub
+        shell: bash
+        env:
+          SMITHERY_TOKEN: ${{ secrets.SMITHERY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SMITHERY_TOKEN:-}" ]]; then
+            echo "❌ Missing secrets.SMITHERY_TOKEN" >&2
+            exit 1
+          fi
+          npx -y smithery publish
 
       - name: Install mcp-publisher
         shell: bash
@@ -81,10 +97,8 @@ jobs:
             *)       echo "❌ Unsupported arch: $ARCH" >&2; exit 1 ;;
           esac
           URL="https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_${OS}_${ARCH_SLUG}.tar.gz"
-          echo "Downloading $URL" >&2
           curl -fsSL "$URL" | tar xz mcp-publisher
           chmod +x ./mcp-publisher
-          echo "✅ mcp-publisher installed" >&2
 
       - name: Validate server.json
         run: ./mcp-publisher validate server.json
@@ -92,24 +106,20 @@ jobs:
       - name: Login with GitHub OIDC
         run: ./mcp-publisher login github-oidc
 
-      - name: Publish to MCP Registry
+      - name: Publish to MCP Registry (idempotent)
         shell: bash
         run: |
           set -euo pipefail
-          # Run publish and capture output + exit code.
           set +e
           output="$(./mcp-publisher publish server.json 2>&1)"
           rc=$?
           set -e
           echo "$output"
           if [[ $rc -eq 0 ]]; then
-            echo "✅ Published successfully." >&2
             exit 0
           fi
-          # Treat "already published" or conflict (409) as a non-fatal success.
           if echo "$output" | grep -qiE '(already (published|exists)|duplicate version|cannot publish duplicate version|409|conflict)'; then
-            echo "⚠️  Server already published at this version — skipping (idempotent)." >&2
+            echo "⚠️  Already published — skipping." >&2
             exit 0
           fi
-          echo "❌ Publish failed (exit $rc)." >&2
           exit $rc

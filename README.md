@@ -9,6 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 [![MCP](https://img.shields.io/badge/Protocol-MCP-blue.svg)](https://modelcontextprotocol.io/)
+[![CI](https://github.com/DevsHero/ShadowCrawl/actions/workflows/ci.yml/badge.svg)](https://github.com/DevsHero/ShadowCrawl/actions/workflows/ci.yml)
 </div>
 
 ---
