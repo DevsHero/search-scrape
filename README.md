@@ -14,16 +14,13 @@
 
 ---
 
-**ShadowCrawl** is not just a scraper or a search wrapper — it is a **complete intelligence layer** purpose-built for AI Agents. In v2.2.0 we surgically replaced the SearXNG dependency with a **native Rust meta-search engine** running inside the same binary. Zero extra containers. Parallel engines. LLM-grade clean output.
+**ShadowCrawl** is not just a scraper or a search wrapper — it is a **complete intelligence layer** purpose-built for AI Agents. ShadowCrawl ships a **native Rust meta-search engine** running inside the same binary. Zero extra containers. Parallel engines. LLM-grade clean output.
 
 When every other tool gets blocked, ShadowCrawl doesn't retreat — it **escalates**: native engines → Browserless headless fallback → Human-In-The-Loop (HITL) nuclear option. You always get results.
 
 ---
 
 ## ⚡ God-Tier Internal Meta-Search (v2.2.0)
-
-> **The old way**: run SearXNG + Redis as separate Docker containers, fight with locale bugs, get Thai Buddhist Era timestamps polluting your snippets.
-> **The new way**: Rust-native parallel engines. One binary. Zero deps.
 
 ShadowCrawl v2.2.0 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
 
@@ -40,7 +37,7 @@ ShadowCrawl v2.2.0 ships a **100% Rust-native metasearch engine** that queries 4
 
 **Smart Deduplication + Scoring** — Cross-engine results are merged by URL fingerprint. Pages confirmed by 2+ engines receive a corroboration score boost. Domain authority weighting (docs, .gov, .edu, major outlets) pushes high-trust sources to the top.
 
-**Ultra-Clean Output for LLMs** — The biggest pain point with SearXNG was snippet pollution: dates appeared as `"Jul 23, 2568 BE — ..."` (Thai Buddhist Era from locale bleed). With v2.2.0:
+**Ultra-Clean Output for LLMs** — Clean fields and predictable structure:
 - `published_at` is parsed and stored as a clean **ISO-8601 field** (`2025-07-23T00:00:00`)
 - `content` / `snippet` is clean — zero date-prefix garbage
 - `breadcrumbs` extracted from URL path for navigation context
@@ -54,7 +51,7 @@ ShadowCrawl v2.2.0 ships a **100% Rust-native metasearch engine** that queries 4
 
 ---
 
-## � Full Feature Roster
+## 🛠 Full Feature Roster
 
 | Feature | Details |
 |---------|---------|
@@ -74,24 +71,14 @@ ShadowCrawl v2.2.0 ships a **100% Rust-native metasearch engine** that queries 4
 
 ## 🏗 Zero-Bloat Architecture
 
-ShadowCrawl v2.2.0 cut **2 Docker containers** that v2.0 required:
+The default Docker stack is intentionally minimal — just **2 services**:
 
-```
-v2.0 (old)            v2.2.0 (now)
-───────────────────   ─────────────────────────────────────────
-shadowcrawl  ✅       shadowcrawl  ✅  (search engines built-in)
-browserless  ✅       browserless  ✅
-searxng      🗑️       — eliminated —
-redis        🗑️       — eliminated —
-```
+| Service | Role |
+|---------|------|
+| `shadowcrawl` | Main MCP + HTTP server (internal search built-in) |
+| `browserless` | Headless Chrome for JS rendering and SERP fallback |
 
-The entire search stack — query fanout, deduplication, scoring, fallback — runs **inside the same Rust binary** as the scraper:
-
-- ✅ Faster cold start (no inter-container DNS + SearXNG warmup)
-- ✅ Simpler `docker compose` (2 services, not 4)
-- ✅ Zero Redis memory overhead
-- ✅ No SearXNG locale bugs or settings drift
-- ✅ Browserless shared directly (same env var, same container)
+Internal search engines (Google / Bing / DuckDuckGo / Brave) run **inside the `shadowcrawl` binary**.
 
 ---
 
@@ -131,7 +118,7 @@ We don't claim — we show receipts. All captured with `non_robot_search` + Safe
 
 ### Option A — Docker (Recommended for Most Users)
 
-Two services. No SearXNG. No Redis.
+Two services only.
 
 ```bash
 git clone https://github.com/DevsHero/shadowcrawl.git
@@ -252,7 +239,7 @@ Add to your MCP config (`~/.config/Code/User/mcp.json`):
 |---------|--------------------------|-------------------|
 | **Cost** | $49–$499/mo | **$0 — self-hosted** |
 | **Privacy** | They see your queries | **100% private, local-only** |
-| **Search Engine** | Proprietary / SearXNG | **Native Rust (4 engines, parallel)** |
+| **Search Engine** | Proprietary / 3rd-party API | **Native Rust (4 engines, parallel)** |
 | **Result Quality** | Mixed, noisy snippets | **Deduped, scored, LLM-clean** |
 | **Cloudflare Bypass** | Rarely | **Browserless + HITL fallback** |
 | **LinkedIn / Airbnb** | Blocked | **99.99% success (HITL)** |
@@ -262,20 +249,7 @@ Add to your MCP config (`~/.config/Code/User/mcp.json`):
 | **MCP Native** | Partial | **Full MCP stdio + HTTP** |
 | **Docker containers** | N/A | **2 only (shadowcrawl + browserless)** |
 
----
 
-## 🗑 Legacy: SearXNG Migration
-
-ShadowCrawl v2.0 used **SearXNG + Redis** as an external search backend. As of **v2.2.0 these are fully eliminated** from the main stack.
-
-The `docker-compose-legacy.yml` in this repo preserves the old setup for side-by-side benchmarking only — do not use it for production.
-
-**Upgrade from v2.0 in 30 seconds:**
-1. Remove `SEARXNG_URL` from your MCP config / docker-compose
-2. Pull the new image / rebuild the binary
-3. Done — all other env vars and tool names are backwards-compatible
-
----
 
 ### ☕ Acknowledgments & Support
 

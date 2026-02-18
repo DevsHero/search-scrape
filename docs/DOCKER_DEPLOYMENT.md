@@ -101,7 +101,7 @@ Each build creates multiple tags:
 - `v2.2.0` - Semantic version tags (if using git tags)
 
 ### Stack Overview
-The default stack (`docker-compose.yml`) contains **2 services only** — no SearXNG or Redis required:
+The default stack (`docker-compose.yml`) contains **2 services only** — no extra services required:
 
 | Service | Role |
 |---------|------|
