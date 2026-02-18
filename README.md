@@ -160,7 +160,7 @@ Platform guides: [WINDOWS_DESKTOP.md](docs/WINDOWS_DESKTOP.md) · [UBUNTU_DESKTO
 
 ShadowCrawl exposes all tools via the **Model Context Protocol** (stdio transport).
 
-### VS Code / Copilot Chat
+### VS Code / Copilot Chat 
 
 Add to your MCP config (`~/.config/Code/User/mcp.json`):
 
