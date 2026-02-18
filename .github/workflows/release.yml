@@ -44,11 +44,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(python3 -c 'import tomllib, pathlib; obj=tomllib.loads(pathlib.Path("mcp-server/Cargo.toml").read_text(encoding="utf-8")); v=obj.get("package",{}).get("version",""); assert v, "Missing [package].version"; print(v)')"
+
+          # ── 1. Read version from Cargo.toml ──────────────────────────────────
+          version="$(python3 -c 'import tomllib, pathlib; obj=tomllib.loads(pathlib.Path("mcp-server/Cargo.toml").read_text(encoding="utf-8")); v=obj.get("package",{}).get("version",""); assert v, "Missing [package].version in mcp-server/Cargo.toml"; print(v)')"
           tag="v${version}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "✅ version=$version tag=$tag" >&2
+
+          # ── 2. Guard: Cargo.toml version must match server.json version ──────
+          server_ver="$(python3 -c 'import json, pathlib; obj=json.loads(pathlib.Path("server.json").read_text(encoding="utf-8")); v=obj.get("version",""); assert v, "Missing version in server.json"; print(v)')"
+          if [[ "$version" != "$server_ver" ]]; then
+            echo "❌ Version mismatch: Cargo.toml=$version but server.json=$server_ver" >&2
+            echo "   Sync them and recommit with [build]." >&2
+            exit 1
+          fi
+          echo "✅ server.json version matches Cargo.toml: $version" >&2
+
+          # ── 3. Guard: server.json must be valid JSON ─────────────────────────
+          python3 -c 'import json, pathlib; json.loads(pathlib.Path("server.json").read_text(encoding="utf-8")); print("✅ server.json is valid JSON")'
 
   create-release:
     name: Create tag + GitHub Release
@@ -61,7 +75,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create tag (if missing) and push
+      - name: Create tag (force-move if stale) and push
         shell: bash
         run: |
           set -euo pipefail
@@ -72,16 +86,19 @@ jobs:
 
           if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
             existing_sha="$(git rev-list -n 1 "$tag")"
-            if [[ "$existing_sha" != "$GITHUB_SHA" ]]; then
-              echo "❌ Tag already exists ($tag) but points to $existing_sha (current commit is $GITHUB_SHA)." >&2
-              echo "Bump version in mcp-server/Cargo.toml and server.json, then commit with [build]." >&2
-              exit 1
+            if [[ "$existing_sha" == "$GITHUB_SHA" ]]; then
+              echo "✅ Tag $tag already points to current commit — nothing to do." >&2
+            else
+              echo "⚠️  Tag $tag exists at $existing_sha; force-moving to $GITHUB_SHA" >&2
+              git tag -f "$tag" "$GITHUB_SHA"
+              git push origin "$tag" --force
+              echo "✅ Tag $tag force-moved to $GITHUB_SHA" >&2
             fi
-            echo "✅ Tag already exists and matches current commit: $tag" >&2
           else
             echo "Creating tag $tag at $GITHUB_SHA" >&2
             git tag "$tag" "$GITHUB_SHA"
             git push origin "$tag"
+            echo "✅ Tag $tag created at $GITHUB_SHA" >&2
           fi
 
       - name: Create or update GitHub Release
@@ -91,7 +108,20 @@ jobs:
           name: ${{ needs['check-trigger'].outputs.tag }}
           draft: false
           prerelease: false
-          generate_release_notes: true
+          generate_release_notes: false
+          body: |
+            ## ShadowCrawl ${{ needs['check-trigger'].outputs.tag }}
+
+            Cross-platform prebuilt binaries attached below.
+
+            | Platform | Default | `non_robot_search` |
+            |---|---|---|
+            | linux-x64 | ✅ | — |
+            | linux-arm64 | ✅ | — |
+            | windows-x64 | ✅ | ✅ |
+            | windows-arm64 | ✅ | ✅ |
+            | macos-x64 | ✅ | ✅ |
+            | macos-arm64 | ✅ | ✅ |
 
   build-and-release:
     name: ${{ matrix.name }}

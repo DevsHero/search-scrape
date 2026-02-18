@@ -80,9 +80,22 @@ jobs:
           exit 1
 
       - name: Install mcp-publisher
+        shell: bash
         run: |
-          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          set -euo pipefail
+          OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64)  ARCH_SLUG="amd64" ;;
+            aarch64) ARCH_SLUG="arm64" ;;
+            arm64)   ARCH_SLUG="arm64" ;;
+            *)       echo "❌ Unsupported arch: $ARCH" >&2; exit 1 ;;
+          esac
+          URL="https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_${OS}_${ARCH_SLUG}.tar.gz"
+          echo "Downloading $URL" >&2
+          curl -fsSL "$URL" | tar xz mcp-publisher
           chmod +x ./mcp-publisher
+          echo "✅ mcp-publisher installed" >&2
 
       - name: Validate server.json
         run: ./mcp-publisher validate server.json
@@ -91,4 +104,23 @@ jobs:
         run: ./mcp-publisher login github-oidc
 
       - name: Publish to MCP Registry
-        run: ./mcp-publisher publish server.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Run publish and capture output + exit code.
+          set +e
+          output="$(./mcp-publisher publish server.json 2>&1)"
+          rc=$?
+          set -e
+          echo "$output"
+          if [[ $rc -eq 0 ]]; then
+            echo "✅ Published successfully." >&2
+            exit 0
+          fi
+          # Treat "already published" or conflict (409) as a non-fatal success.
+          if echo "$output" | grep -qiE '(already (published|exists)|409|conflict)'; then
+            echo "⚠️  Server already published at this version — skipping (idempotent)." >&2
+            exit 0
+          fi
+          echo "❌ Publish failed (exit $rc)." >&2
+          exit $rc
