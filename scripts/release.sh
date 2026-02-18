@@ -10,8 +10,7 @@
 #   cargo install cargo-zigbuild
 #   rustup target add \
 #     aarch64-apple-darwin \
-#     x86_64-unknown-linux-musl \
-#     aarch64-unknown-linux-musl \
+#     aarch64-unknown-linux-gnu \
 #     x86_64-pc-windows-gnullvm \
 #     aarch64-pc-windows-gnullvm
 #
@@ -67,11 +66,15 @@ pass "Tag $TAG created and pushed"
 banner "Building"
 TARGETS=(
   "aarch64-apple-darwin"
-  "x86_64-unknown-linux-musl"
-  "aarch64-unknown-linux-musl"
+  "aarch64-unknown-linux-gnu"
   "x86_64-pc-windows-gnullvm"
   "aarch64-pc-windows-gnullvm"
 )
+# NOTE: x86_64-unknown-linux-gnu is intentionally excluded.
+# The lancedb/lance crate ships a pre-built AVX512 C archive that Zig's lld
+# cannot resolve when cross-compiling from macOS. To build linux-x64, run
+# this script inside a GitHub Actions ubuntu runner or Docker linux/amd64.
+LINUX_X64_NOTE="linux-x64 skipped (lancedb AVX512 cross-compile limitation — build on native linux or GitHub Actions)"
 
 cd "$MCP"
 
@@ -83,7 +86,7 @@ for target in "${TARGETS[@]}"; do
       cargo build --release --locked --target "$target" --bin shadowcrawl --bin shadowcrawl-mcp
       ;;
     *)
-      # Everything else via zigbuild
+      # Everything else via zigbuild (linux-arm64, windows-x64, windows-arm64)
       cargo zigbuild --release --locked --target "$target" --bin shadowcrawl --bin shadowcrawl-mcp
       ;;
   esac
@@ -124,10 +127,10 @@ package_zip() {
 }
 
 package_tar "aarch64-apple-darwin"           "macos-arm64"
-package_tar "x86_64-unknown-linux-musl"      "linux-x64"
-package_tar "aarch64-unknown-linux-musl"     "linux-arm64"
+package_tar "aarch64-unknown-linux-gnu"      "linux-arm64"
 package_zip "x86_64-pc-windows-gnullvm"      "windows-x64"
 package_zip "aarch64-pc-windows-gnullvm"     "windows-arm64"
+warn "$LINUX_X64_NOTE"
 
 info "Artifacts:"
 ls -lh "$DIST/"
