@@ -44,28 +44,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(
-            python3 - <<'PY'
-import pathlib
-import sys
-
-path = pathlib.Path('mcp-server/Cargo.toml')
-data = path.read_bytes()
-
-try:
-    import tomllib  # py3.11+
-except Exception as e:
-    print('tomllib not available:', e, file=sys.stderr)
-    sys.exit(1)
-
-obj = tomllib.loads(data.decode('utf-8'))
-v = obj.get('package', {}).get('version', '')
-if not v:
-    print('Failed to read [package].version from mcp-server/Cargo.toml', file=sys.stderr)
-    sys.exit(1)
-print(v)
-PY
-          )"
+          version="$(python3 -c 'import tomllib, pathlib; obj=tomllib.loads(pathlib.Path("mcp-server/Cargo.toml").read_text(encoding="utf-8")); v=obj.get("package",{}).get("version",""); assert v, "Missing [package].version"; print(v)')"
           tag="v${version}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -75,7 +54,7 @@ PY
     name: Create tag + GitHub Release
     runs-on: ubuntu-latest
     needs: check-trigger
-    if: needs.check-trigger.outputs.should_build == 'true'
+    if: ${{ needs['check-trigger'].outputs.should_build == 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -86,7 +65,7 @@ PY
         shell: bash
         run: |
           set -euo pipefail
-          tag="${{ needs.check-trigger.outputs.tag }}"
+          tag="${{ needs['check-trigger'].outputs.tag }}"
 
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
@@ -108,8 +87,8 @@ PY
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.check-trigger.outputs.tag }}
-          name: ${{ needs.check-trigger.outputs.tag }}
+          tag_name: ${{ needs['check-trigger'].outputs.tag }}
+          name: ${{ needs['check-trigger'].outputs.tag }}
           draft: false
           prerelease: false
           generate_release_notes: true
@@ -120,7 +99,7 @@ PY
     needs:
       - check-trigger
       - create-release
-    if: needs.check-trigger.outputs.should_build == 'true'
+    if: ${{ needs['check-trigger'].outputs.should_build == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -191,7 +170,7 @@ PY
         run: |
           set -euo pipefail
 
-          version="${{ needs.check-trigger.outputs.version }}"
+          version="${{ needs['check-trigger'].outputs.version }}"
           dist="dist/${{ matrix.platform }}"
           base="mcp-server/target/${{ matrix.target }}/release"
 
@@ -228,7 +207,7 @@ PY
         shell: bash
         run: |
           set -euo pipefail
-          version="${{ needs.check-trigger.outputs.version }}"
+          version="${{ needs['check-trigger'].outputs.version }}"
           cd "dist/${{ matrix.platform }}"
           tar -czf "../shadowcrawl-${version}-${{ matrix.platform }}.tar.gz" .
 
@@ -236,7 +215,7 @@ PY
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          $version = "${{ needs.check-trigger.outputs.version }}"
+          $version = "${{ needs['check-trigger'].outputs.version }}"
           $src = "dist/${{ matrix.platform }}"
           $dst = "dist/shadowcrawl-$version-${{ matrix.platform }}.zip"
           if (Test-Path $dst) { Remove-Item -Force $dst }
@@ -253,7 +232,7 @@ PY
       - name: Attach assets to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.check-trigger.outputs.tag }}
+          tag_name: ${{ needs['check-trigger'].outputs.tag }}
           files: |
             dist/shadowcrawl-*-${{ matrix.platform }}.${{ matrix.archive }}
           generate_release_notes: false
