@@ -151,7 +151,7 @@ Create: `.continue/mcpServers/shadowcrawl.yaml`
 
 ```yaml
 name: shadowcrawl
-version: 2.0.0-rc
+version: 2.2.0
 schema: v1
 
 mcpServers:

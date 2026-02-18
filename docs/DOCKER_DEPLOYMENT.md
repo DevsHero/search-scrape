@@ -49,7 +49,7 @@ The project uses GitHub Actions to automatically build and push Docker images to
 #### Trigger Build
 ```bash
 # Commit message ending with [build] to trigger Docker build
-git commit -m "Release v2.0.0-rc [build]"
+git commit -m "Release v2.2.0 [build]"
 git push
 
 # Repo convention: keep [build] at the end so it's easy to grep in history.
@@ -98,7 +98,17 @@ Each build creates multiple tags:
 - `latest` - Latest build from default branch
 - `main` - Latest build from main branch  
 - `main-abc1234` - Specific commit SHA
-- `v2.0.0-rc` - Semantic version tags (if using git tags)
+- `v2.2.0` - Semantic version tags (if using git tags)
+
+### Stack Overview
+The default stack (`docker-compose.yml`) contains **2 services only** — no SearXNG or Redis required:
+
+| Service | Role |
+|---------|------|
+| `shadowcrawl` | Main MCP + HTTP server (internal search built-in) |
+| `browserless` | Headless Chrome for JS rendering and SERP fallback |
+
+Internal search engines (Google / Bing / DuckDuckGo / Brave) run **inside the `shadowcrawl` binary** — zero extra containers.
 
 ### Environment Variables
 Configure the container with:
@@ -147,10 +157,10 @@ git push
 ### Version Tagging
 ```bash
 # Create version tag to trigger versioned build
-git tag v2.0.0-rc
-git push origin v2.0.0-rc
+git tag v2.2.0
+git push origin v2.2.0
 
-# This creates images with tags like: v2.0.0-rc, latest
+# This creates images with tags like: v2.2.0, latest
 ```
 
 ### Rollback Strategy
