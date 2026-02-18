@@ -238,5 +238,5 @@ If this tool saved you from a $500/mo scraping API bill:
 
 [![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=ff69b4&style=for-the-badge)](https://github.com/sponsors/DevsHero)
 
-**License:** MIT — free for personal and commercial use.
+**License:** MIT — free for personal and commercial use. 
 
