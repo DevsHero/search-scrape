@@ -20,6 +20,8 @@
 # =============================================================================
 set -euo pipefail
 
+export CARGO_TERM_COLOR=always
+
 DRY_RUN=false
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
 
@@ -30,10 +32,40 @@ MCP="$REPO_ROOT/mcp-server"
 VERSION=$(grep '^version' "$MCP/Cargo.toml" | head -1 | cut -d '"' -f2)
 TAG="v$VERSION"
 
+# Best-effort: use all cores for faster builds.
+if command -v sysctl &>/dev/null; then
+  export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || echo 8)}"
+fi
+
 pass()  { printf "\033[32m✅  %s\033[0m\n" "$*"; }
 info()  { printf "\033[34m──  %s\033[0m\n" "$*"; }
 warn()  { printf "\033[33m⚠️   %s\033[0m\n" "$*"; }
 banner(){ printf "\n\033[1;36m=== %s ===\033[0m\n" "$*"; }
+
+die() { printf "\033[31m❌  %s\033[0m\n" "$*" >&2; exit 1; }
+
+repo_slug_from_origin() {
+  # Supports:
+  #   https://github.com/OWNER/REPO.git
+  #   git@github.com:OWNER/REPO.git
+  # Returns: OWNER/REPO
+  local origin
+  origin="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
+  [[ -n "$origin" ]] || return 1
+
+  origin="${origin%.git}"
+  origin="${origin#https://github.com/}"
+  origin="${origin#http://github.com/}"
+  origin="${origin#git@github.com:}"
+
+  # Reject anything that doesn't look like owner/repo.
+  if [[ "$origin" =~ ^[^/]+/[^/]+$ ]]; then
+    printf '%s' "$origin"
+    return 0
+  fi
+
+  return 1
+}
 
 banner "ShadowCrawl $TAG — Local Release"
 info "Repo: $REPO_ROOT"
@@ -42,17 +74,52 @@ $DRY_RUN && warn "DRY-RUN mode — skipping GitHub upload"
 
 # ── Preflight checks ──────────────────────────────────────────────────────────
 banner "Preflight"
-for cmd in cargo cargo-zigbuild gh zig rustup; do
+for cmd in cargo cargo-zigbuild zig rustup python3; do
   if ! command -v "$cmd" &>/dev/null; then
-    printf "\033[31m❌  Missing: %s\033[0m\n" "$cmd"
+    printf "\033[31m❌  Missing: %s\033[0m\n" "$cmd" >&2
     case "$cmd" in
       zig|cargo-zigbuild) echo "   brew install zig && cargo install cargo-zigbuild" ;;
-      gh) echo "   brew install gh && gh auth login" ;;
     esac
     exit 1
   fi
 done
 pass "All tools present"
+
+if ! $DRY_RUN; then
+  if ! command -v gh &>/dev/null; then
+    die "Missing: gh (install: brew install gh)"
+  fi
+  if ! gh auth status -h github.com &>/dev/null; then
+    die "GitHub CLI is not authenticated. Run: gh auth login"
+  fi
+fi
+
+if [[ -z "$(git -C "$REPO_ROOT" rev-parse --is-inside-work-tree 2>/dev/null || true)" ]]; then
+  die "Not a git repo: $REPO_ROOT"
+fi
+
+if [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]]; then
+  die "Working tree is dirty. Commit/stash changes before releasing."
+fi
+
+REPO_SLUG=""
+if ! $DRY_RUN; then
+  REPO_SLUG="$(repo_slug_from_origin || true)"
+  [[ -n "$REPO_SLUG" ]] || die "Could not parse OWNER/REPO from 'origin' remote."
+  info "GitHub repo: $REPO_SLUG"
+fi
+
+banner "Version Guard"
+SERVER_VER="$(python3 -c 'import json, pathlib; obj=json.loads(pathlib.Path("server.json").read_text(encoding="utf-8")); print(obj.get("version",""))')"
+[[ -n "$SERVER_VER" ]] || die "server.json missing version"
+if [[ "$SERVER_VER" != "$VERSION" ]]; then
+  die "Version mismatch: mcp-server/Cargo.toml=$VERSION server.json=$SERVER_VER"
+fi
+pass "Versions match ($VERSION)"
+
+banner "Warm dependencies"
+(cd "$MCP" && cargo fetch --locked)
+pass "Cargo deps fetched"
 
 # ── Tag management ────────────────────────────────────────────────────────────
 banner "Tagging $TAG"
@@ -142,12 +209,12 @@ if $DRY_RUN; then
 fi
 
 banner "Uploading to GitHub Release $TAG"
-gh release delete "$TAG" --repo "$REPO_ROOT" --yes 2>/dev/null || true
+gh release delete "$TAG" --repo "$REPO_SLUG" --yes 2>/dev/null || true
 gh release create "$TAG" \
   "$DIST"/*.tar.gz \
   "$DIST"/*.zip \
   --title "ShadowCrawl $TAG" \
   --notes "Built locally from macOS (Apple Silicon) using cargo-zigbuild." \
-  --repo "$(git -C "$REPO_ROOT" remote get-url origin)"
+  --repo "$REPO_SLUG"
 
 pass "ALL DONE — ShadowCrawl $TAG is live on GitHub Releases"
