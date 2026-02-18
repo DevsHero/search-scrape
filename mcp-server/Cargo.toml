@@ -93,6 +93,10 @@ is_elevated = "0.1"
 accessibility-sys = "0.2"
 core-foundation-sys = "0.8"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# Prefer vendored OpenSSL on Linux so binaries are less dependent on system OpenSSL.
+openssl-sys = { version = "0.9", features = ["vendored"] }
+
 [features]
 # Keep default builds lean; enable HITL "nuclear option" explicitly.
 default = []
