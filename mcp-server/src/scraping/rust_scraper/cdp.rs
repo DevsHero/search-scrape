@@ -1,4 +1,5 @@
 use super::RustScraper;
+use crate::scraping::browser_manager;
 use crate::types::ScrapeResponse;
 use anyhow::{anyhow, Result};
 use chromiumoxide::browser::BrowserConfig;
@@ -18,18 +19,13 @@ impl RustScraper {
         url: &str,
         proxy_url: Option<String>,
     ) -> Result<(String, u16)> {
-        warn!("🚀 Using Direct CDP Stealth Mode for: {}", url);
+        let exe = browser_manager::find_chrome_executable()
+            .ok_or_else(|| anyhow!("No browser found for CDP stealth mode. Install Brave, Chrome, or Chromium."))?;
 
-        let browserless_url = std::env::var("BROWSERLESS_URL")
-            .unwrap_or_else(|_| "http://localhost:3000".to_string());
-        let ws_url = browserless_url
-            .replace("http://", "ws://")
-            .replace("https://", "wss://");
-
-        warn!("🔌 Connecting to CDP endpoint: {}", ws_url);
+        warn!("🚀 Direct CDP Stealth Mode: {} (browser: {})", url, exe);
 
         let mut config = BrowserConfig::builder()
-            .chrome_executable("/usr/bin/chromium")
+            .chrome_executable(&exe)
             .viewport(Viewport {
                 width: 1920,
                 height: 1080,
@@ -38,7 +34,11 @@ impl RustScraper {
                 is_landscape: false,
                 has_touch: false,
             })
-            .window_size(1920, 1080);
+            .window_size(1920, 1080)
+            .arg("--disable-gpu")
+            .arg("--no-sandbox")
+            .arg("--disable-dev-shm-usage")
+            .arg("--no-first-run");
 
         if let Some(proxy) = proxy_url {
             config = config.arg(format!("--proxy-server={}", proxy));
@@ -50,7 +50,7 @@ impl RustScraper {
                 .map_err(|e| anyhow!("Failed to build browser config: {}", e))?,
         )
         .await
-        .map_err(|e| anyhow!("Failed to launch browser: {}", e))?;
+        .map_err(|e| anyhow!("Failed to launch browser ({}): {}", exe, e))?;
 
         let handle = tokio::spawn(async move {
             while let Some(event) = handler.next().await {

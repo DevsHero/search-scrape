@@ -61,11 +61,12 @@ RUN strip /app/target/release/shadowcrawl /app/target/release/shadowcrawl-mcp ||
 # Runtime stage
 FROM debian:bookworm-slim
 
-# Install runtime dependencies
+# Install runtime dependencies (chromium provides the headless browser for CDP scraping)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libssl3 \
     curl \
+    chromium \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app user and cache directories
@@ -90,6 +91,7 @@ EXPOSE 5000
 ENV RUST_LOG=info
 ENV HF_HOME=/home/appuser/.cache/huggingface
 ENV LANCEDB_URI=/home/appuser/lancedb
+ENV CHROME_EXECUTABLE=/usr/bin/chromium
 
 # Start the application
 CMD ["shadowcrawl"]

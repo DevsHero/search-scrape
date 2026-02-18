@@ -2,7 +2,7 @@
 name = "shadowcrawl"
 version = "2.2.0"
 edition = "2021"
-description = "God-Tier stealth intelligence engine for AI agents — zero-dependency parallel meta-search (Google/Bing/DDG/Brave), universal anti-bot bypass, Browserless fallback, semantic research memory, and HITL nuclear option. Self-hosted, 100% private, MCP-native."
+description = "God-Tier stealth intelligence engine for AI agents — zero-dependency parallel meta-search (Google/Bing/DDG/Brave), universal anti-bot bypass, native Chromium CDP (zero-Docker standalone), semantic research memory, and HITL nuclear option. Self-hosted, 100% private, MCP-native."
 repository = "https://github.com/DevsHero/ShadowCrawl"
 license = "MIT"
 

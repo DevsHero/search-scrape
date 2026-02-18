@@ -1,18 +1,4 @@
 services:
-  browserless:
-    image: ghcr.io/devshero/shadowcrawl:latest
-    container_name: browserless-chromium
-    ports:
-      - "3010:3000"
-    environment:
-      - MAX_CONCURRENT_SESSIONS=10
-      - TOKEN=mcp_stealth_session
-      - PREBOOT_CHROME=true
-      - DEFAULT_STEALTH=true
-      - DEFAULT_BLOCK_ADS=true
-    restart: unless-stopped
-    mem_limit: 2g
-    shm_size: 2gb
   shadowcrawl:
     build:
       context: .
@@ -25,8 +11,7 @@ services:
       - "5001:5000"
     environment:
       - LANCEDB_URI=/home/appuser/lancedb
-      - BROWSERLESS_URL=http://browserless:3000
-      - BROWSERLESS_TOKEN=mcp_stealth_session
+      - CHROME_EXECUTABLE=/usr/bin/chromium
       - HF_HOME=/home/appuser/.cache/huggingface
       - RUST_LOG=info
       - HTTP_TIMEOUT_SECS=30
@@ -45,8 +30,7 @@ services:
       - lancedb_data:/home/appuser/lancedb
       - ${IP_LIST_HOST_PATH:-./ip.txt}:/home/appuser/ip.txt:rw
       - ${PROXY_SOURCE_HOST_PATH:-./proxy_source.json}:/home/appuser/proxy_source.json:rw
-    depends_on:
-      - browserless
+    shm_size: 1gb
     restart: unless-stopped
     networks:
       - default

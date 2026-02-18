@@ -15,7 +15,7 @@ use reqwest::Client;
 use scraper::Html;
 use std::collections::HashSet;
 use std::time::Duration;
-use tracing::{info, warn};
+use tracing::info;
 use url::Url;
 
 /// Enhanced Rust-native web scraper with anti-bot protection
@@ -281,83 +281,51 @@ impl RustScraper {
         Ok(result)
     }
 
-    /// Scrape a URL using Browserless headless browser for JS-heavy sites
-    /// This is used as a fallback when static scraping returns poor quality
-    /// Supports custom actions (scroll, wait) for dynamic content
+    /// Scrape a URL using the native headless browser (chromiumoxide) for JS-heavy sites.
+    /// This is used as a fallback when static scraping returns poor quality.
     pub async fn scrape_with_browserless(&self, url: &str) -> Result<ScrapeResponse> {
         self.scrape_with_browserless_advanced(url, None).await
     }
 
-    /// Fetch raw HTML via Browserless without running the full extraction pipeline.
-    /// Intended for lightweight use cases like search-engine SERP fetching.
+    /// Fetch raw HTML via the native headless browser without running the full
+    /// extraction pipeline.  Used for lightweight cases like SERP fetching.
     pub async fn fetch_html_with_browserless(
         &self,
         url: &str,
         custom_wait: Option<u32>,
     ) -> Result<(u16, String)> {
-        let browserless_url = std::env::var("BROWSERLESS_URL")
-            .unwrap_or_else(|_| "http://localhost:3000".to_string());
-        let browserless_token = std::env::var("BROWSERLESS_TOKEN").ok();
+        use crate::scraping::browser_manager;
+
+        antibot::apply_request_delay().await;
 
         let domain = url::Url::parse(url)
             .ok()
             .and_then(|u| u.host_str().map(|s| s.to_lowercase()));
-
         let (wait_time, needs_scroll) = self.detect_domain_strategy(&domain);
-        let final_wait = custom_wait.unwrap_or(wait_time);
         let is_boss_domain = self.is_boss_domain(&domain);
-        let extra_params = self.extra_browserless_query_params(&domain);
 
-        antibot::apply_request_delay().await;
-
-        let primary_user_agent = antibot::get_browserless_user_agent();
-        let mut extended_wait = if needs_scroll {
-            final_wait.saturating_add(3000)
-        } else {
-            final_wait
-        };
+        let mut effective_wait = custom_wait.unwrap_or(wait_time);
+        if needs_scroll {
+            effective_wait = effective_wait.saturating_add(2000);
+        }
         if is_boss_domain {
-            extended_wait = extended_wait
+            effective_wait = effective_wait
                 .saturating_add(antibot::boss_domain_post_load_delay_ms() as u32);
         }
 
-        let (mut html, mut status_code) = self
-            .fetch_browserless_content(
-                url,
-                extended_wait,
-                &browserless_url,
-                browserless_token.clone(),
-                is_boss_domain,
-                primary_user_agent,
-                None,
-                &extra_params,
-                None,
-            )
-            .await?;
+        let (status, html) = browser_manager::fetch_html_native(url, Some(effective_wait)).await?;
 
+        // Mobile Safari retry if blocked
         if self.detect_block_reason(&html).is_some() {
-            // Pass 2: Try Mobile Safari profile (universal fallback)
-            let mobile = antibot::get_mobile_stealth_config();
-            if let Ok((retry_html, retry_status)) = self
-                .fetch_browserless_content(
-                    url,
-                    final_wait.saturating_add(2000),
-                    &browserless_url,
-                    browserless_token.clone(),
-                    is_boss_domain,
-                    mobile.user_agent,
-                    Some(&mobile),
-                    &extra_params,
-                    None,
-                )
-                .await
+            info!("Native fetch blocked, retrying with mobile profile");
+            if let Ok((retry_status, retry_html)) =
+                browser_manager::fetch_html_native_mobile(url, Some(effective_wait.saturating_add(1500))).await
             {
-                html = retry_html;
-                status_code = retry_status;
+                return Ok((retry_status, retry_html));
             }
         }
 
-        Ok((status_code, html))
+        Ok((status, html))
     }
 
     /// Advanced Browserless scraping with custom actions and domain detection
@@ -370,255 +338,23 @@ impl RustScraper {
             .await
     }
 
-    /// Advanced Browserless scraping with optional proxy support
+    /// Advanced native-CDP scraping with optional proxy support.
+    /// This is the v2.2.0+ replacement for the HTTP Browserless path.
     pub async fn scrape_with_browserless_advanced_with_proxy(
         &self,
         url: &str,
-        custom_wait: Option<u32>,
+        _custom_wait: Option<u32>,
         proxy_url: Option<String>,
     ) -> Result<ScrapeResponse> {
         info!(
-            "Scraping URL with Advanced Browserless: {}{}",
+            "Scraping with native CDP: {}{}",
             url,
-            if proxy_url.is_some() {
-                " [PROXY MODE]"
-            } else {
-                ""
-            }
+            if proxy_url.is_some() { " [PROXY MODE]" } else { "" }
         );
 
-        let browserless_url = std::env::var("BROWSERLESS_URL")
-            .unwrap_or_else(|_| "http://localhost:3000".to_string());
-        let browserless_token = std::env::var("BROWSERLESS_TOKEN").ok();
-
-        // Domain detection for smart configuration
-        let domain = url::Url::parse(url)
-            .ok()
-            .and_then(|u| u.host_str().map(|s| s.to_lowercase()));
-
-        let (wait_time, needs_scroll) = self.detect_domain_strategy(&domain);
-        let final_wait = custom_wait.unwrap_or(wait_time);
-        let is_boss_domain = self.is_boss_domain(&domain);
-
-        // UNIVERSAL APPROACH: No site-specific checks - CDP handles all complex cases
-        info!(
-            "Domain strategy: wait={}ms, scroll={}",
-            final_wait, needs_scroll
-        );
-
-        // Apply anti-bot delay
-        antibot::apply_request_delay().await;
-
-        // Standard UA rotation for Browserless /content endpoint
-        let (primary_user_agent, mobile_config) = (antibot::get_browserless_user_agent(), None);
-
-        let extra_params = self.extra_browserless_query_params(&domain);
-
-        // UNIVERSAL APPROACH: Always use /content endpoint (site-agnostic)
-        // CDP handles complex cases, Browserless /content is fallback only
-        let mut extended_wait = if needs_scroll {
-            final_wait + 3000
-        } else {
-            final_wait
-        };
-
-        if is_boss_domain {
-            let extra_wait = antibot::boss_domain_post_load_delay_ms() as u32;
-            extended_wait = extended_wait.saturating_add(extra_wait);
-            info!("Boss domain extra wait: {}ms", extra_wait);
-        }
-
-        let (mut html, mut status_code) = self
-            .fetch_browserless_content(
-                url,
-                extended_wait,
-                &browserless_url,
-                browserless_token.clone(),
-                is_boss_domain,
-                primary_user_agent,
-                mobile_config.as_ref(),
-                &extra_params,
-                proxy_url.clone(),
-            )
-            .await?;
-
-        // UNIVERSAL RETRY STRATEGY: Content-based detection, not domain-specific
-        if let Some(reason) = self.detect_block_reason(&html) {
-            warn!("Pass 1 BLOCKED ({}): {}", reason, url);
-
-            // Pass 2: Try Mobile Safari profile (universal fallback)
-            info!("Pass 2: Trying Mobile Safari profile (universal)");
-            let mobile = antibot::get_mobile_stealth_config();
-
-            let retry2 = self
-                .fetch_browserless_content(
-                    url,
-                    final_wait + 2000, // Even longer wait on retry
-                    &browserless_url,
-                    browserless_token.clone(),
-                    is_boss_domain,
-                    mobile.user_agent,
-                    Some(&mobile),
-                    &extra_params,
-                    proxy_url.clone(),
-                )
-                .await;
-
-            if let Ok((retry_html, retry_status)) = retry2 {
-                if let Some(reason2) = self.detect_block_reason(&retry_html) {
-                    warn!(
-                        "Pass 2 BLOCKED ({}): {}. Word count: {}",
-                        reason2,
-                        url,
-                        self.count_words(&retry_html)
-                    );
-
-                    // Pass 3: Try native scraper as last resort (universal fallback)
-                    warn!("Pass 3: Falling back to native scraper (universal)");
-                    match self.scrape_url(url).await {
-                        Ok(native_response)
-                            if native_response.word_count > self.count_words(&retry_html) =>
-                        {
-                            info!("Pass 3 SUCCESS: Native scraper got {} words vs {} from Browserless",
-                                native_response.word_count, self.count_words(&retry_html));
-                            return Ok(native_response);
-                        }
-                        Ok(_) | Err(_) => {
-                            warn!("Pass 3 FAILED: Native scraper didn't improve results, using Pass 2");
-                        }
-                    }
-
-                    html = retry_html;
-                    status_code = retry_status;
-                } else {
-                    info!("Pass 2 SUCCESS: Block cleared");
-                    html = retry_html;
-                    status_code = retry_status;
-                }
-            } else {
-                warn!("Pass 2 FAILED: Network error, using Pass 1 result");
-            }
-        }
-
-        info!("Browserless rendered {} bytes of HTML", html.len());
-
-        // Parse the rendered HTML with our standard extraction logic
-        let parsed_url = Url::parse(url).map_err(|e| anyhow!("Invalid URL: {}", e))?;
-        let document = Html::parse_document(&html);
-
-        // NEW: Extract JSON-LD structured data (Schema.org)
-        let json_ld_content = self.extract_json_ld(&document);
-
-        // Extract all content using existing methods
-        let title = self.extract_title(&document);
-        let meta_description = self.extract_meta_description(&document);
-        let meta_keywords = self.extract_meta_keywords(&document);
-        let (og_title, og_description, og_image) = self.extract_open_graph(&document, &parsed_url);
-
-        // Priority order: JSON-LD > Normal extraction (universal)
-        let (mut clean_content, noise_reduction_ratio) = if let Some(json_content) = json_ld_content
-        {
-            info!("Using JSON-LD extraction (universal structured data)");
-            (
-                self.normalize_markdown_fragments(&html2md::parse_html(&json_content)),
-                0.0,
-            )
-        } else {
-            self.extract_clean_content_with_metrics(&html, &parsed_url)
-        };
-
-        clean_content = self.normalize_markdown_fragments(&clean_content);
-        clean_content = self.apply_og_description_fallback(clean_content, &og_description);
-        clean_content = self.clean_noise(&clean_content);
-        let language = self.detect_language(&document, &html);
-        let canonical_url = self.extract_canonical(&document, &parsed_url);
-        let site_name = self.extract_site_name(&document);
-        let author = self.extract_author(&document);
-        let published_at = self.extract_published_time(&document);
-        let code_blocks = self.extract_code_blocks(&document);
-        let headings = self.extract_headings(&document);
-        let links = self.extract_content_links(&document, &parsed_url);
-        let images = self.extract_images(&document, &parsed_url);
-
-        let mut embedded_data_sources = self.collect_embedded_data_sources(&document);
-        let mut embedded_state_json = embedded_data_sources
-            .iter()
-            .max_by_key(|s| s.content.len())
-            .map(|s| s.content.clone())
-            .or_else(|| self.extract_embedded_state_json(&document));
-
-        clean_content = self.append_image_context_markdown(clean_content, &images, &title);
-        let word_count = self.count_words(&clean_content);
-        let reading_time_minutes = (word_count as f64 / 200.0).ceil() as usize;
-
-        let extraction_score =
-            self.calculate_extraction_score(word_count, &published_at, &code_blocks, &headings);
-
-        let domain = parsed_url.host_str().map(|h| h.to_string());
-        let mut warnings = vec!["browserless_rendered".to_string()];
-        if let Some(reason) = self.detect_block_reason(&html) {
-            warnings.push(format!("browserless_blocked: {}", reason));
-        }
-        const MAX_STATE_JSON_CHARS: usize = 200_000;
-        for src in embedded_data_sources.iter_mut() {
-            if src.content.len() > MAX_STATE_JSON_CHARS {
-                src.content = src.content.chars().take(MAX_STATE_JSON_CHARS).collect();
-                warnings.push("embedded_data_sources_truncated".to_string());
-            }
-        }
-        if let Some(state) = embedded_state_json.as_ref() {
-            if state.len() > MAX_STATE_JSON_CHARS {
-                embedded_state_json = Some(state.chars().take(MAX_STATE_JSON_CHARS).collect());
-                warnings.push("embedded_state_json_truncated".to_string());
-            }
-        }
-
-        let hydration_status = crate::types::HydrationStatus {
-            json_found: !embedded_data_sources.is_empty() || embedded_state_json.is_some(),
-            settle_time_ms: None,
-            noise_reduction_ratio,
-        };
-
-        let result = ScrapeResponse {
-            url: url.to_string(),
-            title,
-            content: html.clone(),
-            clean_content,
-            embedded_state_json,
-            embedded_data_sources,
-            hydration_status,
-            meta_description,
-            meta_keywords,
-            headings,
-            links,
-            images,
-            timestamp: Utc::now().to_rfc3339(),
-            status_code,
-            content_type: "text/html".to_string(),
-            word_count,
-            language,
-            canonical_url,
-            site_name,
-            author,
-            published_at,
-            og_title,
-            og_description,
-            og_image,
-            reading_time_minutes: Some(reading_time_minutes as u32),
-            code_blocks,
-            truncated: false,
-            actual_chars: 0,
-            max_chars_limit: None,
-            extraction_score: Some(extraction_score),
-            warnings,
-            domain,
-        };
-
-        info!(
-            "Browserless scrape successful: {} ({} words, score: {:.2})",
-            result.title, result.word_count, extraction_score
-        );
-        Ok(result)
+        // Use the full stealth CDP path (scroll simulation, mouse, stealth injection)
+        let (html, _status) = self.fetch_via_cdp(url, proxy_url).await?;
+        self.process_html(&html, url).await
     }
 }
 

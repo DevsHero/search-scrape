@@ -16,7 +16,7 @@
 
 **ShadowCrawl** is not just a scraper or a search wrapper — it is a **complete intelligence layer** purpose-built for AI Agents. ShadowCrawl ships a **native Rust meta-search engine** running inside the same binary. Zero extra containers. Parallel engines. LLM-grade clean output.
 
-When every other tool gets blocked, ShadowCrawl doesn't retreat — it **escalates**: native engines → Browserless headless fallback → Human-In-The-Loop (HITL) nuclear option. You always get results.
+When every other tool gets blocked, ShadowCrawl doesn't retreat — it **escalates**: native engines → native Chromium CDP headless → Human-In-The-Loop (HITL) nuclear option. You always get results.
 
 ---
 
@@ -45,7 +45,7 @@ ShadowCrawl v2.2.0 ships a **100% Rust-native metasearch engine** that queries 4
 
 **Result: LLMs receive dense, token-efficient, structured data — not a wall of noisy text.**
 
-**Unstoppable Fallback** — If an engine returns a bot-challenge page (`anomaly.js`, Cloudflare, PerimeterX), it is automatically retried via the resident Browserless instance (headless Chrome). No manual intervention. No 0-result failures.
+**Unstoppable Fallback** — If an engine returns a bot-challenge page (`anomaly.js`, Cloudflare, PerimeterX), it is automatically retried via the native Chromium CDP instance (headless Chrome, bundled in-binary). No manual intervention. No 0-result failures.
 
 **Quality > Quantity** — ~20 deduplicated, scored results rather than 50 raw duplicates. For an AI agent with a limited context window, 20 high-quality results outperform 50 noisy ones every time.
 
@@ -56,7 +56,7 @@ ShadowCrawl v2.2.0 ships a **100% Rust-native metasearch engine** that queries 4
 | Feature | Details |
 |---------|---------|
 | 🔍 **God-Tier Meta-Search** | Parallel Google / Bing / DDG / Brave · dedup · scoring · breadcrumbs · `published_at` |
-| 🕷 **Universal Scraper** | Rust-native + Browserless CDP for JS-heavy and anti-bot sites |
+| 🕷 **Universal Scraper** | Rust-native + native Chromium CDP for JS-heavy and anti-bot sites |
 | 🧠 **Semantic Memory** | Embedded LanceDB + Model2Vec for long-term research recall (no DB container) |
 | 🤖 **HITL Non-Robot Search** | Visible Brave Browser + keyboard hooks for human CAPTCHA / login-wall bypass |
 | 🌐 **Deep Crawler** | Recursive, bounded crawl to map entire subdomains |
@@ -71,14 +71,13 @@ ShadowCrawl v2.2.0 ships a **100% Rust-native metasearch engine** that queries 4
 
 ## 🏗 Zero-Bloat Architecture
 
-The default Docker stack is intentionally minimal — just **2 services**:
+The Docker stack is a **single container** — no extra sidecars:
 
 | Service | Role |
 |---------|------|
-| `shadowcrawl` | Main MCP + HTTP server (internal search built-in) |
-| `browserless` | Headless Chrome for JS rendering and SERP fallback |
+| `shadowcrawl` | Main MCP + HTTP server, internal search + bundled Chromium CDP |
 
-Internal search engines (Google / Bing / DuckDuckGo / Brave) run **inside the `shadowcrawl` binary**.
+Internal search engines (Google / Bing / DuckDuckGo / Brave) **and** the headless Chromium browser all run **inside the `shadowcrawl` binary / container**.
 
 ---
 
@@ -91,7 +90,7 @@ Automation hits a wall? ShadowCrawl **uses a real human** when it matters.
 - 🦁 **Brave Integration** — Real browser profiles (cookies, sessions) indistinguishable from legitimate traffic
 - 🛡 **Safety Kill Switch** — Hold `ESC` for 3 seconds to abort any runaway automation
 - 🔄 **Session Continuity** — `SHADOWCRAWL_RENDER_PROFILE_DIR` persists cookies between runs
-- 📈 **Automatic Escalation** — Normal scrape → Browserless CDP → HITL. You control the ceiling.
+- 📈 **Automatic Escalation** — Normal scrape → native Chromium CDP → HITL. You control the ceiling.
 
 > ⚠️ HITL requires the binary running **natively on macOS/Linux** (not inside Docker). The visible browser needs access to your host display, keyboard hooks, and OS permissions.
 
@@ -139,7 +138,7 @@ curl -s -X POST http://localhost:5001/search \
   -d '{"query":"Rust 2025 features"}' | python3 -m json.tool | head -30
 ```
 
-> Docker mode uses the internal search engines and Browserless CDP fully. `non_robot_search` (HITL) is not available inside a container — use Option B for that.
+> Docker mode uses the internal search engines and native Chromium CDP fully (Chromium is bundled in the image). `non_robot_search` (HITL) is not available inside a container — use Option B for that.
 
 ### Option B — Native Rust Binary (Required for HITL)
 
@@ -180,8 +179,6 @@ Add to your MCP config (`~/.config/Code/User/mcp.json`):
       "args": [
         "RUST_LOG=info",
         "SEARCH_ENGINES=google,bing,duckduckgo,brave",
-        "BROWSERLESS_URL=http://localhost:3010",
-        "BROWSERLESS_TOKEN=mcp_stealth_session",
         "LANCEDB_URI=/YOUR_PATH/shadowcrawl/lancedb",
         "HTTP_TIMEOUT_SECS=30",
         "MAX_CONTENT_CHARS=10000",
@@ -218,11 +215,10 @@ Add to your MCP config (`~/.config/Code/User/mcp.json`):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BROWSERLESS_URL` | — | Browserless endpoint for SERP fallback + JS rendering |
-| `BROWSERLESS_TOKEN` | — | Auth token for Browserless |
+| `CHROME_EXECUTABLE` | auto-detected | Override path to Chromium/Chrome/Brave binary |
 | `SEARCH_ENGINES` | `google,bing,duckduckgo,brave` | Active search engines (comma-separated) |
 | `SEARCH_MAX_RESULTS_PER_ENGINE` | `10` | Results per engine before merge |
-| `SEARCH_BROWSERLESS_FALLBACK` | `true` if BROWSERLESS_URL set | Auto-retry blocked engines via Browserless |
+| `SEARCH_BROWSERLESS_FALLBACK` | `true` if browser found | Auto-retry blocked engines via native Chromium CDP |
 | `SEARCH_SIMULATE_BLOCK` | — | Force blocked path for testing: `duckduckgo,bing` or `all` |
 | `LANCEDB_URI` | — | Path for semantic research memory (optional) |
 | `HTTP_TIMEOUT_SECS` | `30` | Per-request timeout |
@@ -241,13 +237,13 @@ Add to your MCP config (`~/.config/Code/User/mcp.json`):
 | **Privacy** | They see your queries | **100% private, local-only** |
 | **Search Engine** | Proprietary / 3rd-party API | **Native Rust (4 engines, parallel)** |
 | **Result Quality** | Mixed, noisy snippets | **Deduped, scored, LLM-clean** |
-| **Cloudflare Bypass** | Rarely | **Browserless + HITL fallback** |
+| **Cloudflare Bypass** | Rarely | **Native Chromium CDP + HITL fallback** |
 | **LinkedIn / Airbnb** | Blocked | **99.99% success (HITL)** |
-| **JS Rendering** | Cloud API | **Native Brave + Browserless CDP** |
+| **JS Rendering** | Cloud API | **Native Brave + bundled Chromium CDP** |
 | **Semantic Memory** | None | **Embedded LanceDB + Model2Vec** |
 | **Proxy Support** | Paid add-on | **Native SOCKS5/HTTP rotation** |
 | **MCP Native** | Partial | **Full MCP stdio + HTTP** |
-| **Docker containers** | N/A | **2 only (shadowcrawl + browserless)** |
+| **Docker containers** | N/A | **1 only (shadowcrawl, Chromium bundled)** |
 
 
 

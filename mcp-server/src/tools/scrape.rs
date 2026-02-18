@@ -59,8 +59,8 @@ pub async fn scrape_url_with_options(
         .await
         .expect("semaphore closed");
 
-    // 🚀 UNIVERSAL CDP STRATEGY: Try CDP if Browserless available (not domain-specific)
-    let cdp_available = std::env::var("BROWSERLESS_URL").is_ok();
+    // 🚀 UNIVERSAL CDP STRATEGY: Try native CDP (no Docker dependency)
+    let cdp_available = crate::scraping::browser_manager::native_browser_available();
 
     if cdp_available {
         info!("🚀 CDP available, attempting universal stealth mode");
@@ -190,8 +190,8 @@ pub async fn scrape_url_with_options(
                     }
                 }
 
-                // Fall through to standard Browserless path
-                warn!("📉 CDP failed, falling back to REST API Browserless");
+                // Fall through to native CDP forced path
+                warn!("📉 CDP stealth failed, falling through to forced-mode CDP");
             }
         }
     }
@@ -221,23 +221,23 @@ pub async fn scrape_url_with_options(
     if let Ok(preflight) = rust_scraper.preflight_check(&url_owned).await {
         if preflight.status_code >= 400 || preflight.blocked_reason.is_some() {
             info!(
-                "Preflight suggests Browserless (status: {}, reason: {:?})",
+                "Preflight suggests native CDP (status: {}, reason: {:?})",
                 preflight.status_code, preflight.blocked_reason
             );
             force_browserless = true;
         }
     }
 
-    if use_proxy && std::env::var("BROWSERLESS_URL").is_err() {
+    if use_proxy && !crate::scraping::browser_manager::native_browser_available() {
         warn!(
-            "use_proxy requested but BROWSERLESS_URL is not set; proxy mode requires Browserless"
+            "use_proxy requested but no browser found; proxy mode requires a browser (install Brave/Chrome/Chromium)"
         );
     }
 
-    // Universal approach: Use Browserless if available and forced
-    if force_browserless && std::env::var("BROWSERLESS_URL").is_ok() {
+    // Use native CDP if available and forced by preflight or use_proxy
+    if force_browserless && crate::scraping::browser_manager::native_browser_available() {
         info!(
-            "🎯 Browserless forced ({}), using Browserless",
+            "🎯 Native CDP forced ({}), using stealth mode",
             extract_domain(url)
         );
 
@@ -418,7 +418,7 @@ pub async fn scrape_url_with_options(
                     let _ = manager.record_proxy_result(proxy_url, false, None).await;
                 }
                 info!(
-                    "⚠️ Browserless failed for boss domain: {}, falling back to native scraper",
+                    "⚠️ Native CDP failed for this domain: {}, falling back to native scraper",
                     e
                 );
             }
@@ -444,8 +444,7 @@ pub async fn scrape_url_with_options(
     )
     .await?;
 
-    // PHASE 3 UPGRADE: Adaptive Browserless Fallback (Smart Scrape)
-    // Automatically fallback to headless browser for low-quality extractions
+    // PHASE 3: Adaptive native-CDP fallback for low-quality extractions
     let should_use_browserless = (result.extraction_score.map(|s| s < 0.35).unwrap_or(false)
         || result.word_count < 50)
         && !result
@@ -453,41 +452,40 @@ pub async fn scrape_url_with_options(
             .contains(&"browserless_rendered".to_string());
 
     if should_use_browserless {
-        // Check if Browserless is available
-        if std::env::var("BROWSERLESS_URL").is_ok() {
+        if crate::scraping::browser_manager::native_browser_available() {
             info!(
-                "Low quality extraction (score: {:.2}, words: {}), attempting Browserless fallback",
+                "Low quality extraction (score: {:.2}, words: {}), attempting native CDP fallback",
                 result.extraction_score.unwrap_or(0.0),
                 result.word_count
             );
 
             match rust_scraper.scrape_with_browserless(&url_owned).await {
                 Ok(browserless_result) => {
-                    // Only use browserless result if it's significantly better
                     if browserless_result.word_count > result.word_count + 20 {
                         info!(
-                            "✨ Browserless improved extraction: {} → {} words",
+                            "✨ Native CDP improved extraction: {} → {} words",
                             result.word_count, browserless_result.word_count
                         );
                         result = browserless_result;
                     } else {
-                        info!(
-                            "Browserless didn't improve extraction significantly, keeping original"
-                        );
+                        info!("Native CDP didn't improve extraction significantly, keeping original");
                     }
                 }
                 Err(e) => {
-                    info!("Browserless fallback failed: {}, using static result", e);
+                    info!("Native CDP fallback failed: {}, using static result", e);
                     result
                         .warnings
-                        .push("browserless_fallback_failed".to_string());
+                        .push("cdp_fallback_failed".to_string());
                 }
             }
         } else {
             result.warnings.push("low_quality_extraction".to_string());
-            result.warnings.push("suggestion: This site may require JavaScript rendering. Set BROWSERLESS_URL to enable".to_string());
+            result.warnings.push(
+                "suggestion: This site may require JavaScript rendering. Install Brave, Chrome, or Chromium."
+                    .to_string(),
+            );
             info!(
-                "Low extraction score ({:.2}) for {}, but Browserless not configured",
+                "Low extraction score ({:.2}) for {}, but no browser installed",
                 result.extraction_score.unwrap_or(0.0),
                 url
             );

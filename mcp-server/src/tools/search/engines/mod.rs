@@ -91,7 +91,8 @@ fn env_truthy(key: &str, default: bool) -> bool {
 }
 
 fn browserless_fallback_enabled() -> bool {
-    env_truthy("SEARCH_BROWSERLESS_FALLBACK", true) && std::env::var("BROWSERLESS_URL").is_ok()
+    env_truthy("SEARCH_BROWSERLESS_FALLBACK", true)
+        && crate::scraping::browser_manager::native_browser_available()
 }
 
 fn should_simulate_block(engine: &str) -> bool {
@@ -135,7 +136,7 @@ pub async fn fetch_serp_html(
     if let Some(reason) = direct_block {
         if browserless_fallback_enabled() {
             warn!(
-                "Engine {} looks blocked ({}); trying Browserless fallback",
+                "Engine {} looks blocked ({}); trying native CDP fallback",
                 engine, reason
             );
             let scraper = crate::scraping::rust_scraper::RustScraper::new();
