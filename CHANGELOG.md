@@ -8,7 +8,9 @@ Policy:
 
 ### Added
 
-- `web_fetch`: `extract_relevant_sections=true` returns only the most relevant sections for `query` (short output; avoids huge tool responses).
+- **GitHub blob URL auto-rewrite**: `web_fetch` on `github.com/*/blob/*` URLs is now transparently rewritten to `raw.githubusercontent.com` before fetching — returns the raw file/source directly instead of GitHub's React SPA shell.
+- **GitHub SPA payload extraction**: `looks_like_spa` now detects GitHub's `react-app.embeddedData` script tag. `extract_spa_json_state` extracts `payload.blob.text`, `payload.readme`, `payload.issue.body`, `payload.pullRequest.body`, `payload.discussion.body` from the embedded JSON — gives clean readable content on repo home pages, issues, and PR pages.
+- **JSON fragment line filter** in `post_clean_text`: Lines that are ≥55% JSON structural tokens (`{}"[]:,`) and lines starting with `{` or `[` with length >40 are stripped as pipeline noise — prevents escaped GitHub SPA fragments from leaking into `clean_content`.
 
 ### Changed
 
@@ -21,6 +23,7 @@ Policy:
 ## v2.4.3 (2026-02-19)
 
 ### Chore (build hygiene)
+- `web_fetch`: `extract_relevant_sections=true` returns only the most relevant sections for `query` (short output; avoids huge tool responses).
 
 - Fixes cross-target build warnings caused by platform-specific `cfg` blocks:
 	- removes `unused_imports` for `Path`/`PathBuf` on non-macOS targets

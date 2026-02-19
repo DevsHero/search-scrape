@@ -41,6 +41,7 @@ pub fn looks_like_spa(html: &str) -> bool {
         || html.contains("data-nuxt-data")
         || html.contains("__REMIX_CONTEXT__")
         || html.contains("__APP_DATA__")
+        || html.contains("react-app.embeddedData") // GitHub React SPA payload
 }
 
 /// Classify a URL + a small HTML peek (first 8 KB is enough) into a `ContentType`.
@@ -400,6 +401,30 @@ impl RustScraper {
     pub(super) fn extract_spa_json_state(&self, html: &str) -> Option<String> {
         let document = Html::parse_document(html);
 
+        // ── GitHub React embedded payload (highest priority for GitHub pages) ────────
+        // GitHub serves blob/tree/issue pages as a React SPA with all content in:
+        // <script type="application/json" data-target="react-app.embeddedData">{"payload":{...}}</script>
+        if html.contains("react-app.embeddedData") {
+            if let Ok(sel) = Selector::parse("script[data-target='react-app.embeddedData']") {
+                if let Some(el) = document.select(&sel).next() {
+                    let raw = el.text().collect::<String>();
+                    if !raw.trim().is_empty() {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
+                            if let Some(content) = extract_github_embedded_content(&json) {
+                                info!("⚡ GitHub embedded payload extracted ({} chars)", content.len());
+                                return Some(content);
+                            }
+                            // Fall back to generic flatten when specific fields not found
+                            let flat = flatten_json_to_text(&json, "GitHub");
+                            if !flat.trim().is_empty() {
+                                return Some(flat);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Priority-ordered list of embedded JSON state containers
         let candidates = [
             ("__NEXT_DATA__", "Next.js"),
@@ -731,6 +756,11 @@ impl RustScraper {
             }
             if self.is_aggressive_mode() && self.count_words(line_trim) <= 2 && line_trim.len() < 24
             {
+                continue;
+            }
+            // Drop lines that are leaked JSON fragments (SPA boilerplate leaking through the pipeline).
+            // A line is treated as JSON noise when ≥55% of its characters are structural JSON tokens.
+            if is_json_noise_line(line_trim) {
                 continue;
             }
             kept.push(line_trim.to_string());
@@ -1134,6 +1164,105 @@ fn collapse_repeated_ngram_runs(input: &str, n: usize, min_repeats_exclusive: us
 // that LLMs can consume at a fraction of the token cost of raw JSON.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Detect lines that are leaked JSON fragments (SPA state leaking through the extraction pipeline).
+///
+/// A line is classified as JSON noise when:
+/// - It starts with a JSON structural character `{`, `[`, `}`, `]` and is long, OR
+/// - ≥55% of its characters are JSON structural tokens (`{}[]":,`)
+fn is_json_noise_line(line: &str) -> bool {
+    if line.len() < 20 {
+        return false; // Short lines are harmless
+    }
+    let first = line.chars().next().unwrap_or(' ');
+    if matches!(first, '{' | '[') && line.len() > 40 {
+        return true;
+    }
+    let structural: usize = line.chars().filter(|c| matches!(c, '{' | '}' | '[' | ']' | '"' | ':' | ',')).count();
+    let ratio = structural as f32 / line.len() as f32;
+    ratio >= 0.55
+}
+
+/// Extract clean readable content from GitHub's React embedded payload JSON.
+///
+/// GitHub embeds `{"payload": {...}}` in `<script data-target="react-app.embeddedData">`.
+/// Field priority (highest first):
+/// 1. `payload.blob.text` — raw file content (blob viewer pages)
+/// 2. `payload.blob.richText` — rendered HTML of file (converted to markdown)
+/// 3. `payload.readme.richText` / `.text` — README for repo home pages
+/// 4. `payload.issue.body` / `payload.pullRequest.body` — issue/PR description
+/// 5. `payload.discussion.body` — discussion body
+fn extract_github_embedded_content(json: &serde_json::Value) -> Option<String> {
+    let payload = json.get("payload")?;
+
+    // 1. File blob content (github.com/*/blob/* pages)
+    if let Some(blob) = payload.get("blob") {
+        if let Some(text) = blob.get("text").and_then(|v| v.as_str()) {
+            if !text.trim().is_empty() {
+                return Some(text.to_string());
+            }
+        }
+        // richText is rendered HTML of the file
+        if let Some(rich) = blob.get("richText").and_then(|v| v.as_str()) {
+            if !rich.trim().is_empty() {
+                let md = html2md::parse_html(rich);
+                if !md.trim().is_empty() {
+                    return Some(md);
+                }
+            }
+        }
+        // Surface raw URL as a hint of last resort
+        if let Some(raw_url) = blob.get("rawBlobUrl").and_then(|v| v.as_str()) {
+            return Some(format!("(Raw content available at: {})", raw_url));
+        }
+    }
+
+    // 2. Repository README (repo home pages / tree pages)
+    if let Some(readme) = payload.get("readme") {
+        if let Some(rich) = readme.get("richText").and_then(|v| v.as_str()) {
+            if !rich.trim().is_empty() {
+                let md = html2md::parse_html(rich);
+                if !md.trim().is_empty() {
+                    return Some(md);
+                }
+            }
+        }
+        if let Some(text) = readme.get("text").and_then(|v| v.as_str()) {
+            if !text.trim().is_empty() {
+                return Some(text.to_string());
+            }
+        }
+    }
+
+    // 3. Issue body
+    if let Some(issue) = payload.get("issue") {
+        if let Some(body) = issue.get("body").and_then(|v| v.as_str()) {
+            if !body.trim().is_empty() {
+                return Some(body.to_string());
+            }
+        }
+    }
+
+    // 4. Pull request description
+    if let Some(pr) = payload.get("pullRequest") {
+        if let Some(body) = pr.get("body").and_then(|v| v.as_str()) {
+            if !body.trim().is_empty() {
+                return Some(body.to_string());
+            }
+        }
+    }
+
+    // 5. Discussion body
+    if let Some(disc) = payload.get("discussion") {
+        if let Some(body) = disc.get("body").and_then(|v| v.as_str()) {
+            if !body.trim().is_empty() {
+                return Some(body.to_string());
+            }
+        }
+    }
+
+    None
+}
+
 /// Recursively walk a `serde_json::Value` and emit human-readable `key: value` lines.
 /// Short string values (≤ 500 chars) are kept; arrays of strings are joined with ", ".
 /// Large objects / arrays are summarised by count. Binary / base64 blobs are omitted.
@@ -1238,5 +1367,63 @@ fn flatten_json_recursive(
         }
 
         serde_json::Value::Null => {}
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_json_noise_line_detects_json_fragments() {
+        // Long JSON object lines should be flagged
+        assert!(is_json_noise_line(r#"{"payload":{"codeLineWrapEnabled":false,"refInfo":{}}}"#));
+        assert!(is_json_noise_line(r#"{"allShortcutsEnabled":false,"linkifiedBlobPath":""}"#));
+        assert!(is_json_noise_line(r#"{"a":"b","c":"d","e":"f","g":"h","i":"j"}"#));
+    }
+
+    #[test]
+    fn test_is_json_noise_line_keeps_real_content() {
+        // Normal prose should never be dropped
+        assert!(!is_json_noise_line("This is a regular sentence about code."));
+        assert!(!is_json_noise_line("## Installation Requirements"));
+        assert!(!is_json_noise_line("pip install unsloth"));
+        // Short JSON lines are kept (< 20 chars threshold)
+        assert!(!is_json_noise_line(r#"{"a":1}"#));
+    }
+
+    #[test]
+    fn test_looks_like_spa_detects_github() {
+        let with_gh = concat!(
+            r#"<html><script type="application/json" "#,
+            r#"data-target="react-app.embeddedData">{"payload":{}}</script></html>"#,
+        );
+        assert!(looks_like_spa(with_gh));
+        assert!(!looks_like_spa("<html><body>Hello world</body></html>"));
+    }
+
+    #[test]
+    fn test_extract_github_embedded_content_blob_text() {
+        let json: serde_json::Value = serde_json::json!({
+            "payload": {
+                "blob": { "text": "# Hello\nThis is the file content." }
+            }
+        });
+        assert_eq!(
+            extract_github_embedded_content(&json).as_deref(),
+            Some("# Hello\nThis is the file content."),
+        );
+    }
+
+    #[test]
+    fn test_extract_github_embedded_content_readme() {
+        let json: serde_json::Value = serde_json::json!({
+            "payload": {
+                "readme": { "text": "## Readme\nThis is the README." }
+            }
+        });
+        assert_eq!(
+            extract_github_embedded_content(&json).as_deref(),
+            Some("## Readme\nThis is the README."),
+        );
     }
 }

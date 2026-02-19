@@ -82,6 +82,11 @@ pub async fn scrape_url_full(
         return Err(anyhow!("Invalid URL: must start with http:// or https://"));
     }
 
+    // 🧬 Smart URL rewrite: transform well-known URL patterns into their cleanest form.
+    // GitHub /blob/ pages → raw.githubusercontent.com returns plain text directly.
+    let url_rewritten = rewrite_url_for_clean_content(url);
+    let url: &str = url_rewritten.as_deref().unwrap_or(url);
+
     // Cache key must include knobs that affect output; otherwise comparisons (and correctness)
     // are broken because a previous scrape can be returned for a different mode.
     let cache_key = compute_scrape_cache_key(
@@ -1096,6 +1101,29 @@ pub async fn scrape_url_fallback(state: &Arc<AppState>, url: &str) -> Result<Scr
     Ok(result)
 }
 
+/// Rewrite certain URL patterns into variants that produce cleaner content for the pipeline.
+///
+/// Currently handles:
+/// - `github.com/{owner}/{repo}/blob/{ref}/{path}` → `raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}`
+///   GitHub blob pages are React SPAs; the raw URL returns plain source text directly.
+fn rewrite_url_for_clean_content(url: &str) -> Option<String> {
+    // GitHub file blob viewer pages
+    if url.contains("github.com/") && url.contains("/blob/") && !url.contains("raw.githubusercontent.com") {
+        if let Some(blob_idx) = url.find("/blob/") {
+            let prefix = &url[..blob_idx]; // "https://github.com/owner/repo"
+            let after_blob = &url[blob_idx + "/blob".len()..]; // "/main/README.md"
+            if let Some(gh_idx) = prefix.find("github.com") {
+                let scheme_prefix = &prefix[..gh_idx]; // "https://"
+                let repo_path = &prefix[(gh_idx + "github.com".len())..]; // "/owner/repo"
+                let raw_url = format!("{}raw.githubusercontent.com{}{}", scheme_prefix, repo_path, after_blob);
+                info!("🔀 GitHub blob → raw URL: {}", raw_url);
+                return Some(raw_url);
+            }
+        }
+    }
+    None
+}
+
 // BOSS LEVEL OPTIMIZATION: Domain detection helpers
 fn extract_domain(url: &str) -> String {
     url::Url::parse(url)
@@ -1236,4 +1264,33 @@ More details.
             .iter()
             .any(|w| w == "section_extract_missing_query"));
     }
+
+    #[test]
+    fn test_rewrite_github_blob_url_rewrites_blob_pages() {
+        let input = "https://github.com/microsoft/vscode/blob/main/README.md";
+        let result = rewrite_url_for_clean_content(input);
+        assert_eq!(
+            result.as_deref(),
+            Some("https://raw.githubusercontent.com/microsoft/vscode/main/README.md")
+        );
+    }
+
+    #[test]
+    fn test_rewrite_github_blob_url_nested_path() {
+        let input = "https://github.com/user/repo/blob/feature/my-branch/src/main.rs";
+        let result = rewrite_url_for_clean_content(input);
+        assert_eq!(
+            result.as_deref(),
+            Some("https://raw.githubusercontent.com/user/repo/feature/my-branch/src/main.rs")
+        );
+    }
+
+    #[test]
+    fn test_rewrite_github_blob_url_ignores_non_blob() {
+        assert!(rewrite_url_for_clean_content("https://github.com/user/repo").is_none());
+        assert!(rewrite_url_for_clean_content("https://github.com/user/repo/issues/1").is_none());
+        assert!(rewrite_url_for_clean_content("https://docs.python.org/3/").is_none());
+        assert!(rewrite_url_for_clean_content("https://raw.githubusercontent.com/user/repo/main/f.rs").is_none());
+    }
+
 }
