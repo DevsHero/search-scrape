@@ -859,6 +859,17 @@ async fn apply_relevant_section_extract_if_enabled(
         return;
     }
 
+    // Short-content guard: no benefit in splitting a short page into sections.
+    // Pages with < 200 words (e.g. GitHub Discussions threads) should be returned
+    // in full so no conversation context is lost.
+    if result.word_count < 200 {
+        crate::content_quality::push_warning_unique(
+            &mut result.warnings,
+            "section_extract: bypassed (word_count < 200)",
+        );
+        return;
+    }
+
     let Some(q) = query.map(str::trim).filter(|s| !s.is_empty()) else {
         result
             .warnings
@@ -1007,6 +1018,17 @@ async fn apply_semantic_shaving_if_enabled(
     // Filter content to only query-relevant paragraphs using Model2Vec cosine similarity.
     // Activated when: strict_relevance=true AND query is provided AND memory (model) is available.
     if !strict_relevance {
+        return;
+    }
+
+    // Short-content guard: skip shaving when the page has fewer than 200 words.
+    // Conversational pages (GitHub Discussions, Q&A threads) must not be shaved —
+    // every word is likely relevant and shaving discards critical context.
+    if result.word_count < 200 {
+        crate::content_quality::push_warning_unique(
+            &mut result.warnings,
+            "semantic_shave: bypassed (word_count < 200)",
+        );
         return;
     }
 
@@ -1304,21 +1326,36 @@ mod tests {
     async fn test_extract_relevant_sections_keyword_fallback_keeps_matching_section() {
         let state = Arc::new(AppState::new(reqwest::Client::new()));
 
+        // NOTE: doc must be >= 200 words so the short-content guard does not fire.
         let doc = r#"
 # Intro
-This is a long document about many things.
+This is a long document about many things including machine learning, performance tuning,
+and deployment strategies for large language models in production environments.
+Understanding the trade-offs between different optimization techniques is critical for
+production deployments. Memory efficiency, latency, and throughput must all be considered.
 
 ## Unrelated
-This section does not mention the keyword.
+This section discusses databases, indexing strategies, and query optimisation.
+Relational databases often require careful schema design to achieve acceptable
+performance at scale. NoSQL alternatives provide different trade-offs. This section
+does not mention any neural network quantization keywords at all. Proper indexing can
+improve query performance by several orders of magnitude in large datasets.
 
 ## Quantization Requirements
-Unsloth quantization requires bitsandbytes and a supported GPU.
+Unsloth quantization requires bitsandbytes and a supported GPU. The quantization
+process can reduce model size by 75% while retaining most of the original accuracy.
+This makes it particularly useful for deploying large models on consumer hardware.
+Quantization-aware training can further close the accuracy gap compared to
+post-training quantization. INT4 and INT8 formats are commonly used in practice.
 
 ## Other
-More details.
+More details about deployment pipelines, CI/CD integration, containerisation with
+Docker and Kubernetes, and monitoring model performance in production over time.
+Observability tooling such as Prometheus and Grafana helps track key metrics.
 "#;
 
         let mut result = mk_response(doc);
+        result.word_count = 300; // bypass the short-content guard; this test exercises the keyword-fallback path
         let before_len = result.clean_content.len();
 
         apply_relevant_section_extract_if_enabled(
@@ -1349,8 +1386,26 @@ More details.
     #[tokio::test]
     async fn test_extract_relevant_sections_requires_query() {
         let state = Arc::new(AppState::new(reqwest::Client::new()));
-        let doc = "# A\nHello\n\n## B\nWorld\n";
+        // NOTE: doc must be >= 200 words so the short-content bypass does not fire before
+        // the missing-query guard that this test is actually exercising.
+        let doc = "# Section A\n\
+            Hello world, this is a test document containing enough text to bypass the \
+            short content guard. We need at least two hundred words total so that the \
+            section extraction pipeline can actively engage with the document. \
+            Additional filler prose is included here to satisfy the word-count threshold.\n\n\
+            ## Section B\n\
+            Here is additional content in the second section. This section also has \
+            elaborated text to ensure the total word count exceeds the two-hundred-word \
+            guard introduced to protect short conversational pages from being shaved. \
+            This way the missing-query guard fires instead of the short-content bypass. \
+            More sentences are added here to guarantee the required minimum length.\n\n\
+            ## Section C\n\
+            Final section with supplementary content to ensure the overall document \
+            length meets the threshold required by the section extraction pipeline. \
+            This text is purely filler to satisfy the two hundred word requirement for \
+            the full section-level analysis to engage and exercise the query check path.\n";
         let mut result = mk_response(doc);
+        result.word_count = 300; // bypass the short-content guard; this test exercises the missing-query path
 
         apply_relevant_section_extract_if_enabled(&state, &mut result, None, true, None, None)
             .await;

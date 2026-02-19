@@ -357,6 +357,10 @@ pub struct SniperOutput {
 pub struct SniperCodeBlock {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+    /// Surrounding prose — the sentence or line that introduces or refers to this code block.
+    /// Provides LLMs / agents with the \"where and how\" context needed to use the code correctly.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
     pub code: String,
 }
 

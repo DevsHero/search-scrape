@@ -1,7 +1,9 @@
 use super::common::parse_quality_mode;
 use crate::mcp::{McpCallResponse, McpContent};
 use crate::rust_scraper::QualityMode;
-use crate::types::{AuthWallBlocked, ErrorResponse, SniperCodeBlock, SniperMetadata, SniperOutput};
+use crate::types::{
+    AuthWallBlocked, CodeBlock, ErrorResponse, SniperCodeBlock, SniperMetadata, SniperOutput,
+};
 use crate::{scrape, AppState};
 use axum::http::StatusCode;
 use axum::response::Json;
@@ -260,14 +262,8 @@ pub async fn handle(
                     })
                     .collect();
 
-                let key_code_blocks: Vec<SniperCodeBlock> = content
-                    .code_blocks
-                    .iter()
-                    .map(|cb| SniperCodeBlock {
-                        language: cb.language.clone(),
-                        code: cb.code.clone(),
-                    })
-                    .collect();
+                let key_code_blocks =
+                    extract_contextual_code_blocks(&content.clean_content, &content.code_blocks);
 
                 // Build key_points: first sentence of each key_paragraph.
                 // Ultra-compact overview — agents read this before the full paragraphs.
@@ -439,5 +435,119 @@ pub async fn handle(
                 is_error: true,
             }))
         }
+    }
+}
+
+/// Extract code blocks from Markdown with surrounding prose as context.
+///
+/// **Pass 1** — fenced ` ``` ` blocks: `context` = last non-heading prose line above the
+/// opening fence.
+/// **Pass 2** — inline / raw `CodeBlock` objects not already captured in Pass 1:
+/// `context` = the Markdown line hosting the code (backtick-delimited or bare).
+fn extract_contextual_code_blocks(
+    markdown: &str,
+    raw_blocks: &[CodeBlock],
+) -> Vec<SniperCodeBlock> {
+    use std::collections::HashSet;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut results: Vec<SniperCodeBlock> = Vec::new();
+    let lines: Vec<&str> = markdown.lines().collect();
+
+    // ── Pass 1: fenced code blocks ─────────────────────────────────────────────
+    let mut i = 0;
+    while i < lines.len() {
+        let t = lines[i].trim();
+        let delim = if t.starts_with("```") {
+            "```"
+        } else if t.starts_with("~~~") {
+            "~~~"
+        } else {
+            i += 1;
+            continue;
+        };
+        let lang_str = t[delim.len()..].trim().to_string();
+        let language = if lang_str.is_empty() {
+            None
+        } else {
+            Some(lang_str)
+        };
+        // Context = last non-empty non-heading non-fence prose line before this fence.
+        let context = (0..i)
+            .rev()
+            .map(|j| lines[j].trim())
+            .find(|l| {
+                !l.is_empty()
+                    && !l.starts_with('#')
+                    && !l.starts_with('`')
+                    && !l.starts_with('~')
+                    && !l.starts_with("---")
+            })
+            .map(prose_tail);
+        // Gather code body until the matching closing fence.
+        i += 1;
+        let mut body: Vec<&str> = Vec::new();
+        while i < lines.len() && !lines[i].trim().starts_with(delim) {
+            body.push(lines[i]);
+            i += 1;
+        }
+        let code = body.join("\n").trim().to_string();
+        if code.len() >= 3 && seen.insert(code.clone()) {
+            results.push(SniperCodeBlock {
+                language,
+                context,
+                code,
+            });
+        }
+        i += 1;
+    }
+
+    // ── Pass 2: inline / raw code objects not already captured ──────────────────
+    for cb in raw_blocks {
+        let code = cb.code.trim().to_string();
+        if code.len() < 2 || !seen.insert(code.clone()) {
+            continue;
+        }
+        // Find the Markdown line hosting this code snippet.
+        let context = lines.iter().find_map(|line| {
+            if line.contains(code.as_str()) {
+                let stripped = line
+                    .trim()
+                    .replace(&format!("`{}`", code), code.as_str())
+                    .replace(&format!("``{}``", code), code.as_str());
+                let ctx = stripped.trim().to_string();
+                // Only surface context when the line carries more than just the code itself.
+                if ctx.len() > code.len() + 2 && ctx.split_whitespace().count() >= 3 {
+                    Some(ctx)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        });
+        results.push(SniperCodeBlock {
+            language: cb.language.clone(),
+            context,
+            code,
+        });
+    }
+
+    results
+}
+
+/// Return the final sentence of `s` (text after `". "`), or the full string capped at 180 chars.
+fn prose_tail(s: &str) -> String {
+    if let Some(pos) = s.rfind(". ") {
+        let after = s[pos + 2..].trim();
+        if after.split_whitespace().count() >= 3 {
+            return after.to_string();
+        }
+    }
+    let s = s.trim();
+    if s.len() <= 180 {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(180).collect();
+        format!("{}\u{2026}", truncated.trim_end())
     }
 }

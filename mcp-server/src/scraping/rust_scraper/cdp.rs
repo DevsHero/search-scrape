@@ -138,6 +138,19 @@ impl RustScraper {
             .ok();
         browser_manager::auto_scroll(&page).await.ok();
 
+        // 🗨️ GitHub threaded content (Discussions / Issues) — React renders comments
+        // lazily; the 1.5 s network-idle window above often captures an empty shell.
+        // Extend the settle window and poll for the comment DOM before capture.
+        if url.contains("github.com")
+            && (url.contains("/discussions/") || url.contains("/issues/"))
+        {
+            warn!("🗨️ GitHub threaded page detected — extended comment hydration");
+            browser_manager::wait_until_stable(&page, 2500, 12_000)
+                .await
+                .ok();
+            wait_for_discussion_comments(&page).await.ok();
+        }
+
         // 🧬 Visual Noise Filter (NeuroSiphon DNA)
         // Remove DOM elements that are visually invisible or known noise before capturing HTML.
         // This strips 20-30% of token waste: cookie banners, off-screen trackers, hidden divs.
@@ -453,4 +466,38 @@ impl RustScraper {
 })();
 "#
     }
+}
+
+/// Poll the page for GitHub Discussion / Issue comment DOM nodes.
+/// Returns `Ok(())` regardless — absence of comments is non-fatal.
+async fn wait_for_discussion_comments(page: &chromiumoxide::Page) -> anyhow::Result<()> {
+    const POLL_MS: u64 = 400;
+    const MAX_MS: u64 = 8_000;
+    let start = std::time::Instant::now();
+    loop {
+        if start.elapsed().as_millis() as u64 >= MAX_MS {
+            warn!(
+                "⏳ GitHub: comment nodes still absent after {}ms — capturing anyway",
+                MAX_MS
+            );
+            break;
+        }
+        let found: bool = page
+            .evaluate(
+                "!!document.querySelector(\
+                 '.timeline-comment,.js-discussion,.comment-body,\
+                  .js-comment-body,[data-url*=\"/comment\"]')",
+            )
+            .await
+            .ok()
+            .and_then(|v| v.into_value::<serde_json::Value>().ok())
+            .and_then(|j| j.as_bool())
+            .unwrap_or(false);
+        if found {
+            warn!("✅ GitHub: comment DOM nodes detected after {:?}", start.elapsed());
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(POLL_MS)).await;
+    }
+    Ok(())
 }
