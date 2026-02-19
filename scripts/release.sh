@@ -44,6 +44,16 @@ banner(){ printf "\n\033[1;36m=== %s ===\033[0m\n" "$*"; }
 
 die() { printf "\033[31m❌  %s\033[0m\n" "$*" >&2; exit 1; }
 
+extract_unreleased_notes() {
+  # Extract lines under '## Unreleased' until the next '## ' header.
+  # Returns empty string if not found or empty.
+  awk '
+    /^## Unreleased[[:space:]]*$/ {in_unreleased=1; next}
+    /^##[[:space:]]+/ {if (in_unreleased) exit}
+    {if (in_unreleased) print}
+  ' "$REPO_ROOT/CHANGELOG.md" 2>/dev/null || true
+}
+
 repo_slug_from_origin() {
   # Supports:
   #   https://github.com/OWNER/REPO.git
@@ -116,6 +126,15 @@ if [[ "$SERVER_VER" != "$VERSION" ]]; then
   die "Version mismatch: mcp-server/Cargo.toml=$VERSION server.json=$SERVER_VER"
 fi
 pass "Versions match ($VERSION)"
+
+banner "Release Notes"
+UNRELEASED_NOTES="$(extract_unreleased_notes | sed -e 's/[[:space:]]\+$//' )"
+if [[ -z "${UNRELEASED_NOTES//[[:space:]]/}" ]]; then
+  warn "CHANGELOG.md has no Unreleased notes (or section missing)."
+  RELEASE_NOTES="Built locally from macOS (Apple Silicon) using cargo-zigbuild."
+else
+  RELEASE_NOTES="$(printf "## Unreleased\n\n%s\n\n---\n\nBuilt locally from macOS (Apple Silicon) using cargo-zigbuild.\n" "$UNRELEASED_NOTES")"
+fi
 
 banner "Warm dependencies"
 (cd "$MCP" && cargo fetch --locked)
@@ -210,11 +229,15 @@ fi
 
 banner "Uploading to GitHub Release $TAG"
 gh release delete "$TAG" --repo "$REPO_SLUG" --yes 2>/dev/null || true
+NOTES_FILE="$(mktemp)"
+printf "%s\n" "$RELEASE_NOTES" > "$NOTES_FILE"
 gh release create "$TAG" \
   "$DIST"/*.tar.gz \
   "$DIST"/*.zip \
   --title "ShadowCrawl $TAG" \
-  --notes "Built locally from macOS (Apple Silicon) using cargo-zigbuild." \
+  --notes-file "$NOTES_FILE" \
   --repo "$REPO_SLUG"
+
+rm -f "$NOTES_FILE" || true
 
 pass "ALL DONE — ShadowCrawl $TAG is live on GitHub Releases"

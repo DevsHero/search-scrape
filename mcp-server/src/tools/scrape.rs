@@ -1109,6 +1109,47 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
+    fn mk_response(clean_content: &str) -> ScrapeResponse {
+        ScrapeResponse {
+            url: "https://example.com".to_string(),
+            title: "Test".to_string(),
+            content: String::new(),
+            clean_content: clean_content.to_string(),
+            embedded_state_json: None,
+            embedded_data_sources: vec![],
+            hydration_status: HydrationStatus {
+                json_found: false,
+                settle_time_ms: None,
+                noise_reduction_ratio: 0.0,
+            },
+            meta_description: String::new(),
+            meta_keywords: String::new(),
+            headings: vec![],
+            links: vec![],
+            images: vec![],
+            timestamp: "".to_string(),
+            status_code: 200,
+            content_type: "text/html".to_string(),
+            word_count: clean_content.split_whitespace().count(),
+            language: "en".to_string(),
+            canonical_url: None,
+            site_name: None,
+            author: None,
+            published_at: None,
+            og_title: None,
+            og_description: None,
+            og_image: None,
+            reading_time_minutes: None,
+            code_blocks: vec![],
+            truncated: false,
+            actual_chars: 0,
+            max_chars_limit: None,
+            extraction_score: None,
+            warnings: vec![],
+            domain: None,
+        }
+    }
+
     #[tokio::test]
     async fn test_scrape_url_fallback() {
         let state = Arc::new(AppState::new(reqwest::Client::new()));
@@ -1128,5 +1169,71 @@ mod tests {
                 tracing::warn!("Fallback scraper test failed: {}", e);
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_extract_relevant_sections_keyword_fallback_keeps_matching_section() {
+        let state = Arc::new(AppState::new(reqwest::Client::new()));
+
+        let doc = r#"
+# Intro
+This is a long document about many things.
+
+## Unrelated
+This section does not mention the keyword.
+
+## Quantization Requirements
+Unsloth quantization requires bitsandbytes and a supported GPU.
+
+## Other
+More details.
+"#;
+
+        let mut result = mk_response(doc);
+        let before_len = result.clean_content.len();
+
+        apply_relevant_section_extract_if_enabled(
+            &state,
+            &mut result,
+            Some("quantization"),
+            true,
+            Some(5),
+            Some(0.45),
+        )
+        .await;
+
+        assert!(result.clean_content.len() <= before_len);
+        assert!(result.clean_content.to_ascii_lowercase().contains("quantization"));
+        assert!(result
+            .warnings
+            .iter()
+            .any(|w| w == "section_extract_no_memory"));
+        assert!(result
+            .warnings
+            .iter()
+            .any(|w| w.starts_with("section_extract: kept ")));
+    }
+
+    #[tokio::test]
+    async fn test_extract_relevant_sections_requires_query() {
+        let state = Arc::new(AppState::new(reqwest::Client::new()));
+        let doc = "# A\nHello\n\n## B\nWorld\n";
+        let mut result = mk_response(doc);
+
+        apply_relevant_section_extract_if_enabled(
+            &state,
+            &mut result,
+            None,
+            true,
+            None,
+            None,
+        )
+        .await;
+
+        assert_eq!(result.clean_content, doc);
+        assert!(result
+            .warnings
+            .iter()
+            .any(|w| w == "section_extract_missing_query"));
     }
 }

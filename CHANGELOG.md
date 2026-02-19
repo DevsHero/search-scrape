@@ -1,5 +1,23 @@
 # Changelog
 
+Policy:
+- Keep changes under **Unreleased** during normal development.
+- Only bump version + move Unreleased entries into a new version section when you run `bash scripts/release.sh`.
+
+## Unreleased
+
+### Added
+
+- `web_fetch`: `extract_relevant_sections=true` returns only the most relevant sections for `query` (short output; avoids huge tool responses).
+
+### Changed
+
+- —
+
+### Fixed
+
+- —
+
 ## v2.4.3 (2026-02-19)
 
 ### Chore (build hygiene)

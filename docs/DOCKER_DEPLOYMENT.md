@@ -2,23 +2,7 @@
 
 This repo ships **pure binaries** (no Docker images).
 
-GitHub Actions builds cross-platform artifacts and attaches them to GitHub Releases when you push a commit to `main`/`master` with `[build]` in the commit message.
-
-## Release workflow (GitHub Actions)
-
-Workflow: `.github/workflows/release.yml`
-
-Build matrix:
-
-- macOS: x86_64 + arm64
-- Windows: x86_64 + arm64
-- Linux: x86_64 + arm64
-
-Each release attaches archives containing:
-
-- `shadowcrawl` (HTTP server)
-- `shadowcrawl-mcp` (MCP stdio server)
-- metadata (`LICENSE`, `README.md`, `server.json`)
+Releases are built **locally** and uploaded to GitHub Releases using `scripts/release.sh`.
 
 ## Cut a release
 
@@ -26,22 +10,24 @@ Each release attaches archives containing:
 
 2) Ensure `server.json` version matches.
 
-3) Commit with `[build]` and push to `main`/`master`:
+3) Ensure `CHANGELOG.md` has the notes you want under `## Unreleased`.
+
+4) Commit and push (no `[build]` needed):
 
 ```bash
-git commit -am "Release v2.4.0 [build]"
+git commit -am "Release vX.Y.Z"
 git push
 ```
 
-4) GitHub Actions will automatically:
+5) Run the local release script:
 
-- create/push tag `v<version>` from `mcp-server/Cargo.toml`
-- build binaries for each platform
-- create/update the GitHub Release for that tag
-- upload the archives as release assets
+```bash
+bash scripts/release.sh
+```
 
-Note:
-- If tag `v<version>` already exists but points to a different commit, the workflow fails fast (bump version and retry).
+This script will create/push tag `v<version>`, build cross-platform binaries, and upload artifacts to GitHub Releases.
+
+Note: the script also uses `CHANGELOG.md` → `Unreleased` as the GitHub Release notes.
 
 ## Local build (developer)
 
