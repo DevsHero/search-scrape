@@ -27,7 +27,7 @@ mcp-server/.mcpregistry_registry_token
 .mcpregistry_*
 *.token
 
-
+.neurosiphon
 advice.txt
 .smithery
 
