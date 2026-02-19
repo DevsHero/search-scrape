@@ -44,8 +44,9 @@ impl ToolRegistry {
             )]),
         );
 
-        // Extra tool-name aliases to steer agents toward ShadowCrawl tools instead of
-        // IDE-provided fetchers. These map *public* names to stable internal tool names.
+        // Extra tool-name aliases to reduce agent confusion and steer calls toward
+        // ShadowCrawl's token-efficient tools instead of IDE-provided fetchers.
+        // These map *public* names to stable internal tool names.
         // Backwards compatibility: internal names are always accepted too.
         registry
             .public_to_internal
@@ -58,10 +59,42 @@ impl ToolRegistry {
             .insert("fetch_webpage".to_string(), "scrape_url".to_string());
         registry
             .public_to_internal
+            .insert("webpage_fetch".to_string(), "scrape_url".to_string());
+        registry
+            .public_to_internal
             .insert("web_fetch_batch".to_string(), "scrape_batch".to_string());
         registry
             .public_to_internal
             .insert("fetch_url_batch".to_string(), "scrape_batch".to_string());
+
+        registry
+            .public_to_internal
+            .insert("web_crawl".to_string(), "crawl_website".to_string());
+        registry
+            .public_to_internal
+            .insert("site_crawl".to_string(), "crawl_website".to_string());
+
+        registry
+            .public_to_internal
+            .insert("extract_fields".to_string(), "extract_structured".to_string());
+        registry
+            .public_to_internal
+            .insert("structured_extract".to_string(), "extract_structured".to_string());
+
+        registry
+            .public_to_internal
+            .insert("memory_search".to_string(), "research_history".to_string());
+
+        registry
+            .public_to_internal
+            .insert("proxy_control".to_string(), "proxy_manager".to_string());
+
+        registry
+            .public_to_internal
+            .insert("hitl_web_fetch".to_string(), "non_robot_search".to_string());
+        registry
+            .public_to_internal
+            .insert("human_web_fetch".to_string(), "non_robot_search".to_string());
 
         for internal in internal_catalog {
             let internal_name = internal.name.to_string();
@@ -71,10 +104,14 @@ impl ToolRegistry {
             // Internal names remain stable for handler routing and for backwards compatibility.
             let public_name = match internal_name.as_str() {
                 "search_web" => "web_search".to_string(),
-                // "non_robot_search" => "stealth_scrape".to_string(), // OLD
-                "non_robot_search" => "non_robot_search".to_string(), // NEW
+                "search_structured" => "web_search_json".to_string(),
                 "scrape_url" => "web_fetch".to_string(),
                 "scrape_batch" => "web_fetch_batch".to_string(),
+                "crawl_website" => "web_crawl".to_string(),
+                "extract_structured" => "extract_fields".to_string(),
+                "research_history" => "memory_search".to_string(),
+                "proxy_manager" => "proxy_control".to_string(),
+                "non_robot_search" => "hitl_web_fetch".to_string(),
                 _ => internal_name.clone(),
             };
             let public_title = internal.title.to_string();

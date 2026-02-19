@@ -1,4 +1,4 @@
-# 🥷 ShadowCrawl MCP — v2.4.1
+# 🥷 ShadowCrawl MCP — v2.4.2
 
 <div align="center">
 <img src="media/logo.svg" alt="ShadowCrawl Logo" width="180">
@@ -20,9 +20,9 @@ When every other tool gets blocked, ShadowCrawl doesn't retreat — it **escalat
 
 ---
 
-## ⚡ God-Tier Internal Meta-Search (v2.4.1)
+## ⚡ God-Tier Internal Meta-Search (v2.4.2)
 
-ShadowCrawl v2.4.1 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
+ShadowCrawl v2.4.2 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
 
 | Engine | Coverage | Notes |
 |--------|----------|-------|
@@ -203,7 +203,7 @@ These techniques focus on **returning only the most useful content to the agent*
 
 | Technique | Trigger | Output behavior | Benefit (tokenizer) |
 |----------|---------|-----------------|---------------------|
-| **Semantic Shaving** (Rule A + Hotfix A) | `scrape_url` with `query` + `strict_relevance=true` | Keeps only semantically relevant paragraphs | Cuts 50–80% noisy text on long pages |
+| **Semantic Shaving** (Rule A + Hotfix A) | `web_fetch` (alias: `scrape_url`) with `query` + `strict_relevance=true` | Keeps only semantically relevant paragraphs | Cuts 50–80% noisy text on long pages |
 | **Import Nuker** (Rule B + Hotfix B) | NeuroSiphon enabled + aggressive mode + non-tutorial URL | Removes large `import/require/use` blocks (guarded by heuristics + 15-line minimum) | Removes high-noise “dependency walls” in code blocks |
 | **SPA State Fast-Path** (Rule C) | SPA detected and embedded state exists | Prefers hydration JSON when it’s large enough (≥100 words) | Avoids DOM boilerplate on JS-heavy sites |
 | **Strict App State Mode** (Task 3) | `extract_app_state=true` and SPA state found | Returns hydration JSON as the **only** content; clears `code_blocks`, `links`, `images`, `headings` | Prevents DOM scaffolding from wasting tokens |

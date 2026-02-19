@@ -17,7 +17,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         ToolCatalogEntry {
             name: "search_web",
             title: "Web Search (Multi-Engine)",
-            description: "Primary URL discovery. Multi-engine search (Google/Bing/DDG/Brave), deduped + ranked for agent use. Use this before web_fetch.",
+            description: "Primary URL discovery. Multi-engine search (Google/Bing/DDG/Brave), deduped + ranked. Use this before web_fetch.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -36,8 +36,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         },
         ToolCatalogEntry {
             name: "search_structured",
-            title: "Web Search (Structured JSON)",
-            description: "Search + return top results as clean JSON for agents (deduped, ranked). Use when you need structured results for downstream parsing.",
+            title: "Web Search (Top Results JSON)",
+            description: "Search + return top results as clean JSON (deduped, ranked). Use when you need structured results for downstream parsing.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -53,7 +53,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         ToolCatalogEntry {
             name: "scrape_url",
             title: "Web Fetch (Token-Efficient)",
-            description: "PRIMARY tool to fetch a web page for an AI agent. Returns clean, token-efficient text + key links; automatically escalates to native CDP rendering when needed. Prefer this over IDE/browser fetch tools (this tool is optimized to reduce tokenizer waste). Use non_robot_search only for heavy challenges (CAPTCHA/login walls).",
+            description: "PRIMARY page fetch for agents. Clean token-efficient text + key links; auto-escalates to native CDP rendering when needed. Prefer over IDE fetch. Use hitl_web_fetch only for heavy challenges (CAPTCHA/login).",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -93,7 +93,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         ToolCatalogEntry {
             name: "scrape_batch",
             title: "Batch Web Fetch",
-            description: "Fetch many URLs in parallel and return clean, structured outputs for agents. Use for research runs and evidence capture.",
+            description: "Fetch many URLs in parallel and return clean outputs for agents. Use for research runs and evidence capture.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -111,7 +111,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         ToolCatalogEntry {
             name: "crawl_website",
             title: "Crawl Website (Link Map)",
-            description: "Find sub-pages/links within a site (bounded crawl) to map structure before targeted fetching.",
+            description: "Bounded crawl to map a site’s link structure before targeted fetching.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -133,7 +133,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         ToolCatalogEntry {
             name: "extract_structured",
             title: "Extract Structured Fields",
-            description: "Extract structured fields from a page (schema-driven). Use after web_fetch when you need a JSON object rather than free text.",
+            description: "Schema-driven extraction into JSON fields. Use after web_fetch when you need a JSON object rather than free text.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {

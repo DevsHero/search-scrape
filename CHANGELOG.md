@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.4.2 (2026-02-19)
+
+### MCP tool naming normalization (agent clarity)
+
+- Standardizes public MCP tool names to consistent verbs:
+	- `web_search`, `web_search_json`, `web_fetch`, `web_fetch_batch`, `web_crawl`, `extract_fields`, `memory_search`, `proxy_control`, `hitl_web_fetch`
+- Adds intuitive aliases to prevent agent confusion and keep old prompts working:
+	- `fetch_url`, `fetch_webpage`, `webpage_fetch` → `web_fetch`
+	- `fetch_url_batch` → `web_fetch_batch`
+	- `site_crawl` → `web_crawl`
+	- `structured_extract` → `extract_fields`
+	- `human_web_fetch` → `hitl_web_fetch`
+
+### Notes
+
+- Internal tool routing remains stable; legacy internal names still work (`scrape_url`, `non_robot_search`, etc.).
+
 ## v2.4.1 (2026-02-19)
 
 ### Agent-first tool naming (MCP)
