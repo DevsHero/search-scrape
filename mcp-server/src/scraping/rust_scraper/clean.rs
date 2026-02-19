@@ -9,6 +9,126 @@ use select::{
 use tracing::{info, warn};
 use url::Url;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 🧬 Content Router — NeuroSiphon DNA Transfer
+// Detect page type once, dispatch to the sharpest extractor.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Coarse page-type categories used to select the optimal extraction strategy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentType {
+    /// GitHub, GitLab, Bitbucket, StackOverflow, Pastebin — code / docs repos.
+    CodeRepository,
+    /// Next.js / Nuxt / Remix SPAs that embed all data in `__NEXT_DATA__` / similar JSON blobs.
+    SinglePageApp,
+    /// Traditional article / blog / news pages.
+    NewsArticle,
+    /// E-commerce product pages (price, SKU, availability).
+    ECommerce,
+    /// API endpoint — raw JSON or XML response (not an HTML page).
+    ApiResponse,
+    /// Fallback default.
+    Unknown,
+}
+
+/// Fast heuristic for SPA state markers.
+///
+/// Some frameworks (notably Nuxt) may place the embedded state JSON very late
+/// in the HTML, so sampling the first N bytes can miss it.
+pub fn looks_like_spa(html: &str) -> bool {
+    html.contains("__NEXT_DATA__")
+        || html.contains("__NUXT_DATA__")
+        || html.contains("data-nuxt-data")
+        || html.contains("__REMIX_CONTEXT__")
+        || html.contains("__APP_DATA__")
+}
+
+/// Classify a URL + a small HTML peek (first 8 KB is enough) into a `ContentType`.
+pub fn determine_content_type(url: &Url, html_peek: &str) -> ContentType {
+    let host = url.host_str().unwrap_or("").to_ascii_lowercase();
+    let path = url.path().to_ascii_lowercase();
+
+    // ── Code / Repository sites ──────────────────────────────────────────────
+    let code_hosts = [
+        "github.com",
+        "gitlab.com",
+        "bitbucket.org",
+        "raw.githubusercontent.com",
+        "gist.github.com",
+        "sourcehub.io",
+        "codeberg.org",
+    ];
+    let code_paths = ["/blob/", "/tree/", "/commit/", "/pulls", "/issues", "/releases"];
+    let qa_hosts = ["stackoverflow.com", "superuser.com", "serverfault.com", "askubuntu.com"];
+    let paste_hosts = ["pastebin.com", "paste.ee", "hastebin.com", "dpaste.com", "nowsecure.io"];
+
+    if code_hosts.iter().any(|h| host.contains(h))
+        || code_paths.iter().any(|p| path.contains(p))
+        || qa_hosts.iter().any(|h| host.contains(h))
+        || paste_hosts.iter().any(|h| host.contains(h))
+    {
+        return ContentType::CodeRepository;
+    }
+
+    // ── Raw API / JSON response ───────────────────────────────────────────────
+    let trimmed = html_peek.trim_start();
+    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        return ContentType::ApiResponse;
+    }
+
+    // ── SPA / Next.js — look for embedded JSON state blobs ───────────────────
+    let spa_signals = [
+        "__NEXT_DATA__",
+        "__NUXT_DATA__",
+        "__REMIX_CONTEXT__",
+        "__APP_DATA__",
+        "window.__PRELOADED_STATE__",
+        "window.__INITIAL_STATE__",
+    ];
+    if spa_signals.iter().any(|s| html_peek.contains(s)) {
+        return ContentType::SinglePageApp;
+    }
+
+    // ── E-Commerce — structured product signals ───────────────────────────────
+    let ecom_hosts = [
+        "amazon.", "ebay.", "shopify.", "etsy.", "aliexpress.", "walmart.", "bestbuy.",
+        "target.", "lazada.", "tokopedia.", "shopee.",
+    ];
+    let ecom_signals = [
+        "\"@type\":\"Product\"",
+        "\"@type\": \"Product\"",
+        "application/ld+json",
+        "og:price",
+        "product:price",
+        "itemprop=\"price\"",
+        "class=\"price\"",
+        "class=\"product",
+    ];
+    if ecom_hosts.iter().any(|h| host.contains(h))
+        || ecom_signals.iter().any(|s| html_peek.contains(s))
+    {
+        return ContentType::ECommerce;
+    }
+
+    // ── News / Article ────────────────────────────────────────────────────────
+    let article_signals = [
+        "<article",
+        "\"@type\":\"Article\"",
+        "\"@type\":\"NewsArticle\"",
+        "\"@type\": \"Article\"",
+        "\"@type\": \"NewsArticle\"",
+        "itemprop=\"articleBody\"",
+        "class=\"article",
+        "class=\"post-content",
+        "class=\"entry-content",
+    ];
+    if article_signals.iter().any(|s| html_peek.contains(s)) {
+        return ContentType::NewsArticle;
+    }
+
+    ContentType::Unknown
+}
+
 impl RustScraper {
     pub(super) fn extract_clean_content_with_metrics(
         &self,
@@ -51,6 +171,94 @@ impl RustScraper {
     /// Extract clean, readable content using readability, preceded by AGGRESSIVE HTML preprocessing
     /// Includes TEXT-ONLY fallback mode for high-noise sites (e.g., Reddit, social media)
     pub(super) fn extract_clean_content(&self, html: &str, base_url: &Url) -> String {
+        // ── 🧬 Content Router: dispatch to the optimal strategy per page type ──
+        // Use a larger peek window to reduce false negatives for SPA markers like
+        // __NEXT_DATA__ which may appear later in the document.
+        let peek = if html.len() > 50_000 {
+            &html[..50_000]
+        } else {
+            html
+        };
+        let content_type = if !crate::core::config::neurosiphon_enabled() {
+            ContentType::Unknown
+        } else if looks_like_spa(html) {
+            ContentType::SinglePageApp
+        } else {
+            determine_content_type(base_url, peek)
+        };
+        info!("🧭 Content Router → {:?} for {}", content_type, base_url.host_str().unwrap_or(""));
+
+        match content_type {
+            ContentType::ApiResponse => {
+                // Raw JSON/XML — serve as-is (truncate if massive)
+                info!("⚡ API response: serving raw JSON/XML directly");
+                let text = if html.len() > 50_000 { &html[..50_000] } else { html };
+                return text.to_string();
+            }
+
+            ContentType::SinglePageApp => {
+                // 🧬 Rule C: Extract __NEXT_DATA__ / other embedded JSON state blobs.
+                // Only use the SPA JSON as the final answer when it contains enough
+                // human-readable words (≥ 100) or `extract_app_state` is explicitly set.
+                // Otherwise fall through so readability gets a chance to produce
+                // better output (e.g. visible landing-page text on Nuxt sites).
+                if let Some(extracted) = self.extract_spa_json_state(html) {
+                    let wc = self.count_words(&extracted);
+                    if !extracted.trim().is_empty()
+                        && (self.extract_app_state || wc >= 100)
+                    {
+                        info!("⚡ SPA JSON state extracted ({} chars, {} words)", extracted.len(), wc);
+                        return extracted;
+                    } else {
+                        warn!(
+                            "SPA JSON state too sparse ({} words); falling through to readability for richer output",
+                            wc
+                        );
+                    }
+                }
+                // Fall through to normal flow if extraction fails or is sparse
+                warn!("SPA fast-path skipped — using standard readability pipeline");
+            }
+
+            ContentType::CodeRepository => {
+                // NeuroSiphon-style: prefer <pre>/<code> blocks, markdown-body, then skeletal text
+                if let Some(pre_content) = self.extract_pre_formatted(html) {
+                    if !pre_content.trim().is_empty() {
+                        info!("⚡ Code repo: {} chars from <pre>/<code>", pre_content.len());
+                        return pre_content;
+                    }
+                }
+                // Also try .markdown-body (GitHub README)
+                if let Some(md) = self.extract_mdbook_like(html) {
+                    if !md.trim().is_empty() {
+                        info!("⚡ Code repo: {} chars from markdown-body", md.len());
+                        return md;
+                    }
+                }
+                // Fall through — let normal pipeline handle it
+            }
+
+            ContentType::NewsArticle => {
+                // Fast-path: readability is excellent here, skip heuristics
+                let pre = self.preprocess_html(html);
+                if let Ok(product) = extractor::extract(&mut pre.as_bytes(), base_url) {
+                    let text = html2md::parse_html(&product.content);
+                    let cleaned = self.post_clean_text(&text);
+                    if self.count_words(&cleaned) >= 50 {
+                        info!("⚡ Article fast-path: {} words", self.count_words(&cleaned));
+                        return cleaned;
+                    }
+                }
+                // Fall through
+            }
+
+            ContentType::ECommerce | ContentType::Unknown => {
+                // Use the full multi-pass pipeline (default behaviour)
+            }
+        }
+
+        // ── Legacy multi-pass path (used as fallback for all types) ──────────
+
         // 🧬 Special handling for code/pre-heavy sites (NowSecure, Pastebin, etc.)
         let is_pre_priority = base_url
             .host_str()
@@ -184,6 +392,63 @@ impl RustScraper {
             }
         }
         info!("mdBook extractor found no suitable content");
+        None
+    }
+
+    /// 🧬 Extract SPA JSON state (Next.js __NEXT_DATA__, Nuxt, Remix, etc.)
+    /// Returns a compact, human-readable markdown representation of the embedded JSON.
+    pub(super) fn extract_spa_json_state(&self, html: &str) -> Option<String> {
+        let document = Html::parse_document(html);
+
+        // Priority-ordered list of embedded JSON state containers
+        let candidates = [
+            ("__NEXT_DATA__", "Next.js"),
+            ("__NUXT_DATA__", "Nuxt"),
+            ("__REMIX_CONTEXT__", "Remix"),
+            ("__APP_DATA__", "SPA"),
+        ];
+
+        for (id, label) in &candidates {
+            // Try <script id="__NEXT_DATA__" ...>
+            if let Ok(sel) = Selector::parse(&format!("script[id='{}']", id)) {
+                if let Some(el) = document.select(&sel).next() {
+                    let raw = el.text().collect::<String>();
+                    if !raw.trim().is_empty() {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
+                            let flat = flatten_json_to_text(&json, label);
+                            if !flat.trim().is_empty() {
+                                return Some(flat);
+                            }
+                        }
+                        // Return raw JSON if it can't be parsed (still better than noisy HTML)
+                        return Some(format!("```json\n{}\n```", &raw[..raw.len().min(20_000)]));
+                    }
+                }
+            }
+        }
+
+        // Fallback: inline window.__PRELOADED_STATE__ / window.__INITIAL_STATE__ patterns
+        let re_window_state = Regex::new(
+            r#"(?s)window\.__(?:PRELOADED|INITIAL|STORE)_STATE__\s*=\s*(\{.*?\});\s*(?:</script>|window\.)"#,
+        ).ok()?;
+
+        if let Ok(sel) = Selector::parse("script:not([src])") {
+            for el in document.select(&sel) {
+                let text = el.text().collect::<String>();
+                if let Some(caps) = re_window_state.captures(&text) {
+                    if let Some(m) = caps.get(1) {
+                        let json_str = m.as_str();
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
+                            let flat = flatten_json_to_text(&json, "WindowState");
+                            if !flat.trim().is_empty() {
+                                return Some(flat);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         None
     }
 
@@ -862,4 +1127,116 @@ fn collapse_repeated_ngram_runs(input: &str, n: usize, min_repeats_exclusive: us
     }
 
     out.join(" ")
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// 🧬 JSON flattener — NeuroSiphon DNA Transfer
+// Converts deeply-nested SPA JSON blobs into clean, readable key: value text
+// that LLMs can consume at a fraction of the token cost of raw JSON.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Recursively walk a `serde_json::Value` and emit human-readable `key: value` lines.
+/// Short string values (≤ 500 chars) are kept; arrays of strings are joined with ", ".
+/// Large objects / arrays are summarised by count. Binary / base64 blobs are omitted.
+pub fn flatten_json_to_text(value: &serde_json::Value, label: &str) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    lines.push(format!("# {} Data", label));
+    flatten_json_recursive(value, "", &mut lines, 0);
+    lines.join("\n")
+}
+
+fn is_blob_like(s: &str) -> bool {
+    // Detect base64 / binary blobs: long strings with very high non-alphanum density
+    if s.len() < 200 {
+        return false;
+    }
+    let non_alnum = s.chars().filter(|c| !c.is_alphanumeric() && *c != '=' && *c != '+' && *c != '/' && *c != '-' && *c != '_').count();
+    non_alnum as f64 / (s.len() as f64) < 0.05
+}
+
+fn flatten_json_recursive(
+    value: &serde_json::Value,
+    prefix: &str,
+    lines: &mut Vec<String>,
+    depth: usize,
+) {
+    // Hard cap depth to avoid exponential blowup on deeply-nested structures
+    if depth > 6 { return; }
+    // Hard cap total output
+    if lines.len() > 400 { return; }
+
+    match value {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                // Skip internal Next.js / build metadata keys
+                if k.starts_with("__") && k.ends_with("__") && k != "__NEXT_DATA__" { continue; }
+                if matches!(k.as_str(), "buildId" | "runtimeConfig" | "isFallback" | "customServer"
+                    | "gsp" | "gssp" | "locale" | "locales" | "defaultLocale"
+                    | "scriptLoader" | "nextExport" | "autoExport" | "isPreview") {
+                    continue;
+                }
+
+                let new_prefix = if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{}.{}", prefix, k)
+                };
+                flatten_json_recursive(v, &new_prefix, lines, depth + 1);
+            }
+        }
+
+        serde_json::Value::Array(arr) => {
+            if arr.is_empty() { return; }
+
+            // Array of short strings → join them
+            if arr.iter().all(|v| matches!(v, serde_json::Value::String(_))) {
+                let joined: Vec<&str> = arr
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .take(20)
+                    .collect();
+                if !joined.is_empty() {
+                    lines.push(format!("{}: {}", prefix, joined.join(", ")));
+                }
+                return;
+            }
+
+            // Array of objects → expand first 5
+            let limit = arr.len().min(5);
+            for (i, item) in arr.iter().enumerate().take(limit) {
+                let new_prefix = format!("{}[{}]", prefix, i);
+                flatten_json_recursive(item, &new_prefix, lines, depth + 1);
+            }
+            if arr.len() > limit {
+                lines.push(format!("{}: [{} items total, showing first {}]", prefix, arr.len(), limit));
+            }
+        }
+
+        serde_json::Value::String(s) => {
+            if s.is_empty() { return; }
+            if is_blob_like(s) { return; }
+            // Skip internal URL paths and hashes
+            if s.starts_with("/_next/") || (s.len() == 32 && s.chars().all(|c| c.is_ascii_hexdigit())) {
+                return;
+            }
+            let display = if s.len() > 500 { &s[..500] } else { s.as_str() };
+            if !prefix.is_empty() {
+                lines.push(format!("{}: {}", prefix, display));
+            }
+        }
+
+        serde_json::Value::Number(n) => {
+            if !prefix.is_empty() {
+                lines.push(format!("{}: {}", prefix, n));
+            }
+        }
+
+        serde_json::Value::Bool(b) => {
+            if !prefix.is_empty() {
+                lines.push(format!("{}: {}", prefix, b));
+            }
+        }
+
+        serde_json::Value::Null => {}
+    }
 }

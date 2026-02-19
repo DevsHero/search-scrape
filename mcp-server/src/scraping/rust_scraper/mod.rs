@@ -22,6 +22,11 @@ use url::Url;
 pub struct RustScraper {
     client: Client,
     quality_mode: QualityMode,
+    /// When `true`, force-return embedded SPA JSON state (Next.js/Nuxt/Remix)
+    /// regardless of its word-count.  When `false` (default), the SPA JSON path
+    /// is only taken if it yields ≥ 100 readable words; otherwise the standard
+    /// readability pipeline is used instead.
+    pub extract_app_state: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,11 +82,60 @@ impl RustScraper {
         Self {
             client,
             quality_mode: QualityMode::from_option(quality_mode),
+            extract_app_state: false,
         }
+    }
+
+    /// Builder: override the `extract_app_state` default.
+    pub fn with_extract_app_state(mut self, val: bool) -> Self {
+        self.extract_app_state = val;
+        self
     }
 
     pub(super) fn is_aggressive_mode(&self) -> bool {
         matches!(self.quality_mode, QualityMode::Aggressive)
+    }
+
+    /// Infer a programming language from the URL path extension.
+    /// Used so raw source files (e.g. `raw.githubusercontent.com/.../*.rs`)
+    /// receive a language tag even though no HTML code-fence class is present.
+    /// Detect documentation / tutorial site URLs where import nuking must be disabled.
+    /// On these sites imports are critical context, not noise, and must never be stripped.
+    pub(super) fn is_tutorial_url(url: &Url) -> bool {
+        let host = url.host_str().unwrap_or("").to_ascii_lowercase();
+        let path = url.path().to_ascii_lowercase();
+        host.contains("doc.rust-lang.org")
+            || host.contains("docs.rs")
+            || host.contains("developer.mozilla.org")
+            || host.contains("docs.python.org")
+            || host.contains("learn.microsoft.com")
+            || host.contains("docs.microsoft.com")
+            || host.contains("reactjs.org")
+            || host.contains("vuejs.org")
+            || host.starts_with("docs.")
+            || host.starts_with("doc.")
+            || path.contains("/tutorial")
+            || path.contains("/guide")
+            || path.contains("/docs/")
+            || path.contains("/book/")
+            || path.contains("/learn/")
+    }
+
+    pub(super) fn infer_language_from_url(url: &Url) -> Option<String> {
+        let path = url.path();
+        let ext = path.rsplit('.').next()?.to_ascii_lowercase();
+        match ext.as_str() {
+            "rs"              => Some("rust".to_string()),
+            "py" | "pyw"      => Some("python".to_string()),
+            "js" | "mjs" | "cjs" => Some("javascript".to_string()),
+            "ts" | "mts" | "cts" => Some("typescript".to_string()),
+            "go"              => Some("go".to_string()),
+            "java"            => Some("java".to_string()),
+            "kt"              => Some("kotlin".to_string()),
+            "cs"              => Some("csharp".to_string()),
+            "rb"              => Some("ruby".to_string()),
+            _                 => None,
+        }
     }
 
     pub async fn preflight_check(&self, url: &str) -> Result<PreflightCheck> {
@@ -175,14 +229,36 @@ impl RustScraper {
         let published_at = self.extract_published_time(&document);
 
         // Extract code blocks BEFORE html2text conversion (Priority 1 fix)
-        let code_blocks = self.extract_code_blocks(&document);
+        // 🧬 Rule B: infer language from the URL extension so raw source files
+        // (e.g. raw.githubusercontent.com/.../*.rs) receive import nuking even
+        // though they carry no HTML code-fence class attributes.
+        let url_lang_hint = Self::infer_language_from_url(&parsed_url);
+        let is_tutorial = Self::is_tutorial_url(&parsed_url);
+        let code_blocks = self.extract_code_blocks(&document, url_lang_hint.as_deref(), is_tutorial);
 
         // JSON-LD can be the cleanest source on modern sites; prefer it when present.
         let json_ld_content = self.extract_json_ld(&document);
 
+        // ── 🧬 SPA fast-path (before JSON-LD): prefer embedded state blobs when present.
+        // Many SPAs include thin JSON-LD that omits the real page content; embedded state is often richer.
+        let spa_state_content = if crate::core::config::neurosiphon_enabled()
+            && crate::scraping::rust_scraper::clean::looks_like_spa(&html)
+        {
+            // 🧬 Rule C: only commit to the SPA JSON fast-path when it yields enough
+            // readable content (≥ 100 words) OR the caller explicitly requested raw
+            // app state via `extract_app_state = true`.
+            self.extract_spa_json_state(&html).filter(|extracted| {
+                self.extract_app_state || self.count_words(extracted) >= 100
+            })
+        } else {
+            None
+        };
+
         // Extract readable content using readability (fallback)
         let (mut clean_content, noise_reduction_ratio) =
-            if let Some(json_content) = json_ld_content.as_ref() {
+            if let Some(spa_content) = spa_state_content.as_ref() {
+                (self.normalize_markdown_fragments(spa_content), 0.0)
+            } else if let Some(json_content) = json_ld_content.as_ref() {
                 (
                     self.normalize_markdown_fragments(&html2md::parse_html(json_content)),
                     0.0,
@@ -199,6 +275,15 @@ impl RustScraper {
         // Smart link extraction: prefer content links over all document links
         let links = self.extract_content_links(&document, &parsed_url);
         let images = self.extract_images(&document, &parsed_url);
+
+        // 🧬 Task 3: When extract_app_state=true and SPA hydration JSON was found, discard
+        // all DOM-derived content (code_blocks, links, images, headings).  The hydration
+        // JSON IS the content; DOM scaffolding is pure token waste in this mode.
+        let spa_forced = self.extract_app_state && spa_state_content.is_some();
+        let code_blocks = if spa_forced { vec![] } else { code_blocks };
+        let links      = if spa_forced { vec![] } else { links };
+        let images     = if spa_forced { vec![] } else { images };
+        let headings   = if spa_forced { vec![] } else { headings };
 
         let mut embedded_data_sources = self.collect_embedded_data_sources(&document);
         let mut embedded_state_json = embedded_data_sources

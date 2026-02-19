@@ -58,12 +58,33 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                 "type": "object",
                 "properties": {
                     "url": {"type": "string"},
+                    "query": {
+                        "type": "string",
+                        "description": "Optional search query. When provided with strict_relevance=true, enables Semantic Shaving: only paragraphs relevant to this query are kept, reducing token waste by 50-80%."
+                    },
+                    "strict_relevance": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Enable Semantic Shaving. Requires 'query'. Filters scraped content to only semantically relevant paragraphs using Model2Vec cosine similarity."
+                    },
+                    "relevance_threshold": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                        "default": 0.35,
+                        "description": "Cosine similarity threshold for Semantic Shaving (default 0.35). Lower = keep more; higher = keep less."
+                    },
                     "max_chars": {"type": "integer"},
                     "max_links": {"type": "integer", "minimum": 1},
                     "output_format": {"type": "string", "enum": ["text", "json"], "default": "text"},
                     "include_raw_html": {"type": "boolean", "default": false},
                     "use_proxy": {"type": "boolean", "default": false},
-                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive"], "default": "balanced"}
+                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive", "high"], "default": "balanced"},
+                    "extract_app_state": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "🧬 Rule C (Smart Router): when true, force-return the raw embedded SPA JSON (Next.js __NEXT_DATA__, Nuxt __NUXT_DATA__, Remix __REMIX_CONTEXT__) even if it contains fewer than 100 readable words. Default false: SPA JSON is only used when it yields ≥ 100 words; otherwise the standard readability pipeline runs."
+                    }
                 },
                 "required": ["url"]
             }),

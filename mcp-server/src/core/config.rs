@@ -2,6 +2,7 @@ use std::path::Path;
 
 pub const ENV_CHROME_EXECUTABLE: &str = "CHROME_EXECUTABLE";
 pub const ENV_LANCEDB_URI: &str = "LANCEDB_URI";
+pub const ENV_NEUROSIPHON_ENABLED: &str = "SHADOWCRAWL_NEUROSIPHON";
 
 /// Optional override for the Chromium-family browser executable.
 ///
@@ -31,4 +32,19 @@ pub fn lancedb_uri() -> Option<String> {
     } else {
         Some(v.to_string())
     }
+}
+
+/// Global toggle for NeuroSiphon-derived optimizations (content router, noise filter,
+/// semantic shaving, import nuking, search rewrite/rerank, etc.).
+///
+/// Default: enabled. Set `SHADOWCRAWL_NEUROSIPHON=0` (or `false`/`no`) to disable.
+pub fn neurosiphon_enabled() -> bool {
+    let Ok(v) = std::env::var(ENV_NEUROSIPHON_ENABLED) else {
+        return true;
+    };
+    let v = v.trim().to_ascii_lowercase();
+    if v.is_empty() {
+        return true;
+    }
+    !matches!(v.as_str(), "0" | "false" | "no" | "off" | "disabled")
 }

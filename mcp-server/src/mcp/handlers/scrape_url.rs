@@ -1,5 +1,6 @@
 use super::common::parse_quality_mode;
 use crate::mcp::{McpCallResponse, McpContent};
+use crate::rust_scraper::QualityMode;
 use crate::types::ErrorResponse;
 use crate::{scrape, AppState};
 use axum::http::StatusCode;
@@ -31,7 +32,37 @@ pub async fn handle(
 
     let quality_mode = parse_quality_mode(arguments)?;
 
-    match scrape::scrape_url_with_options(&state, url, use_proxy, Some(quality_mode)).await {
+    // 🧬 Semantic Shaving parameters
+    let query = arguments.get("query").and_then(|v| v.as_str());
+    let strict_relevance = arguments
+        .get("strict_relevance")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let relevance_threshold = arguments
+        .get("relevance_threshold")
+        .and_then(|v| v.as_f64())
+        .map(|f| f as f32);
+
+    // 🧬 Rule C: by default the SPA JSON fast-path falls back to readability when
+    // content is too sparse.  Set `extract_app_state=true` to force-return the
+    // raw embedded JSON (Next.js __NEXT_DATA__, Nuxt __NUXT_DATA__, etc.).
+    let extract_app_state = arguments
+        .get("extract_app_state")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    match scrape::scrape_url_full(
+        &state,
+        url,
+        use_proxy,
+        Some(quality_mode),
+        query,
+        strict_relevance,
+        relevance_threshold,
+        extract_app_state,
+    )
+    .await
+    {
         Ok(mut content) => {
             let max_chars = arguments
                 .get("max_chars")
@@ -61,10 +92,19 @@ pub async fn handle(
                 .unwrap_or("text");
 
             if output_format == "json" {
-                let include_raw_html = arguments
+                let mut include_raw_html = arguments
                     .get("include_raw_html")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
+
+                // 🧬 Task 1: Force-override — never return raw HTML when NeuroSiphon is
+                // active or quality_mode is aggressive.  Returning raw HTML under these
+                // modes is a massive token leak that defeats the token-saving architecture.
+                if crate::core::config::neurosiphon_enabled()
+                    || quality_mode == QualityMode::Aggressive
+                {
+                    include_raw_html = false;
+                }
 
                 let mut json_content = content.clone();
                 if !include_raw_html {

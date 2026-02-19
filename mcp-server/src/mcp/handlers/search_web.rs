@@ -153,7 +153,12 @@ pub async fn handle(
                 source_type,
                 published,
                 score,
-                result.content.chars().take(200).collect::<String>()
+                // 🧬 Rule D: under NeuroSiphon, use compact 120-char snippets so more
+                // results fit in the same token budget; 200 chars in standard mode.
+                {
+                    let limit = if crate::core::config::neurosiphon_enabled() { 120 } else { 200 };
+                    result.content.chars().take(limit).collect::<String>()
+                }
             ));
         }
 

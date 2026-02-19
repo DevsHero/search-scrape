@@ -1,3 +1,4 @@
+use crate::nlp::semantic_shave;
 use crate::rust_scraper::QualityMode;
 use crate::rust_scraper::RustScraper;
 use crate::types::*;
@@ -6,6 +7,8 @@ use anyhow::{anyhow, Result};
 use backoff::future::retry;
 use backoff::ExponentialBackoffBuilder;
 use select::predicate::Predicate;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tracing::{info, warn};
 
@@ -19,12 +22,37 @@ pub async fn scrape_url_with_options(
     use_proxy: bool,
     quality_mode: Option<QualityMode>,
 ) -> Result<ScrapeResponse> {
+    scrape_url_full(state, url, use_proxy, quality_mode, None, false, None, false).await
+}
+
+/// Full scrape with optional Semantic Shaving.
+///
+/// - `query`: optional search query for Semantic Shaving.
+/// - `strict_relevance`: when `true`, filter content to only query-relevant paragraphs.
+/// - `relevance_threshold`: cosine similarity threshold (default 0.35).
+/// - `extract_app_state`: when `true`, force-return the raw SPA JSON (Next.js/Nuxt/Remix
+///   `__NEXT_DATA__` etc.) even if it is sparse.  Defaults to `false`, which causes the
+///   SPA fast-path to fall back to readability when fewer than 100 readable words are found.
+pub async fn scrape_url_full(
+    state: &Arc<AppState>,
+    url: &str,
+    use_proxy: bool,
+    quality_mode: Option<QualityMode>,
+    query: Option<&str>,
+    strict_relevance: bool,
+    relevance_threshold: Option<f32>,
+    extract_app_state: bool,
+) -> Result<ScrapeResponse> {
     info!("Scraping URL: {}", url);
 
     // Validate URL
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err(anyhow!("Invalid URL: must start with http:// or https://"));
     }
+
+    // Cache key must include knobs that affect output; otherwise comparisons (and correctness)
+    // are broken because a previous scrape can be returned for a different mode.
+    let cache_key = compute_scrape_cache_key(url, quality_mode, query, strict_relevance, relevance_threshold, extract_app_state);
 
     // BOSS LEVEL OPTIMIZATION: Check if in rapid testing mode
     let is_testing = if let Some(memory) = &state.memory {
@@ -39,17 +67,17 @@ pub async fn scrape_url_with_options(
 
     // Check cache (bypass if in testing mode)
     if !is_testing {
-        if let Some(cached) = state.scrape_cache.get(url).await {
+        if let Some(cached) = state.scrape_cache.get(&cache_key).await {
             if cached.word_count == 0 || cached.clean_content.trim().is_empty() {
                 // Invalidate poor/empty cache entries and recompute
-                state.scrape_cache.invalidate(url).await;
+                state.scrape_cache.invalidate(&cache_key).await;
             } else {
                 return Ok(cached);
             }
         }
     } else {
         // In testing mode, always invalidate cache
-        state.scrape_cache.invalidate(url).await;
+        state.scrape_cache.invalidate(&cache_key).await;
     }
 
     // Concurrency control
@@ -65,7 +93,8 @@ pub async fn scrape_url_with_options(
     if cdp_available {
         info!("🚀 CDP available, attempting universal stealth mode");
 
-        let rust_scraper = RustScraper::new_with_quality_mode(quality_mode.map(|m| m.as_str()));
+        let rust_scraper = RustScraper::new_with_quality_mode(quality_mode.map(|m| m.as_str()))
+            .with_extract_app_state(extract_app_state);
         let cdp_proxy = if use_proxy {
             if let Some(proxy_manager) = &state.proxy_manager {
                 match proxy_manager.switch_to_best_proxy().await {
@@ -91,13 +120,23 @@ pub async fn scrape_url_with_options(
 
                 // Process HTML into ScrapeResponse
                 match rust_scraper.process_html(&html, url).await {
-                    Ok(result) => {
+                    Ok(mut result) => {
                         // Record proxy success if used
                         if let (Some(proxy_url), Some(manager)) =
                             (cdp_proxy.as_ref(), state.proxy_manager.as_ref())
                         {
                             let _ = manager.record_proxy_result(proxy_url, true, None).await;
                         }
+
+                        // 🧬 Semantic Shaving must run even on the CDP fast-path.
+                        apply_semantic_shaving_if_enabled(
+                            state,
+                            &mut result,
+                            query,
+                            strict_relevance,
+                            relevance_threshold,
+                        )
+                        .await;
 
                         // Log to history
                         if let Some(memory) = &state.memory {
@@ -128,7 +167,7 @@ pub async fn scrape_url_with_options(
                         // Cache and return
                         state
                             .scrape_cache
-                            .insert(url.to_string(), result.clone())
+                            .insert(cache_key.clone(), result.clone())
                             .await;
                         return Ok(result);
                     }
@@ -169,9 +208,10 @@ pub async fn scrape_url_with_options(
                                         let _ = proxy_manager
                                             .record_proxy_result(&new_proxy_url, true, None)
                                             .await;
+                                        // Note: retry path uses the same cache key.
                                         state
                                             .scrape_cache
-                                            .insert(url.to_string(), result.clone())
+                                            .insert(cache_key.clone(), result.clone())
                                             .await;
                                         return Ok(result);
                                     }
@@ -196,7 +236,8 @@ pub async fn scrape_url_with_options(
         }
     }
 
-    let rust_scraper = RustScraper::new_with_quality_mode(quality_mode.map(|m| m.as_str()));
+    let rust_scraper = RustScraper::new_with_quality_mode(quality_mode.map(|m| m.as_str()))
+        .with_extract_app_state(extract_app_state);
     let url_owned = url.to_string();
     let mut force_browserless = false;
     let mut forced_proxy: Option<String> = None;
@@ -502,9 +543,19 @@ pub async fn scrape_url_with_options(
             url, result.word_count
         );
     }
+
+    apply_semantic_shaving_if_enabled(
+        state,
+        &mut result,
+        query,
+        strict_relevance,
+        relevance_threshold,
+    )
+    .await;
+
     state
         .scrape_cache
-        .insert(url.to_string(), result.clone())
+        .insert(cache_key.clone(), result.clone())
         .await;
 
     // Auto-log to history if memory is enabled (Phase 1)
@@ -537,6 +588,93 @@ pub async fn scrape_url_with_options(
     }
 
     Ok(result)
+}
+
+fn compute_scrape_cache_key(
+    url: &str,
+    quality_mode: Option<QualityMode>,
+    query: Option<&str>,
+    strict_relevance: bool,
+    relevance_threshold: Option<f32>,
+    extract_app_state: bool,
+) -> String {
+    let ns = if crate::core::config::neurosiphon_enabled() { 1 } else { 0 };
+    let qm = quality_mode.unwrap_or(QualityMode::Balanced).as_str();
+    let eas = if extract_app_state { 1 } else { 0 };
+    let mut key = format!("{}|qm={}|ns={}|eas={}", url, qm, ns, eas);
+    if strict_relevance {
+        let threshold = relevance_threshold.unwrap_or(semantic_shave::DEFAULT_RELEVANCE_THRESHOLD);
+        key.push_str(&format!("|sr=1|t={:.3}", threshold));
+        if let Some(q) = query {
+            let q = q.trim();
+            if !q.is_empty() {
+                let mut hasher = DefaultHasher::new();
+                q.hash(&mut hasher);
+                key.push_str(&format!("|q={:016x}", hasher.finish()));
+            }
+        }
+    }
+    key
+}
+
+async fn apply_semantic_shaving_if_enabled(
+    state: &Arc<AppState>,
+    result: &mut ScrapeResponse,
+    query: Option<&str>,
+    strict_relevance: bool,
+    relevance_threshold: Option<f32>,
+) {
+    if !crate::core::config::neurosiphon_enabled() {
+        return;
+    }
+
+    // Filter content to only query-relevant paragraphs using Model2Vec cosine similarity.
+    // Activated when: strict_relevance=true AND query is provided AND memory (model) is available.
+    if !strict_relevance {
+        return;
+    }
+
+    let Some(q) = query.map(str::trim).filter(|s| !s.is_empty()) else {
+        result.warnings.push("semantic_shave_missing_query".to_string());
+        return;
+    };
+
+    let Some(memory) = &state.memory else {
+        warn!("semantic_shave requested but memory/model not enabled");
+        result.warnings.push("semantic_shave_no_memory".to_string());
+        return;
+    };
+
+    let model = match memory.get_embedding_model().await {
+        Ok(m) => m,
+        Err(e) => {
+            warn!("⚠️ Could not load embedding model for semantic shave: {}", e);
+            result
+                .warnings
+                .push("semantic_shave_model_unavailable".to_string());
+            return;
+        }
+    };
+
+    let before_words = result.word_count;
+    match semantic_shave::semantic_shave(model, &result.clean_content, q, relevance_threshold).await {
+        Ok((shaved, kept, total)) => {
+            result.clean_content = shaved;
+            result.word_count = result.clean_content.split_whitespace().count();
+            result.warnings.push(format!(
+                "semantic_shave: kept {}/{} chunks ({} → {} words)",
+                kept, total, before_words, result.word_count
+            ));
+            info!(
+                "🪒 Semantic shave applied: {}/{} chunks kept ({} → {} words)",
+                kept, total, before_words, result.word_count
+            );
+        }
+        Err(e) => {
+            warn!("⚠️ Semantic shave failed (non-fatal): {}", e);
+            result.warnings.push("semantic_shave_failed".to_string());
+        }
+    }
 }
 
 // Fallback scraper using direct HTTP request (legacy simple mode) -- optional; keeping for troubleshooting

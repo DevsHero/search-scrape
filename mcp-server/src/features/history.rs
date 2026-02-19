@@ -148,8 +148,8 @@ impl MemoryManager {
         ]))
     }
 
-    /// Get or initialize the embedding model
-    async fn get_embedding_model(&self) -> Result<Arc<StaticModel>> {
+    /// Get or initialize the embedding model (public for Semantic Shaving)
+    pub async fn get_embedding_model(&self) -> Result<Arc<StaticModel>> {
         let model_id = self.model_id.clone();
         let model = self
             .embedding_model

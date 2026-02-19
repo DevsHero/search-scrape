@@ -733,9 +733,12 @@ pub async fn search_web_with_params(
 ) -> Result<(Vec<SearchResult>, SearchExtras)> {
     info!("Searching for: {}", query);
 
+    let neurosiphon = crate::core::config::neurosiphon_enabled();
+
     // Phase 2: Check for recent duplicates if memory enabled
     let mut duplicate_warning = None;
-    if let Some(memory) = &state.memory {
+    if neurosiphon {
+        if let Some(memory) = &state.memory {
         match memory.find_recent_duplicate(query, 6).await {
             Ok(Some((entry, score))) => {
                 let time_ago = chrono::Utc::now().signed_duration_since(entry.timestamp);
@@ -764,13 +767,24 @@ pub async fn search_web_with_params(
             Ok(None) => {}
             Err(e) => warn!("Failed to check for duplicates: {}", e),
         }
+        }
     }
 
     // Phase 2: Query rewriting for developer queries
-    let rewriter = QueryRewriter::new();
-    let rewrite_result = rewriter.rewrite_query(query);
+    let rewrite_result = if neurosiphon {
+        let rewriter = QueryRewriter::new();
+        rewriter.rewrite_query(query)
+    } else {
+        QueryRewriteResult {
+            original: query.to_string(),
+            rewritten: None,
+            suggestions: Vec::new(),
+            detected_keywords: Vec::new(),
+            is_developer_query: false,
+        }
+    };
 
-    let effective_query = if rewrite_result.was_rewritten() {
+    let effective_query = if neurosiphon && rewrite_result.was_rewritten() {
         info!(
             "Query rewritten: '{}' -> '{}'",
             query,
@@ -783,7 +797,7 @@ pub async fn search_web_with_params(
 
     let cache_key = if let Some(ref ov) = overrides {
         format!(
-            "q={}|eng={}|cat={}|lang={}|safe={}|time={}|page={}",
+            "q={}|eng={}|cat={}|lang={}|safe={}|time={}|page={}|ns={}",
             query,
             ov.engines.clone().unwrap_or_default(),
             ov.categories.clone().unwrap_or_default(),
@@ -792,10 +806,11 @@ pub async fn search_web_with_params(
             ov.time_range.clone().unwrap_or_default(),
             ov.pageno
                 .map(|v| v.to_string())
-                .unwrap_or_else(|| "1".into())
+                .unwrap_or_else(|| "1".into()),
+            if neurosiphon { 1 } else { 0 }
         )
     } else {
-        format!("q={}|default", query)
+        format!("q={}|default|ns={}", query, if neurosiphon { 1 } else { 0 })
     };
 
     if let Some(cached) = state.search_cache.get(&cache_key).await {
@@ -838,33 +853,38 @@ pub async fn search_web_with_params(
         ..Default::default()
     };
 
-    // Enhanced semantic reranking with keyword boosting
-    let reranker = Reranker::new(query);
-    let boosted_results = boost_by_early_keywords(&results, query);
-    let reranked_results = reranker.rerank_top(boosted_results, 50);
+    // Enhanced semantic reranking with keyword boosting (NeuroSiphon mode)
+    let final_results = if neurosiphon {
+        let reranker = Reranker::new(query);
+        let boosted_results = boost_by_early_keywords(&results, query);
+        let reranked_results = reranker.rerank_top(boosted_results, 50);
 
-    info!(
-        "Reranked {} results by relevance (with keyword boosting)",
-        reranked_results.len()
-    );
+        info!(
+            "Reranked {} results by relevance (with keyword boosting)",
+            reranked_results.len()
+        );
+        reranked_results
+    } else {
+        results
+    };
 
     state
         .search_cache
-        .insert(cache_key, reranked_results.clone())
+        .insert(cache_key, final_results.clone())
         .await;
 
     if let Some(memory) = &state.memory {
-        let result_json = serde_json::to_value(&reranked_results).unwrap_or_default();
+        let result_json = serde_json::to_value(&final_results).unwrap_or_default();
 
         if let Err(e) = memory
-            .log_search(query.to_string(), &result_json, reranked_results.len())
+                .log_search(query.to_string(), &result_json, final_results.len())
             .await
         {
             warn!("Failed to log search to history: {}", e);
         }
     }
 
-    Ok((reranked_results, extras))
+    Ok((final_results, extras))
 }
 
 /// Classify search result by domain and source type
