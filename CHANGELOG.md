@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.4.1 (2026-02-19)
+
+### Agent-first tool naming (MCP)
+
+- Renames the primary page fetch tool for agents from `scrape_url` (internal) to `web_fetch` (public).
+- Adds tool-name aliases: `web_fetch`, `fetch_url`, `fetch_webpage` → `scrape_url` (internal).
+- Updates tool titles/descriptions to explicitly steer agents to ShadowCrawl tools (token-efficient) over IDE fetch.
+
+
 ## v2.4.0 (2026-02-19)
 
 ### NeuroSiphon token-efficiency integration

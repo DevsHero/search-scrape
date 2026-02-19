@@ -44,6 +44,25 @@ impl ToolRegistry {
             )]),
         );
 
+        // Extra tool-name aliases to steer agents toward ShadowCrawl tools instead of
+        // IDE-provided fetchers. These map *public* names to stable internal tool names.
+        // Backwards compatibility: internal names are always accepted too.
+        registry
+            .public_to_internal
+            .insert("web_fetch".to_string(), "scrape_url".to_string());
+        registry
+            .public_to_internal
+            .insert("fetch_url".to_string(), "scrape_url".to_string());
+        registry
+            .public_to_internal
+            .insert("fetch_webpage".to_string(), "scrape_url".to_string());
+        registry
+            .public_to_internal
+            .insert("web_fetch_batch".to_string(), "scrape_batch".to_string());
+        registry
+            .public_to_internal
+            .insert("fetch_url_batch".to_string(), "scrape_batch".to_string());
+
         for internal in internal_catalog {
             let internal_name = internal.name.to_string();
             let icons = internal.icons.into_iter().map(|s| s.to_string()).collect();
@@ -54,6 +73,8 @@ impl ToolRegistry {
                 "search_web" => "web_search".to_string(),
                 // "non_robot_search" => "stealth_scrape".to_string(), // OLD
                 "non_robot_search" => "non_robot_search".to_string(), // NEW
+                "scrape_url" => "web_fetch".to_string(),
+                "scrape_batch" => "web_fetch_batch".to_string(),
                 _ => internal_name.clone(),
             };
             let public_title = internal.title.to_string();

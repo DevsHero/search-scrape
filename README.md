@@ -1,4 +1,4 @@
-# 🥷 ShadowCrawl MCP — v2.4.0
+# 🥷 ShadowCrawl MCP — v2.4.1
 
 <div align="center">
 <img src="media/logo.svg" alt="ShadowCrawl Logo" width="180">
@@ -20,9 +20,9 @@ When every other tool gets blocked, ShadowCrawl doesn't retreat — it **escalat
 
 ---
 
-## ⚡ God-Tier Internal Meta-Search (v2.4.0)
+## ⚡ God-Tier Internal Meta-Search (v2.4.1)
 
-ShadowCrawl v2.4.0 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
+ShadowCrawl v2.4.1 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
 
 | Engine | Coverage | Notes |
 |--------|----------|-------|
@@ -136,7 +136,38 @@ cargo build --release --all-features
 ```
 
 ---
+### Option B — Build / Install from Source
 
+```bash
+git clone https://github.com/DevsHero/shadowcrawl.git
+cd shadowcrawl
+```
+
+Build:
+```bash
+cd mcp-server
+cargo build --release --features non_robot_search --bin shadowcrawl --bin shadowcrawl-mcp
+```
+
+Or install (puts binaries into your Cargo bin directory):
+```bash
+cargo install --path mcp-server --locked
+```
+
+Binaries land at:
+- `target/release/shadowcrawl` — HTTP server (default port `5000`; override via `--port`, `PORT`, or `SHADOWCRAWL_PORT`)
+- `target/release/shadowcrawl-mcp` — MCP stdio server
+
+Prerequisites for HITL:
+- **Brave Browser** ([brave.com/download](https://brave.com/download/))
+- **Accessibility permission** (macOS: System Preferences → Privacy & Security → Accessibility)
+- A desktop session (not SSH-only)
+
+Platform guides: [WINDOWS_DESKTOP.md](docs/WINDOWS_DESKTOP.md) · [UBUNTU_DESKTOP.md](docs/UBUNTU_DESKTOP.md)
+
+> After any binary rebuild/update, **restart your MCP client session** to pick up new tool definitions.
+
+---
 ## 🧾 Raw Samples (NeuroSiphon vs non-NeuroSiphon vs fetch)
 
 Generate raw sample files to study output completeness/quality and tokenizer savings.
@@ -180,38 +211,7 @@ These techniques focus on **returning only the most useful content to the agent*
 | **Tutorial Immunity** (Task 2) | docs/tutorial/guide URLs | Disables import nuking entirely | Preserves critical tutorial context |
 | **Search Snippet Floor** (Rule D) | internal metasearch | Ensures snippets are useful (min-length) | Avoids useless micro-snippets that waste context |
 
-### Option B — Build / Install from Source
 
-```bash
-git clone https://github.com/DevsHero/shadowcrawl.git
-cd shadowcrawl
-```
-
-Build:
-```bash
-cd mcp-server
-cargo build --release --features non_robot_search --bin shadowcrawl --bin shadowcrawl-mcp
-```
-
-Or install (puts binaries into your Cargo bin directory):
-```bash
-cargo install --path mcp-server --locked
-```
-
-Binaries land at:
-- `target/release/shadowcrawl` — HTTP server (default port `5000`; override via `--port`, `PORT`, or `SHADOWCRAWL_PORT`)
-- `target/release/shadowcrawl-mcp` — MCP stdio server
-
-Prerequisites for HITL:
-- **Brave Browser** ([brave.com/download](https://brave.com/download/))
-- **Accessibility permission** (macOS: System Preferences → Privacy & Security → Accessibility)
-- A desktop session (not SSH-only)
-
-Platform guides: [WINDOWS_DESKTOP.md](docs/WINDOWS_DESKTOP.md) · [UBUNTU_DESKTOP.md](docs/UBUNTU_DESKTOP.md)
-
-> After any binary rebuild/update, **restart your MCP client session** to pick up new tool definitions.
-
----
 
 ## 🧩 MCP Integration
 

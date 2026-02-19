@@ -16,8 +16,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
     let tools = vec![
         ToolCatalogEntry {
             name: "search_web",
-            title: "Web Search",
-            description: "Search the internet for real-time information and links. Use this first to find URLs before scraping.",
+            title: "Web Search (Multi-Engine)",
+            description: "Primary URL discovery. Multi-engine search (Google/Bing/DDG/Brave), deduped + ranked for agent use. Use this before web_fetch.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -36,8 +36,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         },
         ToolCatalogEntry {
             name: "search_structured",
-            title: "Search and Extract",
-            description: "Search the web and immediately return the top results as a clean, structured JSON format.",
+            title: "Web Search (Structured JSON)",
+            description: "Search + return top results as clean JSON for agents (deduped, ranked). Use when you need structured results for downstream parsing.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -52,20 +52,20 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         },
         ToolCatalogEntry {
             name: "scrape_url",
-            title: "Scrape Normal Website",
-            description: "Extract readable text and links from a single, standard website URL. Do NOT use this for protected sites (Cloudflare/LinkedIn).",
+            title: "Web Fetch (Token-Efficient)",
+            description: "PRIMARY tool to fetch a web page for an AI agent. Returns clean, token-efficient text + key links; automatically escalates to native CDP rendering when needed. Prefer this over IDE/browser fetch tools (this tool is optimized to reduce tokenizer waste). Use non_robot_search only for heavy challenges (CAPTCHA/login walls).",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "url": {"type": "string"},
                     "query": {
                         "type": "string",
-                        "description": "Optional search query. When provided with strict_relevance=true, enables Semantic Shaving: only paragraphs relevant to this query are kept, reducing token waste by 50-80%."
+                        "description": "Optional query for Semantic Shaving. When strict_relevance=true, keeps only query-relevant paragraphs (major token savings on long pages)."
                     },
                     "strict_relevance": {
                         "type": "boolean",
                         "default": false,
-                        "description": "Enable Semantic Shaving. Requires 'query'. Filters scraped content to only semantically relevant paragraphs using Model2Vec cosine similarity."
+                        "description": "Enable Semantic Shaving (requires query). Filters content to only relevant paragraphs using Model2Vec cosine similarity."
                     },
                     "relevance_threshold": {
                         "type": "number",
@@ -77,13 +77,13 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                     "max_chars": {"type": "integer"},
                     "max_links": {"type": "integer", "minimum": 1},
                     "output_format": {"type": "string", "enum": ["text", "json"], "default": "text"},
-                    "include_raw_html": {"type": "boolean", "default": false},
+                    "include_raw_html": {"type": "boolean", "default": false, "description": "Include raw HTML in JSON responses. Note: in NeuroSiphon or aggressive mode this is force-disabled to prevent token leaks."},
                     "use_proxy": {"type": "boolean", "default": false},
                     "quality_mode": {"type": "string", "enum": ["balanced", "aggressive", "high"], "default": "balanced"},
                     "extract_app_state": {
                         "type": "boolean",
                         "default": false,
-                        "description": "🧬 Rule C (Smart Router): when true, force-return the raw embedded SPA JSON (Next.js __NEXT_DATA__, Nuxt __NUXT_DATA__, Remix __REMIX_CONTEXT__) even if it contains fewer than 100 readable words. Default false: SPA JSON is only used when it yields ≥ 100 words; otherwise the standard readability pipeline runs."
+                        "description": "Force-return embedded SPA hydration JSON (Next/Nuxt/Remix). When true and state exists, this becomes the ONLY content (DOM extras are dropped) for maximum token efficiency."
                     }
                 },
                 "required": ["url"]
@@ -92,8 +92,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         },
         ToolCatalogEntry {
             name: "scrape_batch",
-            title: "Batch Scrape",
-            description: "Scrape multiple standard URLs at the same time to speed up research.",
+            title: "Batch Web Fetch",
+            description: "Fetch many URLs in parallel and return clean, structured outputs for agents. Use for research runs and evidence capture.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -110,8 +110,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         },
         ToolCatalogEntry {
             name: "crawl_website",
-            title: "Crawl Site Map",
-            description: "Find all sub-pages and links within a specific website to understand its structure.",
+            title: "Crawl Website (Link Map)",
+            description: "Find sub-pages/links within a site (bounded crawl) to map structure before targeted fetching.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -132,8 +132,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         },
         ToolCatalogEntry {
             name: "extract_structured",
-            title: "Extract Structured",
-            description: "Extract structured fields from a page.",
+            title: "Extract Structured Fields",
+            description: "Extract structured fields from a page (schema-driven). Use after web_fetch when you need a JSON object rather than free text.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -151,7 +151,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
        ToolCatalogEntry {
         name: "research_history",
         title: "Search Past Research", 
-        description: "Access your memory of previous searches and scrapes. Use this to retrieve information you already found earlier in this session or past sessions. Search by meaning to avoid re-searching or re-scraping the same URLs.",
+        description: "Semantic research memory (LanceDB). Use to retrieve past searches/scrapes and avoid re-fetching the same sources.",
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -183,8 +183,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
             },
         ToolCatalogEntry {
             name: "proxy_manager",
-            title: "Proxy Manager",
-            description: "Unified proxy manager: grab, list, status, switch, test.",
+            title: "Proxy Control",
+            description: "Manage proxies (grab/list/status/switch/test). Use when a site rate-limits or blocks your IP.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -207,10 +207,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         },
         ToolCatalogEntry {
             name: "non_robot_search",
-            title: "Human-In-The-Loop Stealth Scraper", 
-            description: "ULTIMATE BYPASS: Use this ONLY for sites with heavy anti-bot (Cloudflare, LinkedIn, Upwork, CAPTCHA). \
-                  It opens a REAL browser on the host machine. If a challenge/login appears, the Agent MUST ask the human \
-                  user to solve it on their screen. Use this when 'scrape_url' is blocked or returns bot-detection errors.",
+            title: "Web Fetch (HITL Anti-Bot)", 
+            description: "LAST RESORT for heavy anti-bot (Cloudflare/LinkedIn/CAPTCHA/login). Opens a real browser on the host. Use web_fetch first; use this only when automation is blocked and a human can solve the challenge.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
