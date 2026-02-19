@@ -44,6 +44,7 @@ pub async fn check_permissions(_options: &SetupOptions) -> Vec<SetupCheck> {
     }]
 }
 
+#[cfg(any(target_os = "macos", all(unix, not(target_os = "macos"))))]
 pub(crate) fn interactive_hint(options: &SetupOptions) -> String {
     match options.mode {
         SetupRunMode::Startup => {

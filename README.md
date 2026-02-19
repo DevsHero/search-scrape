@@ -1,4 +1,4 @@
-# 🥷 ShadowCrawl MCP — v2.4.2
+# 🥷 ShadowCrawl MCP — v2.4.3
 
 <div align="center">
 <img src="media/logo.svg" alt="ShadowCrawl Logo" width="180">
@@ -20,9 +20,9 @@ When every other tool gets blocked, ShadowCrawl doesn't retreat — it **escalat
 
 ---
 
-## ⚡ God-Tier Internal Meta-Search (v2.4.2)
+## ⚡ God-Tier Internal Meta-Search (v2.4.3)
 
-ShadowCrawl v2.4.2 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
+ShadowCrawl v2.4.3 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
 
 | Engine | Coverage | Notes |
 |--------|----------|-------|

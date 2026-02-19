@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.4.3 (2026-02-19)
+
+### Chore (build hygiene)
+
+- Fixes cross-target build warnings caused by platform-specific `cfg` blocks:
+	- removes `unused_imports` for `Path`/`PathBuf` on non-macOS targets
+	- avoids `dead_code` warnings for setup-only helpers on Windows builds
+
+
 ## v2.4.2 (2026-02-19)
 
 ### MCP tool naming normalization (agent clarity)
