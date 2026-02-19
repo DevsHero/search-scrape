@@ -190,6 +190,12 @@ python3 ./scripts/generate_samples.py --build --release
 
 Outputs are saved under `samples/`.
 
+Tip (short output): when you only need the parts of a long doc that match your question, use `web_fetch` with:
+
+- `query`: your question
+- `extract_relevant_sections=true`: returns only the top matching sections (short, avoids huge tool outputs)
+
+
 ---
 
 ## 🧬 NeuroSiphon Token-Saving Pipeline (v2.4.0)

@@ -46,6 +46,20 @@ pub async fn handle(
         .and_then(|v| v.as_f64())
         .map(|f| f as f32);
 
+    // Optional: short, query-matched output (section-only)
+    let extract_relevant_sections = arguments
+        .get("extract_relevant_sections")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let section_limit = arguments
+        .get("section_limit")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize);
+    let section_threshold = arguments
+        .get("section_threshold")
+        .and_then(|v| v.as_f64())
+        .map(|f| f as f32);
+
     // 🧬 Rule C: by default the SPA JSON fast-path falls back to readability when
     // content is too sparse.  Set `extract_app_state=true` to force-return the
     // raw embedded JSON (Next.js __NEXT_DATA__, Nuxt __NUXT_DATA__, etc.).
@@ -61,6 +75,9 @@ pub async fn handle(
         strict_relevance,
         relevance_threshold,
         extract_app_state,
+        extract_relevant_sections,
+        section_limit,
+        section_threshold,
     };
 
     match scrape::scrape_url_full(&state, url, options)

@@ -62,6 +62,25 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                         "type": "string",
                         "description": "Optional query for Semantic Shaving. When strict_relevance=true, keeps only query-relevant paragraphs (major token savings on long pages)."
                     },
+                    "extract_relevant_sections": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "When true, return ONLY the most relevant sections for the query (short output). Helps avoid huge outputs that overflow tool UIs. Requires 'query'."
+                    },
+                    "section_limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 20,
+                        "default": 5,
+                        "description": "Max number of sections to keep when extract_relevant_sections=true."
+                    },
+                    "section_threshold": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                        "default": 0.45,
+                        "description": "Similarity threshold for section extraction. Higher = fewer sections (shorter output)."
+                    },
                     "strict_relevance": {
                         "type": "boolean",
                         "default": false,

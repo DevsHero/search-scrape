@@ -20,6 +20,11 @@ pub struct ScrapeUrlOptions {
     pub strict_relevance: bool,
     pub relevance_threshold: Option<f32>,
     pub extract_app_state: bool,
+
+    // Optional: return only the most relevant sections for the query (short output).
+    pub extract_relevant_sections: bool,
+    pub section_limit: Option<usize>,
+    pub section_threshold: Option<f32>,
 }
 
 pub async fn scrape_url(state: &Arc<AppState>, url: &str) -> Result<ScrapeResponse> {
@@ -64,6 +69,9 @@ pub async fn scrape_url_full(
         strict_relevance,
         relevance_threshold,
         extract_app_state,
+        extract_relevant_sections,
+        section_limit,
+        section_threshold,
     } = options;
     let query = query.as_deref();
 
@@ -76,7 +84,19 @@ pub async fn scrape_url_full(
 
     // Cache key must include knobs that affect output; otherwise comparisons (and correctness)
     // are broken because a previous scrape can be returned for a different mode.
-    let cache_key = compute_scrape_cache_key(url, quality_mode, query, strict_relevance, relevance_threshold, extract_app_state);
+    let cache_key = compute_scrape_cache_key(
+        url,
+        ScrapeCacheKeyKnobs {
+            quality_mode,
+            query,
+            strict_relevance,
+            relevance_threshold,
+            extract_app_state,
+            extract_relevant_sections,
+            section_limit,
+            section_threshold,
+        },
+    );
 
     // BOSS LEVEL OPTIMIZATION: Check if in rapid testing mode
     let is_testing = if let Some(memory) = &state.memory {
@@ -162,6 +182,16 @@ pub async fn scrape_url_full(
                         )
                         .await;
 
+                        apply_relevant_section_extract_if_enabled(
+                            state,
+                            &mut result,
+                            query,
+                            extract_relevant_sections,
+                            section_limit,
+                            section_threshold,
+                        )
+                        .await;
+
                         // Log to history
                         if let Some(memory) = &state.memory {
                             let summary = format!(
@@ -227,11 +257,31 @@ pub async fn scrape_url_full(
                                 .await
                             {
                                 Ok((html, _)) => {
-                                    if let Ok(result) = rust_scraper.process_html(&html, url).await
+                                    if let Ok(mut result) = rust_scraper.process_html(&html, url).await
                                     {
                                         let _ = proxy_manager
                                             .record_proxy_result(&new_proxy_url, true, None)
                                             .await;
+
+                                        apply_semantic_shaving_if_enabled(
+                                            state,
+                                            &mut result,
+                                            query,
+                                            strict_relevance,
+                                            relevance_threshold,
+                                        )
+                                        .await;
+
+                                        apply_relevant_section_extract_if_enabled(
+                                            state,
+                                            &mut result,
+                                            query,
+                                            extract_relevant_sections,
+                                            section_limit,
+                                            section_threshold,
+                                        )
+                                        .await;
+
                                         // Note: retry path uses the same cache key.
                                         state
                                             .scrape_cache
@@ -577,6 +627,16 @@ pub async fn scrape_url_full(
     )
     .await;
 
+    apply_relevant_section_extract_if_enabled(
+        state,
+        &mut result,
+        query,
+        extract_relevant_sections,
+        section_limit,
+        section_threshold,
+    )
+    .await;
+
     state
         .scrape_cache
         .insert(cache_key.clone(), result.clone())
@@ -614,18 +674,34 @@ pub async fn scrape_url_full(
     Ok(result)
 }
 
-fn compute_scrape_cache_key(
-    url: &str,
+#[derive(Clone, Copy, Debug)]
+struct ScrapeCacheKeyKnobs<'a> {
     quality_mode: Option<QualityMode>,
-    query: Option<&str>,
+    query: Option<&'a str>,
     strict_relevance: bool,
     relevance_threshold: Option<f32>,
     extract_app_state: bool,
-) -> String {
+    extract_relevant_sections: bool,
+    section_limit: Option<usize>,
+    section_threshold: Option<f32>,
+}
+
+fn compute_scrape_cache_key(url: &str, knobs: ScrapeCacheKeyKnobs<'_>) -> String {
+    let ScrapeCacheKeyKnobs {
+        quality_mode,
+        query,
+        strict_relevance,
+        relevance_threshold,
+        extract_app_state,
+        extract_relevant_sections,
+        section_limit,
+        section_threshold,
+    } = knobs;
     let ns = if crate::core::config::neurosiphon_enabled() { 1 } else { 0 };
     let qm = quality_mode.unwrap_or(QualityMode::Balanced).as_str();
     let eas = if extract_app_state { 1 } else { 0 };
-    let mut key = format!("{}|qm={}|ns={}|eas={}", url, qm, ns, eas);
+    let ers = if extract_relevant_sections { 1 } else { 0 };
+    let mut key = format!("{}|qm={}|ns={}|eas={}|ers={}", url, qm, ns, eas, ers);
     if strict_relevance {
         let threshold = relevance_threshold.unwrap_or(semantic_shave::DEFAULT_RELEVANCE_THRESHOLD);
         key.push_str(&format!("|sr=1|t={:.3}", threshold));
@@ -638,7 +714,191 @@ fn compute_scrape_cache_key(
             }
         }
     }
+
+    if extract_relevant_sections {
+        let limit = section_limit.unwrap_or(5);
+        let thr = section_threshold.unwrap_or(0.45);
+        key.push_str(&format!("|sl={}|sth={:.3}", limit, thr));
+        if let Some(q) = query {
+            let q = q.trim();
+            if !q.is_empty() {
+                let mut hasher = DefaultHasher::new();
+                q.hash(&mut hasher);
+                key.push_str(&format!("|sq={:016x}", hasher.finish()));
+            }
+        }
+    }
     key
+}
+
+fn split_markdown_sections(markdown: &str) -> Vec<String> {
+    let mut sections: Vec<String> = Vec::new();
+    let mut current: Vec<String> = Vec::new();
+
+    for line in markdown.lines() {
+        let is_heading = line.starts_with('#') && line.chars().take_while(|c| *c == '#').count() <= 6;
+        if is_heading && !current.is_empty() {
+                let s = current.join("\n").trim().to_string();
+                if !s.is_empty() {
+                    sections.push(s);
+                }
+                current.clear();
+        }
+        current.push(line.to_string());
+    }
+
+    if !current.is_empty() {
+        let s = current.join("\n").trim().to_string();
+        if !s.is_empty() {
+            sections.push(s);
+        }
+    }
+
+    // If we didn't find headings, treat the whole doc as a single section.
+    if sections.is_empty() {
+        let s = markdown.trim().to_string();
+        if !s.is_empty() {
+            sections.push(s);
+        }
+    }
+
+    sections
+}
+
+async fn apply_relevant_section_extract_if_enabled(
+    state: &Arc<AppState>,
+    result: &mut ScrapeResponse,
+    query: Option<&str>,
+    extract_relevant_sections: bool,
+    section_limit: Option<usize>,
+    section_threshold: Option<f32>,
+) {
+    if !extract_relevant_sections {
+        return;
+    }
+
+    let Some(q) = query.map(str::trim).filter(|s| !s.is_empty()) else {
+        result.warnings.push("section_extract_missing_query".to_string());
+        return;
+    };
+
+    let original = result.clean_content.clone();
+    let sections = split_markdown_sections(&original);
+    let total = sections.len();
+    if total <= 1 {
+        result.warnings.push("section_extract_single_section".to_string());
+        return;
+    }
+
+    let limit = section_limit.unwrap_or(5).clamp(1, 20);
+    let threshold = section_threshold.unwrap_or(0.45);
+
+    // Prefer embedding similarity when memory/model is available; otherwise do a lightweight
+    // keyword fallback so the feature still works without LanceDB.
+    let mut scored: Vec<(usize, f32)> = Vec::new();
+    if let Some(memory) = &state.memory {
+        if let Ok(model) = memory.get_embedding_model().await {
+            let q_owned = q.to_string();
+            let sections_owned = sections.clone();
+            let model_clone = std::sync::Arc::clone(&model);
+
+            let embed_result: anyhow::Result<(Vec<f32>, Vec<Vec<f32>>)> = match tokio::task::spawn_blocking(move || {
+                let q_vec = model_clone.encode_single(&q_owned);
+                let s_vecs = sections_owned
+                    .iter()
+                    .map(|s| model_clone.encode_single(s))
+                    .collect::<Vec<_>>();
+                Ok::<_, anyhow::Error>((q_vec, s_vecs))
+            })
+            .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!("section_extract spawn_blocking failed: {}", e);
+                    result
+                        .warnings
+                        .push("section_extract_embedding_failed".to_string());
+                    Err(anyhow!("spawn_blocking failed: {}", e))
+                }
+            };
+
+            match embed_result {
+                Ok((q_vec, s_vecs)) => {
+                    for (i, s_vec) in s_vecs.iter().enumerate() {
+                        let sim = semantic_shave::cosine_similarity(&q_vec, s_vec);
+                        scored.push((i, sim));
+                    }
+                }
+                Err(e) => {
+                    warn!("section_extract embedding failed: {}", e);
+                    result.warnings.push("section_extract_embedding_failed".to_string());
+                }
+            }
+        } else {
+            result
+                .warnings
+                .push("section_extract_model_unavailable".to_string());
+        }
+    } else {
+        result.warnings.push("section_extract_no_memory".to_string());
+    }
+
+    if scored.is_empty() {
+        // Keyword fallback scoring
+        let q_lc = q.to_ascii_lowercase();
+        for (i, s) in sections.iter().enumerate() {
+            let s_lc = s.to_ascii_lowercase();
+            let score = if s_lc.contains(&q_lc) { 1.0 } else { 0.0 };
+            scored.push((i, score));
+        }
+    }
+
+    // Keep sections meeting threshold; otherwise keep top-scoring section.
+    let mut keep: Vec<(usize, f32)> = scored
+        .iter()
+        .copied()
+        .filter(|(_, sim)| *sim >= threshold)
+        .collect();
+    keep.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    if keep.is_empty() {
+        if let Some(best) = scored
+            .iter()
+            .copied()
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        {
+            keep.push(best);
+            result.warnings.push(format!(
+                "section_extract: no sections met threshold {:.2}; kept best section",
+                threshold
+            ));
+        }
+    }
+
+    keep.truncate(limit);
+    let kept = keep.len();
+
+    // Re-join in original order
+    let mut keep_idxs = keep.into_iter().map(|(i, _)| i).collect::<Vec<_>>();
+    keep_idxs.sort_unstable();
+    let extracted = keep_idxs
+        .into_iter()
+        .filter_map(|i| sections.get(i).cloned())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    // Safety: never inflate output.
+    if extracted.len() > original.len() {
+        result.warnings.push("section_extract_aborted_expanded".to_string());
+        return;
+    }
+
+    result.clean_content = extracted;
+    result.word_count = result.clean_content.split_whitespace().count();
+    result.warnings.push(format!(
+        "section_extract: kept {}/{} sections",
+        kept, total
+    ));
 }
 
 async fn apply_semantic_shaving_if_enabled(
