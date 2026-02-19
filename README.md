@@ -1,4 +1,4 @@
-# 🥷 ShadowCrawl MCP — v2.3.0
+# 🥷 ShadowCrawl MCP — v2.4.0
 
 <div align="center">
 <img src="media/logo.svg" alt="ShadowCrawl Logo" width="180">
@@ -20,9 +20,9 @@ When every other tool gets blocked, ShadowCrawl doesn't retreat — it **escalat
 
 ---
 
-## ⚡ God-Tier Internal Meta-Search (v2.3.0)
+## ⚡ God-Tier Internal Meta-Search (v2.4.0)
 
-ShadowCrawl v2.3.0 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
+ShadowCrawl v2.4.0 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
 
 | Engine | Coverage | Notes |
 |--------|----------|-------|
@@ -124,6 +124,62 @@ Confirm the HTTP server is alive:
 curl http://localhost:5000/health
 ```
 
+---
+
+## 🧪 Build (Release, All Features)
+
+Build all binaries with all optional features enabled:
+
+```bash
+cd mcp-server
+cargo build --release --all-features
+```
+
+---
+
+## 🧾 Raw Samples (NeuroSiphon vs non-NeuroSiphon vs fetch)
+
+Generate raw sample files to study output completeness/quality and tokenizer savings.
+
+- NeuroSiphon **enabled** (default)
+- NeuroSiphon **disabled**: `SHADOWCRAWL_NEUROSIPHON=0`
+- `fetch` baseline: direct HTTP GET saved as raw HTML
+
+This also generates metasearch samples (JSON) via the `/search` endpoint.
+
+```bash
+python3 ./scripts/generate_samples.py --release
+```
+
+If you want the script to build the release binaries first:
+
+```bash
+python3 ./scripts/generate_samples.py --build --release
+```
+
+Outputs are saved under `samples/`.
+
+---
+
+## 🧬 NeuroSiphon Token-Saving Pipeline (v2.4.0)
+
+ShadowCrawl v2.4.0 integrates **token-efficiency techniques** inspired by NeuroSiphon:
+
+- Repo: https://github.com/DevsHero/NeuroSiphon
+- Kill switch: set `SHADOWCRAWL_NEUROSIPHON=0` to disable all NeuroSiphon behaviors.
+
+These techniques focus on **returning only the most useful content to the agent**, avoiding token leaks (raw HTML, boilerplate imports, DOM scaffolding on SPAs).
+
+| Technique | Trigger | Output behavior | Benefit (tokenizer) |
+|----------|---------|-----------------|---------------------|
+| **Semantic Shaving** (Rule A + Hotfix A) | `scrape_url` with `query` + `strict_relevance=true` | Keeps only semantically relevant paragraphs | Cuts 50–80% noisy text on long pages |
+| **Import Nuker** (Rule B + Hotfix B) | NeuroSiphon enabled + aggressive mode + non-tutorial URL | Removes large `import/require/use` blocks (guarded by heuristics + 15-line minimum) | Removes high-noise “dependency walls” in code blocks |
+| **SPA State Fast-Path** (Rule C) | SPA detected and embedded state exists | Prefers hydration JSON when it’s large enough (≥100 words) | Avoids DOM boilerplate on JS-heavy sites |
+| **Strict App State Mode** (Task 3) | `extract_app_state=true` and SPA state found | Returns hydration JSON as the **only** content; clears `code_blocks`, `links`, `images`, `headings` | Prevents DOM scaffolding from wasting tokens |
+| **Raw HTML Leak Stopper** (Task 1) | NeuroSiphon enabled OR aggressive mode | Forces `include_raw_html=false` even if caller requests it | Prevents massive `<!DOCTYPE html>` token leaks |
+| **Tutorial Immunity** (Task 2) | docs/tutorial/guide URLs | Disables import nuking entirely | Preserves critical tutorial context |
+| **Search Snippet Floor** (Rule D) | internal metasearch | Ensures snippets are useful (min-length) | Avoids useless micro-snippets that waste context |
+
 ### Option B — Build / Install from Source
 
 ```bash
@@ -204,6 +260,7 @@ Use the same stdio setup as VS Code (run `shadowcrawl-mcp` locally and pass env 
 | `SEARCH_CDP_FALLBACK` | `true` if browser found | Auto-retry blocked engines via native Chromium CDP (alias: `SEARCH_BROWSERLESS_FALLBACK`) |
 | `SEARCH_SIMULATE_BLOCK` | — | Force blocked path for testing: `duckduckgo,bing` or `all` |
 | `LANCEDB_URI` | — | Path for semantic research memory (optional) |
+| `SHADOWCRAWL_NEUROSIPHON` | `1` (enabled) | Set to `0` / `false` / `off` to disable all NeuroSiphon techniques (import nuking, SPA extraction, semantic shaving, search reranking) |
 | `HTTP_TIMEOUT_SECS` | `30` | Per-request timeout |
 | `OUTBOUND_LIMIT` | `32` | Max concurrent outbound connections |
 | `MAX_CONTENT_CHARS` | `10000` | Max chars per scraped document |
@@ -214,7 +271,7 @@ Use the same stdio setup as VS Code (run `shadowcrawl-mcp` locally and pass env 
 
 ## 🏆 Comparison
 
-| Feature | Firecrawl / Jina / Tavily | ShadowCrawl v2.3.0 |
+| Feature | Firecrawl / Jina / Tavily | ShadowCrawl v2.4.0 |
 |---------|--------------------------|-------------------|
 | **Cost** | $49–$499/mo | **$0 — self-hosted** |
 | **Privacy** | They see your queries | **100% private, local-only** |

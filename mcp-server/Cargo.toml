@@ -22,10 +22,12 @@ path = "src/bin/mcp-stdio.rs"
 [[bin]]
 name = "search-compare"
 path = "src/bin/search-compare.rs"
+required-features = ["dev-tools"]
 
 [[bin]]
 name = "shadow-sandbox"
 path = "src/bin/shadow-sandbox.rs"
+required-features = ["dev-tools"]
 
 [dependencies]
 # Core Async & Web
@@ -101,6 +103,9 @@ openssl-sys = { version = "0.9", features = ["vendored"] }
 # Keep default builds lean; enable HITL "nuclear option" explicitly.
 default = []
 non_robot_search = ["dep:rodio", "dep:notify-rust", "dep:crossterm", "dep:atty", "dep:rdev", "dep:sysinfo", "dep:rfd"]
+
+# Dev-only helper binaries (not shipped, not built by default).
+dev-tools = []
 
 [dev-dependencies]
 tokio-test = "0.4"

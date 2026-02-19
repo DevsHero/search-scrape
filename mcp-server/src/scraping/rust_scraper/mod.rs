@@ -427,7 +427,7 @@ impl RustScraper {
     }
 
     /// Advanced native-CDP scraping with optional proxy support.
-    /// This is the v2.3.0+ replacement for the legacy HTTP Browserless path.
+    /// This is the v2.4.0+ replacement for the legacy HTTP Browserless path.
     pub async fn scrape_with_browserless_advanced_with_proxy(
         &self,
         url: &str,

@@ -29,7 +29,7 @@ Each release attaches archives containing:
 3) Commit with `[build]` and push to `main`/`master`:
 
 ```bash
-git commit -am "Release v2.3.0 [build]"
+git commit -am "Release v2.4.0 [build]"
 git push
 ```
 

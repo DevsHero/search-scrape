@@ -12,8 +12,18 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tracing::{info, warn};
 
+#[derive(Debug, Clone, Default)]
+pub struct ScrapeUrlOptions {
+    pub use_proxy: bool,
+    pub quality_mode: Option<QualityMode>,
+    pub query: Option<String>,
+    pub strict_relevance: bool,
+    pub relevance_threshold: Option<f32>,
+    pub extract_app_state: bool,
+}
+
 pub async fn scrape_url(state: &Arc<AppState>, url: &str) -> Result<ScrapeResponse> {
-    scrape_url_with_options(state, url, false, None).await
+    scrape_url_full(state, url, ScrapeUrlOptions::default()).await
 }
 
 pub async fn scrape_url_with_options(
@@ -22,7 +32,16 @@ pub async fn scrape_url_with_options(
     use_proxy: bool,
     quality_mode: Option<QualityMode>,
 ) -> Result<ScrapeResponse> {
-    scrape_url_full(state, url, use_proxy, quality_mode, None, false, None, false).await
+    scrape_url_full(
+        state,
+        url,
+        ScrapeUrlOptions {
+            use_proxy,
+            quality_mode,
+            ..Default::default()
+        },
+    )
+    .await
 }
 
 /// Full scrape with optional Semantic Shaving.
@@ -36,13 +55,18 @@ pub async fn scrape_url_with_options(
 pub async fn scrape_url_full(
     state: &Arc<AppState>,
     url: &str,
-    use_proxy: bool,
-    quality_mode: Option<QualityMode>,
-    query: Option<&str>,
-    strict_relevance: bool,
-    relevance_threshold: Option<f32>,
-    extract_app_state: bool,
+    options: ScrapeUrlOptions,
 ) -> Result<ScrapeResponse> {
+    let ScrapeUrlOptions {
+        use_proxy,
+        quality_mode,
+        query,
+        strict_relevance,
+        relevance_threshold,
+        extract_app_state,
+    } = options;
+    let query = query.as_deref();
+
     info!("Scraping URL: {}", url);
 
     // Validate URL

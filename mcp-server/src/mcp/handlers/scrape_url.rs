@@ -33,7 +33,10 @@ pub async fn handle(
     let quality_mode = parse_quality_mode(arguments)?;
 
     // 🧬 Semantic Shaving parameters
-    let query = arguments.get("query").and_then(|v| v.as_str());
+    let query = arguments
+        .get("query")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let strict_relevance = arguments
         .get("strict_relevance")
         .and_then(|v| v.as_bool())
@@ -51,16 +54,16 @@ pub async fn handle(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    match scrape::scrape_url_full(
-        &state,
-        url,
+    let options = scrape::ScrapeUrlOptions {
         use_proxy,
-        Some(quality_mode),
+        quality_mode: Some(quality_mode),
         query,
         strict_relevance,
         relevance_threshold,
         extract_app_state,
-    )
+    };
+
+    match scrape::scrape_url_full(&state, url, options)
     .await
     {
         Ok(mut content) => {
