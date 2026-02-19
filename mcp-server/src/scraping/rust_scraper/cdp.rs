@@ -141,13 +141,13 @@ impl RustScraper {
         // 🧬 Visual Noise Filter (NeuroSiphon DNA)
         // Remove DOM elements that are visually invisible or known noise before capturing HTML.
         // This strips 20-30% of token waste: cookie banners, off-screen trackers, hidden divs.
-            if crate::core::config::neurosiphon_enabled() {
-                let noise_filter_script = Self::visual_noise_filter_script();
-                if let Err(e) = page.evaluate(noise_filter_script).await {
-                    // Non-fatal: some pages block eval or are cross-origin restricted
-                    warn!("⚠️ Visual noise filter script failed (non-fatal): {}", e);
-                }
+        if crate::core::config::neurosiphon_enabled() {
+            let noise_filter_script = Self::visual_noise_filter_script();
+            if let Err(e) = page.evaluate(noise_filter_script).await {
+                // Non-fatal: some pages block eval or are cross-origin restricted
+                warn!("⚠️ Visual noise filter script failed (non-fatal): {}", e);
             }
+        }
 
         let content = page
             .content()
@@ -239,6 +239,9 @@ impl RustScraper {
             self.extract_code_blocks(&document, url_lang_hint.as_deref(), is_tutorial)
         };
 
+        // 🔒 HTML-level Auth-Wall check — fast DOM selector scan on raw HTML.
+        let auth_wall_html_reason = self.detect_auth_wall_html(html, url);
+
         // JSON-LD can be the cleanest source on modern sites; prefer it when present.
         let json_ld_content = self.extract_json_ld(&document);
 
@@ -278,9 +281,9 @@ impl RustScraper {
         // JSON IS the content; DOM scaffolding is pure token waste in this mode.
         let spa_forced = self.extract_app_state && spa_state_content.is_some();
         let code_blocks = if spa_forced { vec![] } else { code_blocks };
-        let links      = if spa_forced { vec![] } else { links };
-        let images     = if spa_forced { vec![] } else { images };
-        let headings   = if spa_forced { vec![] } else { headings };
+        let links = if spa_forced { vec![] } else { links };
+        let images = if spa_forced { vec![] } else { images };
+        let headings = if spa_forced { vec![] } else { headings };
 
         let mut embedded_data_sources = self.collect_embedded_data_sources(&document);
         let mut embedded_state_json = embedded_data_sources
@@ -309,6 +312,13 @@ impl RustScraper {
             settle_time_ms: None,
             noise_reduction_ratio,
         };
+
+        // 🔒 Auth-Wall Guard Dog (merged): HTML-level + clean-text detection.
+        let auth_wall_reason =
+            auth_wall_html_reason.or_else(|| self.detect_auth_wall(&clean_content, url));
+        if auth_wall_reason.is_some() {
+            warnings.push("content_restricted".to_string());
+        }
 
         clean_content = self.append_image_context_markdown(clean_content, &images, &title);
         let word_count = self.count_words(&clean_content);
@@ -351,6 +361,7 @@ impl RustScraper {
             extraction_score: Some(extraction_score),
             warnings,
             domain,
+            auth_wall_reason,
         })
     }
 
@@ -441,4 +452,5 @@ impl RustScraper {
     return removed;
 })();
 "#
-    }}
+    }
+}

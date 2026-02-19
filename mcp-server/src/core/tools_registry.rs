@@ -74,12 +74,14 @@ impl ToolRegistry {
             .public_to_internal
             .insert("site_crawl".to_string(), "crawl_website".to_string());
 
-        registry
-            .public_to_internal
-            .insert("extract_fields".to_string(), "extract_structured".to_string());
-        registry
-            .public_to_internal
-            .insert("structured_extract".to_string(), "extract_structured".to_string());
+        registry.public_to_internal.insert(
+            "extract_fields".to_string(),
+            "extract_structured".to_string(),
+        );
+        registry.public_to_internal.insert(
+            "structured_extract".to_string(),
+            "extract_structured".to_string(),
+        );
 
         registry
             .public_to_internal
@@ -92,9 +94,10 @@ impl ToolRegistry {
         registry
             .public_to_internal
             .insert("hitl_web_fetch".to_string(), "non_robot_search".to_string());
-        registry
-            .public_to_internal
-            .insert("human_web_fetch".to_string(), "non_robot_search".to_string());
+        registry.public_to_internal.insert(
+            "human_web_fetch".to_string(),
+            "non_robot_search".to_string(),
+        );
 
         for internal in internal_catalog {
             let internal_name = internal.name.to_string();

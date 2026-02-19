@@ -171,6 +171,29 @@ pub async fn crawl_website(
                     .await
                     {
                         Ok(data) => {
+                            // Auth-wall handling: never treat login walls as successful content.
+                            // If the START URL is auth-walled, abort the entire crawl and
+                            // signal NEED_HITL to the caller for immediate HITL escalation.
+                            let is_auth_walled = data.auth_wall_reason.is_some()
+                                || data.warnings.iter().any(|w| w == "content_restricted");
+                            if is_auth_walled {
+                                let reason = data.auth_wall_reason.clone().unwrap_or_else(|| {
+                                    "Auth-Wall detected (login page returned HTTP 200)".to_string()
+                                });
+                                let result = CrawlPageResult {
+                                    url: url.clone(),
+                                    depth,
+                                    success: false,
+                                    title: Some(data.title),
+                                    word_count: Some(data.word_count),
+                                    links_found: Some(data.links.len()),
+                                    content_preview: None,
+                                    error: Some(format!("NEED_HITL: {} (url: {})", reason, url)),
+                                    duration_ms: page_start.elapsed().as_millis() as u64,
+                                };
+                                return (result, vec![]);
+                            }
+
                             // Extract domain
                             let domain = Url::parse(&url)
                                 .ok()
@@ -253,6 +276,16 @@ pub async fn crawl_website(
             .await;
 
         // Process results and add new URLs to queue
+        // If the start URL hit an auth-wall, abort immediately (HITL required).
+        for (r, _) in batch_results.iter() {
+            if r.depth == 0 {
+                if let Some(err) = r.error.as_deref() {
+                    if err.starts_with("NEED_HITL:") {
+                        return Err(anyhow::anyhow!(err.to_string()));
+                    }
+                }
+            }
+        }
         for (result, new_urls) in batch_results {
             results.lock().await.push(result);
 

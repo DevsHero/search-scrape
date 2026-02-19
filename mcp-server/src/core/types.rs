@@ -118,6 +118,33 @@ pub struct ScrapeResponse {
     pub warnings: Vec<String>,
     #[serde(default)]
     pub domain: Option<String>,
+    /// Populated when an Auth-Wall is detected (HTTP-200 login page).
+    /// The handler uses this to return a structured `blocked_by_auth` response.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_wall_reason: Option<String>,
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// 🔒 Auth-Wall Blocked Response — Feature 2
+// Structured JSON returned instead of garbage content when a login wall is hit.
+// ───────────────────────────────────────────────────────────────────────────
+
+/// Returned by the `scrape_url` / `crawl_website` tools when an auth-wall is
+/// detected.  Never returns a broken page; always surfaces a clear action plan.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthWallBlocked {
+    /// Always `"blocked_by_auth"` — lets callers pattern-match on `status`.
+    pub status: String,
+    /// Human-readable description of how the wall was detected.
+    pub reason: String,
+    /// The URL that triggered the wall.
+    pub url: String,
+    /// Canonical action agents should take next.
+    pub suggested_action: String,
+    /// For GitHub blob pages: the equivalent raw.githubusercontent.com URL that
+    /// was already attempted (or should be attempted with credentials).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub github_raw_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -298,5 +325,52 @@ pub struct ExtractResponse {
     pub confidence: f64,
     pub duration_ms: u64,
     #[serde(default)]
+    pub warnings: Vec<String>,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🎯 Sniper Mode — Feature 3: Token-Optimised "clean_json" Output
+// Lean structured output designed to maximise information density per token.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Token-optimised JSON output for `output_format = "clean_json"`.
+///
+/// Strips all navigation, headers, footers, sidebars, and boilerplate.
+/// Returns only `title`, substantive body paragraphs, code blocks, and
+/// minimal metadata — designed to minimise LLM context consumption.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SniperOutput {
+    /// The page title.
+    pub title: String,
+    /// Condensed one-sentence summary bullets — first sentence of each key paragraph.
+    /// Designed for agents that need a quick overview without reading full paragraphs.
+    pub key_points: Vec<String>,
+    /// Substantive body paragraphs with noise filtered out.
+    pub key_paragraphs: Vec<String>,
+    /// Code blocks extracted from the page.
+    pub key_code_blocks: Vec<SniperCodeBlock>,
+    /// Minimal provenance metadata.
+    pub metadata: SniperMetadata,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SniperCodeBlock {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    pub code: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SniperMetadata {
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub published_at: Option<String>,
+    pub word_count: usize,
+    /// Extraction quality score [0.0–1.0]. < 0.4 = low confidence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extraction_score: Option<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
 }

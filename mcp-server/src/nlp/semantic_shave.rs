@@ -51,7 +51,7 @@ pub async fn semantic_shave(
 
     // ── 1. Chunk the content ──────────────────────────────────────────────────
     let chunks = chunk_text(content, CHUNK_WORDS, CHUNK_STRIDE_WORDS);
-    let total  = chunks.len();
+    let total = chunks.len();
 
     if total <= 1 {
         // Nothing to shave — single chunk always kept
@@ -59,9 +59,9 @@ pub async fn semantic_shave(
     }
 
     // ── 2. Embed query + all chunks synchronously in a blocking thread ────────
-    let query_owned  = query.to_string();
+    let query_owned = query.to_string();
     let chunks_owned = chunks.clone();
-    let model_clone  = Arc::clone(&model);
+    let model_clone = Arc::clone(&model);
 
     let (query_vec, chunk_vecs): (Vec<f32>, Vec<Vec<f32>>) =
         tokio::task::spawn_blocking(move || {
@@ -146,9 +146,9 @@ fn chunk_text(text: &str, window: usize, stride: usize) -> Vec<String> {
     }
 
     let mut chunks = Vec::new();
-    let mut start  = 0usize;
+    let mut start = 0usize;
     while start < words.len() {
-        let end  = (start + window).min(words.len());
+        let end = (start + window).min(words.len());
         let chunk = words[start..end].join(" ");
         if !chunk.trim().is_empty() {
             chunks.push(chunk);

@@ -739,34 +739,34 @@ pub async fn search_web_with_params(
     let mut duplicate_warning = None;
     if neurosiphon {
         if let Some(memory) = &state.memory {
-        match memory.find_recent_duplicate(query, 6).await {
-            Ok(Some((entry, score))) => {
-                let time_ago = chrono::Utc::now().signed_duration_since(entry.timestamp);
-                let hours = time_ago.num_hours();
-                let minutes = time_ago.num_minutes();
+            match memory.find_recent_duplicate(query, 6).await {
+                Ok(Some((entry, score))) => {
+                    let time_ago = chrono::Utc::now().signed_duration_since(entry.timestamp);
+                    let hours = time_ago.num_hours();
+                    let minutes = time_ago.num_minutes();
 
-                let time_str = if hours > 0 {
-                    format!("{} hour{} ago", hours, if hours == 1 { "" } else { "s" })
-                } else {
-                    format!(
-                        "{} minute{} ago",
-                        minutes,
-                        if minutes == 1 { "" } else { "s" }
-                    )
-                };
+                    let time_str = if hours > 0 {
+                        format!("{} hour{} ago", hours, if hours == 1 { "" } else { "s" })
+                    } else {
+                        format!(
+                            "{} minute{} ago",
+                            minutes,
+                            if minutes == 1 { "" } else { "s" }
+                        )
+                    };
 
-                duplicate_warning = Some(format!(
+                    duplicate_warning = Some(format!(
                     "⚠️ Similar search found from {} (similarity: {:.2}). Consider checking history first.",
                     time_str, score
                 ));
-                warn!(
-                    "Duplicate search detected: {} ({} ago)",
-                    entry.query, time_str
-                );
+                    warn!(
+                        "Duplicate search detected: {} ({} ago)",
+                        entry.query, time_str
+                    );
+                }
+                Ok(None) => {}
+                Err(e) => warn!("Failed to check for duplicates: {}", e),
             }
-            Ok(None) => {}
-            Err(e) => warn!("Failed to check for duplicates: {}", e),
-        }
         }
     }
 
@@ -877,7 +877,7 @@ pub async fn search_web_with_params(
         let result_json = serde_json::to_value(&final_results).unwrap_or_default();
 
         if let Err(e) = memory
-                .log_search(query.to_string(), &result_json, final_results.len())
+            .log_search(query.to_string(), &result_json, final_results.len())
             .await
         {
             warn!("Failed to log search to history: {}", e);

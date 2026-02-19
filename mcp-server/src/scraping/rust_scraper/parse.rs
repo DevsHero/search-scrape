@@ -152,7 +152,7 @@ impl RustScraper {
         images
     }
 
-/// Extract code blocks with language hints.
+    /// Extract code blocks with language hints.
     /// When content is detected as code, applies NeuroSiphon-style import nuking
     /// to strip boilerplate import / use / require lines that add token noise
     /// without contributing to the logical content of the block.
@@ -160,7 +160,12 @@ impl RustScraper {
     /// `url_lang_hint`: language inferred from the URL extension (e.g. `Some("rust")` for
     /// `.rs` files).  Used as fallback when no code-fence class is found in the HTML;
     /// enables import nuking on raw source files served from GitHub/CDN.
-    pub(super) fn extract_code_blocks(&self, document: &Html, url_lang_hint: Option<&str>, is_tutorial: bool) -> Vec<CodeBlock> {
+    pub(super) fn extract_code_blocks(
+        &self,
+        document: &Html,
+        url_lang_hint: Option<&str>,
+        is_tutorial: bool,
+    ) -> Vec<CodeBlock> {
         let mut code_blocks = Vec::new();
 
         // Extract <pre><code> blocks
@@ -203,20 +208,17 @@ impl RustScraper {
                     }
                     let code_sel = Selector::parse("code").ok()?;
                     let code_el = element.select(&code_sel).next()?;
-                    code_el
-                        .value()
-                        .attr("class")
-                        .and_then(|classes| {
-                            classes
-                                .split_whitespace()
-                                .find(|c| c.starts_with("language-") || c.starts_with("lang-"))
-                                .map(|c| {
-                                    c.strip_prefix("language-")
-                                        .or_else(|| c.strip_prefix("lang-"))
-                                        .unwrap_or(c)
-                                        .to_string()
-                                })
-                        })
+                    code_el.value().attr("class").and_then(|classes| {
+                        classes
+                            .split_whitespace()
+                            .find(|c| c.starts_with("language-") || c.starts_with("lang-"))
+                            .map(|c| {
+                                c.strip_prefix("language-")
+                                    .or_else(|| c.strip_prefix("lang-"))
+                                    .unwrap_or(c)
+                                    .to_string()
+                            })
+                    })
                 });
 
                 // 🧬 Rule B: fall back to the URL-inferred language when the HTML carries
@@ -228,7 +230,10 @@ impl RustScraper {
                 // Import blocks are noisy and rarely relevant to the user's query.
                 // 🧬 Task 2 (Tutorial Immunity): never strip imports on documentation / tutorial
                 // sites — imports are critical context there, not noise.
-                let code = if !is_tutorial && crate::core::config::neurosiphon_enabled() && self.is_aggressive_mode() {
+                let code = if !is_tutorial
+                    && crate::core::config::neurosiphon_enabled()
+                    && self.is_aggressive_mode()
+                {
                     nuke_import_block(&code, language.as_deref())
                 } else {
                     code
@@ -291,8 +296,7 @@ fn nuke_import_block(code: &str, language: Option<&str>) -> String {
         }),
         "go" => Box::new(|line: &str| {
             let t = line.trim();
-            (t.starts_with("import ") || t == "import (")
-                && !contains_todo_fixme(t)
+            (t.starts_with("import ") || t == "import (") && !contains_todo_fixme(t)
         }),
         "java" | "kotlin" | "scala" => Box::new(|line: &str| {
             let t = line.trim();
@@ -340,7 +344,8 @@ fn nuke_import_block(code: &str, language: Option<&str>) -> String {
                 continue;
             }
 
-            if (t.starts_with("use ") || t.starts_with("extern crate ")) && !contains_todo_fixme(t) {
+            if (t.starts_with("use ") || t.starts_with("extern crate ")) && !contains_todo_fixme(t)
+            {
                 leading_end += 1;
                 if !t.contains(';') {
                     in_rust_multiline_use = true;
@@ -362,7 +367,8 @@ fn nuke_import_block(code: &str, language: Option<&str>) -> String {
     let import_ratio = leading_end as f64 / total.max(1) as f64;
     // Aggressive mode: also strip 1-2 leading import lines when the snippet is long,
     // because they tend to be boilerplate and waste tokens.
-    let should_nuke = (leading_end >= 3 && import_ratio > 0.30) || (leading_end >= 1 && total >= 12 && import_ratio > 0.10);
+    let should_nuke = (leading_end >= 3 && import_ratio > 0.30)
+        || (leading_end >= 1 && total >= 12 && import_ratio > 0.10);
 
     if should_nuke {
         let trimmed = lines[leading_end..].join("\n");

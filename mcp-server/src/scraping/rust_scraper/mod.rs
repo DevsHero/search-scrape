@@ -125,16 +125,16 @@ impl RustScraper {
         let path = url.path();
         let ext = path.rsplit('.').next()?.to_ascii_lowercase();
         match ext.as_str() {
-            "rs"              => Some("rust".to_string()),
-            "py" | "pyw"      => Some("python".to_string()),
+            "rs" => Some("rust".to_string()),
+            "py" | "pyw" => Some("python".to_string()),
             "js" | "mjs" | "cjs" => Some("javascript".to_string()),
             "ts" | "mts" | "cts" => Some("typescript".to_string()),
-            "go"              => Some("go".to_string()),
-            "java"            => Some("java".to_string()),
-            "kt"              => Some("kotlin".to_string()),
-            "cs"              => Some("csharp".to_string()),
-            "rb"              => Some("ruby".to_string()),
-            _                 => None,
+            "go" => Some("go".to_string()),
+            "java" => Some("java".to_string()),
+            "kt" => Some("kotlin".to_string()),
+            "cs" => Some("csharp".to_string()),
+            "rb" => Some("ruby".to_string()),
+            _ => None,
         }
     }
 
@@ -234,7 +234,13 @@ impl RustScraper {
         // though they carry no HTML code-fence class attributes.
         let url_lang_hint = Self::infer_language_from_url(&parsed_url);
         let is_tutorial = Self::is_tutorial_url(&parsed_url);
-        let code_blocks = self.extract_code_blocks(&document, url_lang_hint.as_deref(), is_tutorial);
+        let code_blocks =
+            self.extract_code_blocks(&document, url_lang_hint.as_deref(), is_tutorial);
+
+        // 🔒 HTML-level Auth-Wall check — fast DOM selector scan on raw HTML.
+        // This fires BEFORE the expensive extraction pipeline and catches
+        // JS-rendered login pages that would otherwise produce empty clean_content.
+        let auth_wall_html_reason = self.detect_auth_wall_html(&html, url);
 
         // JSON-LD can be the cleanest source on modern sites; prefer it when present.
         let json_ld_content = self.extract_json_ld(&document);
@@ -247,9 +253,8 @@ impl RustScraper {
             // 🧬 Rule C: only commit to the SPA JSON fast-path when it yields enough
             // readable content (≥ 100 words) OR the caller explicitly requested raw
             // app state via `extract_app_state = true`.
-            self.extract_spa_json_state(&html).filter(|extracted| {
-                self.extract_app_state || self.count_words(extracted) >= 100
-            })
+            self.extract_spa_json_state(&html)
+                .filter(|extracted| self.extract_app_state || self.count_words(extracted) >= 100)
         } else {
             None
         };
@@ -281,9 +286,9 @@ impl RustScraper {
         // JSON IS the content; DOM scaffolding is pure token waste in this mode.
         let spa_forced = self.extract_app_state && spa_state_content.is_some();
         let code_blocks = if spa_forced { vec![] } else { code_blocks };
-        let links      = if spa_forced { vec![] } else { links };
-        let images     = if spa_forced { vec![] } else { images };
-        let headings   = if spa_forced { vec![] } else { headings };
+        let links = if spa_forced { vec![] } else { links };
+        let images = if spa_forced { vec![] } else { images };
+        let headings = if spa_forced { vec![] } else { headings };
 
         let mut embedded_data_sources = self.collect_embedded_data_sources(&document);
         let mut embedded_state_json = embedded_data_sources
@@ -311,6 +316,15 @@ impl RustScraper {
             settle_time_ms: None,
             noise_reduction_ratio,
         };
+
+        // 🔒 Auth-Wall Guard Dog (merged): HTML-level DOM detection + clean-text keyword detection.
+        // Stores the reason in `auth_wall_reason` for the handler to surface as structured JSON.
+        // Does NOT modify clean_content — the handler decides how to present this.
+        let auth_wall_reason =
+            auth_wall_html_reason.or_else(|| self.detect_auth_wall(&clean_content, url));
+        if auth_wall_reason.is_some() {
+            warnings.push("content_restricted".to_string());
+        }
 
         clean_content = self.append_image_context_markdown(clean_content, &images, &title);
         let word_count = self.count_words(&clean_content);
@@ -357,6 +371,7 @@ impl RustScraper {
             extraction_score: Some(extraction_score),
             warnings,
             domain,
+            auth_wall_reason,
         };
 
         info!(

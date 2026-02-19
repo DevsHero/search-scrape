@@ -95,7 +95,12 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
                     },
                     "max_chars": {"type": "integer"},
                     "max_links": {"type": "integer", "minimum": 1},
-                    "output_format": {"type": "string", "enum": ["text", "json"], "default": "text"},
+                    "output_format": {
+                        "type": "string",
+                        "enum": ["text", "json", "clean_json"],
+                        "default": "text",
+                        "description": "Output format. 'text' = readable prose (default). 'json' = full ScrapeResponse JSON. 'clean_json' = Sniper Mode: lean token-optimised JSON with only title, key paragraphs, code blocks and metadata — strips 100% of nav/footer/boilerplate noise."
+                    },
                     "include_raw_html": {"type": "boolean", "default": false, "description": "Include raw HTML in JSON responses. Note: in NeuroSiphon or aggressive mode this is force-disabled to prevent token leaks."},
                     "use_proxy": {"type": "boolean", "default": false},
                     "quality_mode": {"type": "string", "enum": ["balanced", "aggressive", "high"], "default": "balanced"},

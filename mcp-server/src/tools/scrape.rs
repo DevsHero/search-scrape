@@ -75,17 +75,18 @@ pub async fn scrape_url_full(
     } = options;
     let query = query.as_deref();
 
-    info!("Scraping URL: {}", url);
+    let requested_url = url;
+    info!("Scraping URL: {}", requested_url);
 
     // Validate URL
-    if !url.starts_with("http://") && !url.starts_with("https://") {
+    if !requested_url.starts_with("http://") && !requested_url.starts_with("https://") {
         return Err(anyhow!("Invalid URL: must start with http:// or https://"));
     }
 
     // 🧬 Smart URL rewrite: transform well-known URL patterns into their cleanest form.
     // GitHub /blob/ pages → raw.githubusercontent.com returns plain text directly.
-    let url_rewritten = rewrite_url_for_clean_content(url);
-    let url: &str = url_rewritten.as_deref().unwrap_or(url);
+    let url_rewritten = rewrite_url_for_clean_content(requested_url);
+    let url: &str = url_rewritten.as_deref().unwrap_or(requested_url);
 
     // Cache key must include knobs that affect output; otherwise comparisons (and correctness)
     // are broken because a previous scrape can be returned for a different mode.
@@ -262,7 +263,8 @@ pub async fn scrape_url_full(
                                 .await
                             {
                                 Ok((html, _)) => {
-                                    if let Ok(mut result) = rust_scraper.process_html(&html, url).await
+                                    if let Ok(mut result) =
+                                        rust_scraper.process_html(&html, url).await
                                     {
                                         let _ = proxy_manager
                                             .record_proxy_result(&new_proxy_url, true, None)
@@ -623,6 +625,53 @@ pub async fn scrape_url_full(
         );
     }
 
+    // ────────────────────────────────────────────────────────────────────────
+    // 🔀 GitHub Pivot Retry (Auth-Walls) — Enterprise Upgrade
+    // If we detect an auth-wall on GitHub, try a single alternate URL pivot
+    // BEFORE telling the user to escalate to HITL.
+    //
+    // No latency impact on success path: this runs only when auth-walled.
+    // Prevents cache poisoning: auth-walled responses are NOT cached.
+    // ────────────────────────────────────────────────────────────────────────
+    let is_auth_walled = result.auth_wall_reason.is_some()
+        || result.warnings.iter().any(|w| w == "content_restricted");
+
+    if is_auth_walled {
+        // Only attempt pivot for github.com (not raw) and only once.
+        if let Some(pivot_url) = github_pivot_plain_url(requested_url) {
+            if pivot_url != requested_url && pivot_url != url_owned {
+                info!("🔀 Auth-wall GitHub pivot retry: {}", pivot_url);
+                let pivot_options = ScrapeUrlOptions {
+                    use_proxy,
+                    quality_mode,
+                    query: query.map(|s| s.to_string()),
+                    strict_relevance,
+                    relevance_threshold,
+                    extract_app_state,
+                    extract_relevant_sections,
+                    section_limit,
+                    section_threshold,
+                };
+                if let Ok(pivot_result) =
+                    Box::pin(scrape_url_full(state, &pivot_url, pivot_options)).await
+                {
+                    let pivot_auth_walled = pivot_result.auth_wall_reason.is_some()
+                        || pivot_result
+                            .warnings
+                            .iter()
+                            .any(|w| w == "content_restricted");
+                    if !pivot_auth_walled && pivot_result.word_count > result.word_count {
+                        return Ok(pivot_result);
+                    }
+                }
+            }
+        }
+
+        // Do not cache auth-walled results: they are usually transient and will
+        // change after HITL login.
+        state.scrape_cache.invalidate(&cache_key).await;
+    }
+
     apply_semantic_shaving_if_enabled(
         state,
         &mut result,
@@ -642,10 +691,14 @@ pub async fn scrape_url_full(
     )
     .await;
 
-    state
-        .scrape_cache
-        .insert(cache_key.clone(), result.clone())
-        .await;
+    if !(result.auth_wall_reason.is_some()
+        || result.warnings.iter().any(|w| w == "content_restricted"))
+    {
+        state
+            .scrape_cache
+            .insert(cache_key.clone(), result.clone())
+            .await;
+    }
 
     // Auto-log to history if memory is enabled (Phase 1)
     if let Some(memory) = &state.memory {
@@ -679,6 +732,25 @@ pub async fn scrape_url_full(
     Ok(result)
 }
 
+fn github_pivot_plain_url(url: &str) -> Option<String> {
+    let u = url::Url::parse(url).ok()?;
+    let host = u.host_str()?.to_ascii_lowercase();
+    if host != "github.com" {
+        return None;
+    }
+    // /blob/ URLs are already rewritten to raw.githubusercontent.com upstream.
+    if u.path().contains("/blob/") {
+        return None;
+    }
+    // If already plain=1, nothing to do.
+    if u.query_pairs().any(|(k, v)| k == "plain" && v == "1") {
+        return None;
+    }
+    let mut u2 = u.clone();
+    u2.query_pairs_mut().append_pair("plain", "1");
+    Some(u2.to_string())
+}
+
 #[derive(Clone, Copy, Debug)]
 struct ScrapeCacheKeyKnobs<'a> {
     quality_mode: Option<QualityMode>,
@@ -702,7 +774,11 @@ fn compute_scrape_cache_key(url: &str, knobs: ScrapeCacheKeyKnobs<'_>) -> String
         section_limit,
         section_threshold,
     } = knobs;
-    let ns = if crate::core::config::neurosiphon_enabled() { 1 } else { 0 };
+    let ns = if crate::core::config::neurosiphon_enabled() {
+        1
+    } else {
+        0
+    };
     let qm = quality_mode.unwrap_or(QualityMode::Balanced).as_str();
     let eas = if extract_app_state { 1 } else { 0 };
     let ers = if extract_relevant_sections { 1 } else { 0 };
@@ -741,13 +817,14 @@ fn split_markdown_sections(markdown: &str) -> Vec<String> {
     let mut current: Vec<String> = Vec::new();
 
     for line in markdown.lines() {
-        let is_heading = line.starts_with('#') && line.chars().take_while(|c| *c == '#').count() <= 6;
+        let is_heading =
+            line.starts_with('#') && line.chars().take_while(|c| *c == '#').count() <= 6;
         if is_heading && !current.is_empty() {
-                let s = current.join("\n").trim().to_string();
-                if !s.is_empty() {
-                    sections.push(s);
-                }
-                current.clear();
+            let s = current.join("\n").trim().to_string();
+            if !s.is_empty() {
+                sections.push(s);
+            }
+            current.clear();
         }
         current.push(line.to_string());
     }
@@ -783,7 +860,9 @@ async fn apply_relevant_section_extract_if_enabled(
     }
 
     let Some(q) = query.map(str::trim).filter(|s| !s.is_empty()) else {
-        result.warnings.push("section_extract_missing_query".to_string());
+        result
+            .warnings
+            .push("section_extract_missing_query".to_string());
         return;
     };
 
@@ -791,7 +870,9 @@ async fn apply_relevant_section_extract_if_enabled(
     let sections = split_markdown_sections(&original);
     let total = sections.len();
     if total <= 1 {
-        result.warnings.push("section_extract_single_section".to_string());
+        result
+            .warnings
+            .push("section_extract_single_section".to_string());
         return;
     }
 
@@ -807,25 +888,26 @@ async fn apply_relevant_section_extract_if_enabled(
             let sections_owned = sections.clone();
             let model_clone = std::sync::Arc::clone(&model);
 
-            let embed_result: anyhow::Result<(Vec<f32>, Vec<Vec<f32>>)> = match tokio::task::spawn_blocking(move || {
-                let q_vec = model_clone.encode_single(&q_owned);
-                let s_vecs = sections_owned
-                    .iter()
-                    .map(|s| model_clone.encode_single(s))
-                    .collect::<Vec<_>>();
-                Ok::<_, anyhow::Error>((q_vec, s_vecs))
-            })
-            .await
-            {
-                Ok(v) => v,
-                Err(e) => {
-                    warn!("section_extract spawn_blocking failed: {}", e);
-                    result
-                        .warnings
-                        .push("section_extract_embedding_failed".to_string());
-                    Err(anyhow!("spawn_blocking failed: {}", e))
-                }
-            };
+            let embed_result: anyhow::Result<(Vec<f32>, Vec<Vec<f32>>)> =
+                match tokio::task::spawn_blocking(move || {
+                    let q_vec = model_clone.encode_single(&q_owned);
+                    let s_vecs = sections_owned
+                        .iter()
+                        .map(|s| model_clone.encode_single(s))
+                        .collect::<Vec<_>>();
+                    Ok::<_, anyhow::Error>((q_vec, s_vecs))
+                })
+                .await
+                {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!("section_extract spawn_blocking failed: {}", e);
+                        result
+                            .warnings
+                            .push("section_extract_embedding_failed".to_string());
+                        Err(anyhow!("spawn_blocking failed: {}", e))
+                    }
+                };
 
             match embed_result {
                 Ok((q_vec, s_vecs)) => {
@@ -836,7 +918,9 @@ async fn apply_relevant_section_extract_if_enabled(
                 }
                 Err(e) => {
                     warn!("section_extract embedding failed: {}", e);
-                    result.warnings.push("section_extract_embedding_failed".to_string());
+                    result
+                        .warnings
+                        .push("section_extract_embedding_failed".to_string());
                 }
             }
         } else {
@@ -845,7 +929,9 @@ async fn apply_relevant_section_extract_if_enabled(
                 .push("section_extract_model_unavailable".to_string());
         }
     } else {
-        result.warnings.push("section_extract_no_memory".to_string());
+        result
+            .warnings
+            .push("section_extract_no_memory".to_string());
     }
 
     if scored.is_empty() {
@@ -894,16 +980,17 @@ async fn apply_relevant_section_extract_if_enabled(
 
     // Safety: never inflate output.
     if extracted.len() > original.len() {
-        result.warnings.push("section_extract_aborted_expanded".to_string());
+        result
+            .warnings
+            .push("section_extract_aborted_expanded".to_string());
         return;
     }
 
     result.clean_content = extracted;
     result.word_count = result.clean_content.split_whitespace().count();
-    result.warnings.push(format!(
-        "section_extract: kept {}/{} sections",
-        kept, total
-    ));
+    result
+        .warnings
+        .push(format!("section_extract: kept {}/{} sections", kept, total));
 }
 
 async fn apply_semantic_shaving_if_enabled(
@@ -924,7 +1011,9 @@ async fn apply_semantic_shaving_if_enabled(
     }
 
     let Some(q) = query.map(str::trim).filter(|s| !s.is_empty()) else {
-        result.warnings.push("semantic_shave_missing_query".to_string());
+        result
+            .warnings
+            .push("semantic_shave_missing_query".to_string());
         return;
     };
 
@@ -937,7 +1026,10 @@ async fn apply_semantic_shaving_if_enabled(
     let model = match memory.get_embedding_model().await {
         Ok(m) => m,
         Err(e) => {
-            warn!("⚠️ Could not load embedding model for semantic shave: {}", e);
+            warn!(
+                "⚠️ Could not load embedding model for semantic shave: {}",
+                e
+            );
             result
                 .warnings
                 .push("semantic_shave_model_unavailable".to_string());
@@ -946,7 +1038,8 @@ async fn apply_semantic_shaving_if_enabled(
     };
 
     let before_words = result.word_count;
-    match semantic_shave::semantic_shave(model, &result.clean_content, q, relevance_threshold).await {
+    match semantic_shave::semantic_shave(model, &result.clean_content, q, relevance_threshold).await
+    {
         Ok((shaved, kept, total)) => {
             result.clean_content = shaved;
             result.word_count = result.clean_content.split_whitespace().count();
@@ -1095,6 +1188,7 @@ pub async fn scrape_url_fallback(state: &Arc<AppState>, url: &str) -> Result<Scr
         domain: url::Url::parse(url)
             .ok()
             .and_then(|u| u.host_str().map(|h| h.to_string())),
+        auth_wall_reason: None,
     };
 
     info!("Fallback scraper extracted {} words", result.word_count);
@@ -1108,14 +1202,20 @@ pub async fn scrape_url_fallback(state: &Arc<AppState>, url: &str) -> Result<Scr
 ///   GitHub blob pages are React SPAs; the raw URL returns plain source text directly.
 fn rewrite_url_for_clean_content(url: &str) -> Option<String> {
     // GitHub file blob viewer pages
-    if url.contains("github.com/") && url.contains("/blob/") && !url.contains("raw.githubusercontent.com") {
+    if url.contains("github.com/")
+        && url.contains("/blob/")
+        && !url.contains("raw.githubusercontent.com")
+    {
         if let Some(blob_idx) = url.find("/blob/") {
             let prefix = &url[..blob_idx]; // "https://github.com/owner/repo"
             let after_blob = &url[blob_idx + "/blob".len()..]; // "/main/README.md"
             if let Some(gh_idx) = prefix.find("github.com") {
                 let scheme_prefix = &prefix[..gh_idx]; // "https://"
                 let repo_path = &prefix[(gh_idx + "github.com".len())..]; // "/owner/repo"
-                let raw_url = format!("{}raw.githubusercontent.com{}{}", scheme_prefix, repo_path, after_blob);
+                let raw_url = format!(
+                    "{}raw.githubusercontent.com{}{}",
+                    scheme_prefix, repo_path, after_blob
+                );
                 info!("🔀 GitHub blob → raw URL: {}", raw_url);
                 return Some(raw_url);
             }
@@ -1175,6 +1275,7 @@ mod tests {
             extraction_score: None,
             warnings: vec![],
             domain: None,
+            auth_wall_reason: None,
         }
     }
 
@@ -1231,7 +1332,10 @@ More details.
         .await;
 
         assert!(result.clean_content.len() <= before_len);
-        assert!(result.clean_content.to_ascii_lowercase().contains("quantization"));
+        assert!(result
+            .clean_content
+            .to_ascii_lowercase()
+            .contains("quantization"));
         assert!(result
             .warnings
             .iter()
@@ -1248,15 +1352,8 @@ More details.
         let doc = "# A\nHello\n\n## B\nWorld\n";
         let mut result = mk_response(doc);
 
-        apply_relevant_section_extract_if_enabled(
-            &state,
-            &mut result,
-            None,
-            true,
-            None,
-            None,
-        )
-        .await;
+        apply_relevant_section_extract_if_enabled(&state, &mut result, None, true, None, None)
+            .await;
 
         assert_eq!(result.clean_content, doc);
         assert!(result
@@ -1290,7 +1387,9 @@ More details.
         assert!(rewrite_url_for_clean_content("https://github.com/user/repo").is_none());
         assert!(rewrite_url_for_clean_content("https://github.com/user/repo/issues/1").is_none());
         assert!(rewrite_url_for_clean_content("https://docs.python.org/3/").is_none());
-        assert!(rewrite_url_for_clean_content("https://raw.githubusercontent.com/user/repo/main/f.rs").is_none());
+        assert!(rewrite_url_for_clean_content(
+            "https://raw.githubusercontent.com/user/repo/main/f.rs"
+        )
+        .is_none());
     }
-
 }

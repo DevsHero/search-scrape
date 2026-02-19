@@ -8,9 +8,7 @@ Policy:
 
 ### Added
 
-- **GitHub blob URL auto-rewrite**: `web_fetch` on `github.com/*/blob/*` URLs is now transparently rewritten to `raw.githubusercontent.com` before fetching — returns the raw file/source directly instead of GitHub's React SPA shell.
-- **GitHub SPA payload extraction**: `looks_like_spa` now detects GitHub's `react-app.embeddedData` script tag. `extract_spa_json_state` extracts `payload.blob.text`, `payload.readme`, `payload.issue.body`, `payload.pullRequest.body`, `payload.discussion.body` from the embedded JSON — gives clean readable content on repo home pages, issues, and PR pages.
-- **JSON fragment line filter** in `post_clean_text`: Lines that are ≥55% JSON structural tokens (`{}"[]:,`) and lines starting with `{` or `[` with length >40 are stripped as pipeline noise — prevents escaped GitHub SPA fragments from leaking into `clean_content`.
+- —
 
 ### Changed
 
@@ -19,6 +17,26 @@ Policy:
 ### Fixed
 
 - —
+
+## v2.5.0 (2026-02-19)
+
+### Added
+
+- **Markdown post-processor**: `normalize_markdown(text: String) -> String` unescapes token-wasting Markdown escapes, collapses excess blank lines, and dedupes navigation link spam.
+- **GitHub blob URL auto-rewrite**: `web_fetch` on `github.com/*/blob/*` URLs is transparently rewritten to `raw.githubusercontent.com` before fetching — returns the raw file/source directly instead of GitHub's React SPA shell.
+- **GitHub SPA payload extraction**: `looks_like_spa` now detects GitHub's `react-app.embeddedData` script tag. `extract_spa_json_state` extracts `payload.blob.text`, `payload.readme`, `payload.issue.body`, `payload.pullRequest.body`, `payload.discussion.body` from the embedded JSON.
+- **Smart Auth-Wall Guard Dog**: HTML DOM selector heuristics + clean-text keyword heuristics set `auth_wall_reason` and prevent returning login pages as real content.
+- **Auth-wall structured outcome**: `web_fetch` / `web_crawl` return `{"status":"NEED_HITL","suggested_action":"non_robot_search"}` when auth-walled.
+- **GitHub pivot retry**: on auth-walls, attempts a one-time GitHub `?plain=1` pivot (when applicable) before recommending HITL.
+
+### Changed
+
+- **Sniper mode (`clean_json`)**: now includes `key_points` (first-sentence bullets) and `extraction_score` in metadata.
+- **Cache safety**: auth-walled scrape results are not cached (avoids “poisoned” cache after manual login).
+
+### Fixed
+
+- **Crawl correctness**: auth-walled pages are treated as failures; auth-walled start URL aborts early with NEED_HITL.
 
 ## v2.4.3 (2026-02-19)
 

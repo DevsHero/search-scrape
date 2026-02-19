@@ -1,7 +1,7 @@
 use super::common::parse_quality_mode;
 use crate::crawl::CrawlConfig;
 use crate::mcp::{McpCallResponse, McpContent};
-use crate::types::ErrorResponse;
+use crate::types::{AuthWallBlocked, ErrorResponse};
 use crate::{crawl, AppState};
 use axum::http::StatusCode;
 use axum::response::Json;
@@ -92,6 +92,27 @@ pub async fn handle(
         }
         Err(e) => {
             error!("Crawl tool error: {}", e);
+
+            let msg = e.to_string();
+            if msg.starts_with("NEED_HITL:") {
+                let blocked = AuthWallBlocked {
+                    status: "NEED_HITL".to_string(),
+                    reason: msg,
+                    url: url.to_string(),
+                    suggested_action: "non_robot_search".to_string(),
+                    github_raw_url: None,
+                };
+                let json_str = serde_json::to_string_pretty(&blocked)
+                    .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
+                return Ok(Json(McpCallResponse {
+                    content: vec![McpContent {
+                        content_type: "text".to_string(),
+                        text: json_str,
+                    }],
+                    is_error: true,
+                }));
+            }
+
             Ok(Json(McpCallResponse {
                 content: vec![McpContent {
                     content_type: "text".to_string(),

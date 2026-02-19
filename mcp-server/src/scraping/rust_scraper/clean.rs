@@ -59,9 +59,27 @@ pub fn determine_content_type(url: &Url, html_peek: &str) -> ContentType {
         "sourcehub.io",
         "codeberg.org",
     ];
-    let code_paths = ["/blob/", "/tree/", "/commit/", "/pulls", "/issues", "/releases"];
-    let qa_hosts = ["stackoverflow.com", "superuser.com", "serverfault.com", "askubuntu.com"];
-    let paste_hosts = ["pastebin.com", "paste.ee", "hastebin.com", "dpaste.com", "nowsecure.io"];
+    let code_paths = [
+        "/blob/",
+        "/tree/",
+        "/commit/",
+        "/pulls",
+        "/issues",
+        "/releases",
+    ];
+    let qa_hosts = [
+        "stackoverflow.com",
+        "superuser.com",
+        "serverfault.com",
+        "askubuntu.com",
+    ];
+    let paste_hosts = [
+        "pastebin.com",
+        "paste.ee",
+        "hastebin.com",
+        "dpaste.com",
+        "nowsecure.io",
+    ];
 
     if code_hosts.iter().any(|h| host.contains(h))
         || code_paths.iter().any(|p| path.contains(p))
@@ -92,8 +110,17 @@ pub fn determine_content_type(url: &Url, html_peek: &str) -> ContentType {
 
     // ── E-Commerce — structured product signals ───────────────────────────────
     let ecom_hosts = [
-        "amazon.", "ebay.", "shopify.", "etsy.", "aliexpress.", "walmart.", "bestbuy.",
-        "target.", "lazada.", "tokopedia.", "shopee.",
+        "amazon.",
+        "ebay.",
+        "shopify.",
+        "etsy.",
+        "aliexpress.",
+        "walmart.",
+        "bestbuy.",
+        "target.",
+        "lazada.",
+        "tokopedia.",
+        "shopee.",
     ];
     let ecom_signals = [
         "\"@type\":\"Product\"",
@@ -187,13 +214,21 @@ impl RustScraper {
         } else {
             determine_content_type(base_url, peek)
         };
-        info!("🧭 Content Router → {:?} for {}", content_type, base_url.host_str().unwrap_or(""));
+        info!(
+            "🧭 Content Router → {:?} for {}",
+            content_type,
+            base_url.host_str().unwrap_or("")
+        );
 
         match content_type {
             ContentType::ApiResponse => {
                 // Raw JSON/XML — serve as-is (truncate if massive)
                 info!("⚡ API response: serving raw JSON/XML directly");
-                let text = if html.len() > 50_000 { &html[..50_000] } else { html };
+                let text = if html.len() > 50_000 {
+                    &html[..50_000]
+                } else {
+                    html
+                };
                 return text.to_string();
             }
 
@@ -205,10 +240,12 @@ impl RustScraper {
                 // better output (e.g. visible landing-page text on Nuxt sites).
                 if let Some(extracted) = self.extract_spa_json_state(html) {
                     let wc = self.count_words(&extracted);
-                    if !extracted.trim().is_empty()
-                        && (self.extract_app_state || wc >= 100)
-                    {
-                        info!("⚡ SPA JSON state extracted ({} chars, {} words)", extracted.len(), wc);
+                    if !extracted.trim().is_empty() && (self.extract_app_state || wc >= 100) {
+                        info!(
+                            "⚡ SPA JSON state extracted ({} chars, {} words)",
+                            extracted.len(),
+                            wc
+                        );
                         return extracted;
                     } else {
                         warn!(
@@ -225,7 +262,10 @@ impl RustScraper {
                 // NeuroSiphon-style: prefer <pre>/<code> blocks, markdown-body, then skeletal text
                 if let Some(pre_content) = self.extract_pre_formatted(html) {
                     if !pre_content.trim().is_empty() {
-                        info!("⚡ Code repo: {} chars from <pre>/<code>", pre_content.len());
+                        info!(
+                            "⚡ Code repo: {} chars from <pre>/<code>",
+                            pre_content.len()
+                        );
                         return pre_content;
                     }
                 }
@@ -411,7 +451,10 @@ impl RustScraper {
                     if !raw.trim().is_empty() {
                         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
                             if let Some(content) = extract_github_embedded_content(&json) {
-                                info!("⚡ GitHub embedded payload extracted ({} chars)", content.len());
+                                info!(
+                                    "⚡ GitHub embedded payload extracted ({} chars)",
+                                    content.len()
+                                );
                                 return Some(content);
                             }
                             // Fall back to generic flatten when specific fields not found
@@ -1116,7 +1159,7 @@ impl RustScraper {
         let re_details = Regex::new(r"(?is)</?details[^>]*>").unwrap();
         out = re_details.replace_all(&out, "").to_string();
 
-        out
+        normalize_markdown(out)
     }
 }
 
@@ -1177,9 +1220,125 @@ fn is_json_noise_line(line: &str) -> bool {
     if matches!(first, '{' | '[') && line.len() > 40 {
         return true;
     }
-    let structural: usize = line.chars().filter(|c| matches!(c, '{' | '}' | '[' | ']' | '"' | ':' | ',')).count();
+    let structural: usize = line
+        .chars()
+        .filter(|c| matches!(c, '{' | '}' | '[' | ']' | '"' | ':' | ','))
+        .count();
     let ratio = structural as f32 / line.len() as f32;
     ratio >= 0.55
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🧬 Markdown Normalizer Helpers — Feature 1 (Post-Processor)
+// Applied after html2md conversion to strip token-wasting escapes and noise.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Unescape over-escaped Markdown characters emitted by html2md.
+///
+/// html2md sometimes emits `\#`, `\_`, `\*`, `\[`, `\]` to escape characters
+/// that are already safe in prose context, wasting tokens and confusing LLMs.
+/// This function reverses those escapes while leaving code fence contents intact.
+fn unescape_markdown_outside_fences(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut inside_fence = false;
+    let lines: Vec<&str> = text.split('\n').collect();
+    let total = lines.len();
+
+    for (idx, line) in lines.iter().enumerate() {
+        if !inside_fence {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+                // Opening fence — enter verbatim mode
+                inside_fence = true;
+                out.push_str(line);
+            } else {
+                // Normal prose line — unescape common over-escaped characters
+                let unescaped = line
+                    .replace(r"\#", "#")
+                    .replace(r"\_", "_")
+                    .replace(r"\*", "*")
+                    .replace(r"\[", "[")
+                    .replace(r"\]", "]")
+                    .replace(r"\`", "`")
+                    .replace(r"\.", ".")
+                    .replace(r"\!", "!")
+                    .replace(r"\-", "-")
+                    .replace(r"\+", "+")
+                    .replace(r"\|", "|");
+                out.push_str(&unescaped);
+            }
+        } else {
+            out.push_str(line);
+            // Detect closing fence (line that is only the fence marker)
+            let trimmed = line.trim();
+            if trimmed == "```"
+                || trimmed == "~~~"
+                || (trimmed.starts_with("```") && trimmed.chars().all(|c| c == '`'))
+                || (trimmed.starts_with("~~~") && trimmed.chars().all(|c| c == '~'))
+            {
+                inside_fence = false;
+            }
+        }
+        if idx < total - 1 {
+            out.push('\n');
+        }
+    }
+
+    if text.ends_with('\n') && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+/// Remove duplicate navigation-menu link lines.
+///
+/// When html→Markdown conversion emits an entire navigation sidebar as a
+/// sequence of `[Label](url)` lines, the same URL often appears multiple times.
+/// We keep only the **first** occurrence of each URL within contiguous link runs.
+/// Non-trivial non-link lines reset the seen-URL set so the same link can
+/// legitimately reappear in a different meaningful section.
+fn dedupe_nav_link_lines(text: &str) -> String {
+    let re_pure_link = Regex::new(r"^\s*\[([^\]]*)\]\(([^)]+)\)\s*$").unwrap();
+    let mut seen_urls = std::collections::HashSet::<String>::new();
+    let mut out_lines: Vec<&str> = Vec::new();
+
+    for line in text.split('\n') {
+        if let Some(caps) = re_pure_link.captures(line) {
+            let url = caps.get(2).map(|m| m.as_str()).unwrap_or("").to_string();
+            if !seen_urls.insert(url) {
+                // Duplicate URL — drop this line
+                continue;
+            }
+        } else {
+            // Non-link content resets tracking so the same link can appear again
+            // in a meaningfully different section further in the document.
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                seen_urls.clear();
+            }
+        }
+        out_lines.push(line);
+    }
+
+    out_lines.join("\n")
+}
+
+/// Markdown post-processor for token efficiency.
+///
+/// This is the standalone entrypoint requested by the Enterprise-Grade pipeline prompt.
+/// It is pure (no `RustScraper` state) and safe to run as the final step after html2md.
+///
+/// Actions:
+/// - Unescape common over-escaped characters (outside code fences)
+/// - Collapse excessive blank lines to max 2
+/// - Dedupe repeated navigation link lines
+pub fn normalize_markdown(text: String) -> String {
+    let mut out = text;
+    out = unescape_markdown_outside_fences(&out);
+    let re_excess_nl = Regex::new(r"\n{3,}").unwrap();
+    out = re_excess_nl.replace_all(&out, "\n\n").to_string();
+    out = dedupe_nav_link_lines(&out);
+    out.trim().to_string()
 }
 
 /// Extract clean readable content from GitHub's React embedded payload JSON.
@@ -1278,7 +1437,12 @@ fn is_blob_like(s: &str) -> bool {
     if s.len() < 200 {
         return false;
     }
-    let non_alnum = s.chars().filter(|c| !c.is_alphanumeric() && *c != '=' && *c != '+' && *c != '/' && *c != '-' && *c != '_').count();
+    let non_alnum = s
+        .chars()
+        .filter(|c| {
+            !c.is_alphanumeric() && *c != '=' && *c != '+' && *c != '/' && *c != '-' && *c != '_'
+        })
+        .count();
     non_alnum as f64 / (s.len() as f64) < 0.05
 }
 
@@ -1289,18 +1453,37 @@ fn flatten_json_recursive(
     depth: usize,
 ) {
     // Hard cap depth to avoid exponential blowup on deeply-nested structures
-    if depth > 6 { return; }
+    if depth > 6 {
+        return;
+    }
     // Hard cap total output
-    if lines.len() > 400 { return; }
+    if lines.len() > 400 {
+        return;
+    }
 
     match value {
         serde_json::Value::Object(map) => {
             for (k, v) in map {
                 // Skip internal Next.js / build metadata keys
-                if k.starts_with("__") && k.ends_with("__") && k != "__NEXT_DATA__" { continue; }
-                if matches!(k.as_str(), "buildId" | "runtimeConfig" | "isFallback" | "customServer"
-                    | "gsp" | "gssp" | "locale" | "locales" | "defaultLocale"
-                    | "scriptLoader" | "nextExport" | "autoExport" | "isPreview") {
+                if k.starts_with("__") && k.ends_with("__") && k != "__NEXT_DATA__" {
+                    continue;
+                }
+                if matches!(
+                    k.as_str(),
+                    "buildId"
+                        | "runtimeConfig"
+                        | "isFallback"
+                        | "customServer"
+                        | "gsp"
+                        | "gssp"
+                        | "locale"
+                        | "locales"
+                        | "defaultLocale"
+                        | "scriptLoader"
+                        | "nextExport"
+                        | "autoExport"
+                        | "isPreview"
+                ) {
                     continue;
                 }
 
@@ -1314,10 +1497,15 @@ fn flatten_json_recursive(
         }
 
         serde_json::Value::Array(arr) => {
-            if arr.is_empty() { return; }
+            if arr.is_empty() {
+                return;
+            }
 
             // Array of short strings → join them
-            if arr.iter().all(|v| matches!(v, serde_json::Value::String(_))) {
+            if arr
+                .iter()
+                .all(|v| matches!(v, serde_json::Value::String(_)))
+            {
                 let joined: Vec<&str> = arr
                     .iter()
                     .filter_map(|v| v.as_str())
@@ -1337,15 +1525,26 @@ fn flatten_json_recursive(
                 flatten_json_recursive(item, &new_prefix, lines, depth + 1);
             }
             if arr.len() > limit {
-                lines.push(format!("{}: [{} items total, showing first {}]", prefix, arr.len(), limit));
+                lines.push(format!(
+                    "{}: [{} items total, showing first {}]",
+                    prefix,
+                    arr.len(),
+                    limit
+                ));
             }
         }
 
         serde_json::Value::String(s) => {
-            if s.is_empty() { return; }
-            if is_blob_like(s) { return; }
+            if s.is_empty() {
+                return;
+            }
+            if is_blob_like(s) {
+                return;
+            }
             // Skip internal URL paths and hashes
-            if s.starts_with("/_next/") || (s.len() == 32 && s.chars().all(|c| c.is_ascii_hexdigit())) {
+            if s.starts_with("/_next/")
+                || (s.len() == 32 && s.chars().all(|c| c.is_ascii_hexdigit()))
+            {
                 return;
             }
             let display = if s.len() > 500 { &s[..500] } else { s.as_str() };
@@ -1376,15 +1575,23 @@ mod tests {
     #[test]
     fn test_is_json_noise_line_detects_json_fragments() {
         // Long JSON object lines should be flagged
-        assert!(is_json_noise_line(r#"{"payload":{"codeLineWrapEnabled":false,"refInfo":{}}}"#));
-        assert!(is_json_noise_line(r#"{"allShortcutsEnabled":false,"linkifiedBlobPath":""}"#));
-        assert!(is_json_noise_line(r#"{"a":"b","c":"d","e":"f","g":"h","i":"j"}"#));
+        assert!(is_json_noise_line(
+            r#"{"payload":{"codeLineWrapEnabled":false,"refInfo":{}}}"#
+        ));
+        assert!(is_json_noise_line(
+            r#"{"allShortcutsEnabled":false,"linkifiedBlobPath":""}"#
+        ));
+        assert!(is_json_noise_line(
+            r#"{"a":"b","c":"d","e":"f","g":"h","i":"j"}"#
+        ));
     }
 
     #[test]
     fn test_is_json_noise_line_keeps_real_content() {
         // Normal prose should never be dropped
-        assert!(!is_json_noise_line("This is a regular sentence about code."));
+        assert!(!is_json_noise_line(
+            "This is a regular sentence about code."
+        ));
         assert!(!is_json_noise_line("## Installation Requirements"));
         assert!(!is_json_noise_line("pip install unsloth"));
         // Short JSON lines are kept (< 20 chars threshold)
@@ -1425,5 +1632,53 @@ mod tests {
             extract_github_embedded_content(&json).as_deref(),
             Some("## Readme\nThis is the README."),
         );
+    }
+
+    // ── Feature 1: Markdown Normalizer ────────────────────────────────────────
+
+    #[test]
+    fn test_unescape_markdown_outside_fences_basic() {
+        let input = r"This is \#heading and \_italic\_ and \*bold\*";
+        let result = unescape_markdown_outside_fences(input);
+        assert_eq!(result, "This is #heading and _italic_ and *bold*");
+    }
+
+    #[test]
+    fn test_unescape_markdown_preserves_code_fences() {
+        let input = "Prose \\#header\n```rust\nlet x = \\_hello;\n```\nMore \\#prose";
+        let result = unescape_markdown_outside_fences(input);
+        // Inside is unchanged, outside is unescaped
+        assert!(result.contains("# header") || result.contains("#header"));
+        assert!(result.contains(r"\_hello;")); // preserved inside fence
+        assert!(result.contains("# prose") || result.contains("#prose"));
+    }
+
+    #[test]
+    fn test_unescape_markdown_brackets() {
+        // html2md escapes [ and ] but leaves ( and ) alone
+        let input = r"\[link text\]";
+        let result = unescape_markdown_outside_fences(input);
+        assert_eq!(result, "[link text]");
+    }
+
+    #[test]
+    fn test_dedupe_nav_link_lines_removes_duplicates() {
+        let input = "[Home](https://example.com)\n[About](https://example.com/about)\n[Home](https://example.com)\n[Contact](https://example.com/contact)";
+        let result = dedupe_nav_link_lines(input);
+        // Second occurrence of /home should be removed
+        let home_count = result.matches("https://example.com)").count();
+        assert_eq!(home_count, 1, "Duplicate nav link should be removed");
+        // About and Contact should still be present
+        assert!(result.contains("https://example.com/about"));
+        assert!(result.contains("https://example.com/contact"));
+    }
+
+    #[test]
+    fn test_dedupe_nav_link_resets_on_prose() {
+        let input =
+            "[Link](https://a.com)\nSome real paragraph content here.\n[Link](https://a.com)";
+        let result = dedupe_nav_link_lines(input);
+        // The prose line resets the set, so the second [Link] should be kept
+        assert_eq!(result.matches("https://a.com").count(), 2);
     }
 }

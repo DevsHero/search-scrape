@@ -1,7 +1,7 @@
 use super::common::parse_quality_mode;
 use crate::mcp::{McpCallResponse, McpContent};
 use crate::rust_scraper::QualityMode;
-use crate::types::ErrorResponse;
+use crate::types::{AuthWallBlocked, ErrorResponse, SniperCodeBlock, SniperMetadata, SniperOutput};
 use crate::{scrape, AppState};
 use axum::http::StatusCode;
 use axum::response::Json;
@@ -80,9 +80,7 @@ pub async fn handle(
         section_threshold,
     };
 
-    match scrape::scrape_url_full(&state, url, options)
-    .await
-    {
+    match scrape::scrape_url_full(&state, url, options).await {
         Ok(mut content) => {
             let max_chars = arguments
                 .get("max_chars")
@@ -111,6 +109,87 @@ pub async fn handle(
                 .and_then(|v| v.as_str())
                 .unwrap_or("text");
 
+            // ────────────────────────────────────────────────────────────────────────
+            // 🔒 Auth-Wall Early Exit — Feature 2 + HITL Integration
+            // When an auth-wall is confirmed, NEVER return a garbled/empty page.
+            // Instead surface a structured response or an agent-ready HITL prompt.
+            // ────────────────────────────────────────────────────────────────────────
+            let is_auth_walled = content.auth_wall_reason.is_some()
+                || content.warnings.iter().any(|w| w == "content_restricted");
+
+            if is_auth_walled {
+                let reason = content
+                    .auth_wall_reason
+                    .as_deref()
+                    .unwrap_or("Auth-Wall detected (login page returned HTTP 200)")
+                    .to_string();
+
+                // Auto-compute GitHub raw URL hint for blob pages.
+                // NOTE: rewrite_url_for_clean_content in scrape.rs already rewrites
+                // /blob/ → raw before the scrape, so this is an informational hint only.
+                let github_raw_url = if url.contains("github.com") && url.contains("/blob/") {
+                    let raw = url
+                        .replace("github.com/", "raw.githubusercontent.com/")
+                        .replacen("/blob/", "/", 1);
+                    Some(raw)
+                } else {
+                    None
+                };
+
+                if output_format == "text" {
+                    // 💬 HITL Escalation Message — agent-friendly interactive prompt
+                    let hitl_text = format!(
+                        concat!(
+                            "🔒 **Auth-Wall Detected**\n\n",
+                            "**URL:** {url}\n",
+                            "**Reason:** {reason}\n",
+                            "{raw_hint}",
+                            "\n---\n",
+                            "💬 **Agent Recommendation**\n\n",
+                            "Found an auth-wall on `{url_short}`. ",
+                            "Should I escalate to HITL (Human-In-The-Loop) to bypass this?\n\n",
+                            "• Use the `non_robot_search` tool to open a real browser and log in manually\n",
+                            "• Set credentials via environment variables (e.g. `GITHUB_TOKEN` for GitHub)\n",
+                            "• Retry with `use_proxy: true` if the site geo-blocks your IP\n",
+                            "• For GitHub private repos: authenticate via SSH or a Personal Access Token"
+                        ),
+                        url = url,
+                        reason = reason,
+                        raw_hint = github_raw_url
+                            .as_deref()
+                            .map(|r| format!("**GitHub Raw URL (attempted):** {}\n", r))
+                            .unwrap_or_default(),
+                        url_short = url,
+                    );
+                    return Ok(Json(McpCallResponse {
+                        content: vec![McpContent {
+                            content_type: "text".to_string(),
+                            text: hitl_text,
+                        }],
+                        is_error: true,
+                    }));
+                } else {
+                    // 🎯 Structured blocked_by_auth JSON — for json / clean_json modes
+                    let blocked = AuthWallBlocked {
+                        status: "NEED_HITL".to_string(),
+                        reason,
+                        url: url.to_string(),
+                        suggested_action: "non_robot_search".to_string(),
+                        github_raw_url,
+                    };
+                    let json_str = serde_json::to_string_pretty(&blocked).unwrap_or_else(|e| {
+                        format!(r#"{{"error": "Failed to serialize: {}"}}"#, e)
+                    });
+                    return Ok(Json(McpCallResponse {
+                        content: vec![McpContent {
+                            content_type: "text".to_string(),
+                            text: json_str,
+                        }],
+                        is_error: true,
+                    }));
+                }
+            }
+
             if output_format == "json" {
                 let mut include_raw_html = arguments
                     .get("include_raw_html")
@@ -136,6 +215,104 @@ pub async fn handle(
                 }
 
                 let json_str = serde_json::to_string_pretty(&json_content)
+                    .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
+                return Ok(Json(McpCallResponse {
+                    content: vec![McpContent {
+                        content_type: "text".to_string(),
+                        text: json_str,
+                    }],
+                    is_error: false,
+                }));
+            }
+
+            // 🎯 Sniper Mode — Token-optimised clean JSON output.
+            // Returns only title, substantive paragraphs, code blocks, and metadata.
+            // Strips 100 % of headers, footers, nav menus, and boilerplate noise.
+            if output_format == "clean_json" {
+                let noise_terms: &[&str] = &[
+                    "terms of service",
+                    "privacy policy",
+                    "cookie policy",
+                    "all rights reserved",
+                    "copyright ©",
+                    "© ",
+                    "follow us on",
+                    "subscribe to our",
+                    "unsubscribe",
+                    "powered by",
+                ];
+
+                let key_paragraphs: Vec<String> = content
+                    .clean_content
+                    .split("\n\n")
+                    .filter_map(|para| {
+                        let trimmed = para.trim();
+                        let lower = trimmed.to_lowercase();
+                        // Skip very short paragraphs (nav stubs, orphan headings, etc.)
+                        if trimmed.split_whitespace().count() < 8 {
+                            return None;
+                        }
+                        // Skip paragraphs dominated by boilerplate keywords
+                        if noise_terms.iter().any(|t| lower.contains(*t)) {
+                            return None;
+                        }
+                        Some(trimmed.to_string())
+                    })
+                    .collect();
+
+                let key_code_blocks: Vec<SniperCodeBlock> = content
+                    .code_blocks
+                    .iter()
+                    .map(|cb| SniperCodeBlock {
+                        language: cb.language.clone(),
+                        code: cb.code.clone(),
+                    })
+                    .collect();
+
+                // Build key_points: first sentence of each key_paragraph.
+                // Ultra-compact overview — agents read this before the full paragraphs.
+                let key_points: Vec<String> = key_paragraphs
+                    .iter()
+                    .filter_map(|para| {
+                        let sentence_end = para
+                            .char_indices()
+                            .find(|(_, c)| matches!(*c, '.' | '!' | '?'))
+                            .map(|(i, c)| i + c.len_utf8());
+                        let point = match sentence_end {
+                            Some(end) => para[..end].trim().to_string(),
+                            None => {
+                                let s: String = para.chars().take(120).collect();
+                                if s.len() < para.len() {
+                                    format!("{}\u{2026}", s.trim())
+                                } else {
+                                    s.trim().to_string()
+                                }
+                            }
+                        };
+                        if point.split_whitespace().count() >= 4 {
+                            Some(point)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                let sniper = SniperOutput {
+                    title: content.title.clone(),
+                    key_points,
+                    key_paragraphs,
+                    key_code_blocks,
+                    metadata: SniperMetadata {
+                        url: content.url.clone(),
+                        author: content.author.clone(),
+                        published_at: content.published_at.clone(),
+                        word_count: content.word_count,
+                        extraction_score: content.extraction_score,
+                        warnings: content.warnings.clone(),
+                    },
+                };
+
+                let json_str = serde_json::to_string_pretty(&sniper)
                     .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
                 return Ok(Json(McpCallResponse {
                     content: vec![McpContent {
