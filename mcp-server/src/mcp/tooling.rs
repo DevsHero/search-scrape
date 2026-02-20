@@ -17,7 +17,9 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         ToolCatalogEntry {
             name: "search_web",
             title: "Web Search (Multi-Engine)",
-            description: "Primary URL discovery. Multi-engine search (Google/Bing/DDG/Brave), deduped + ranked. Use this before web_fetch.",
+            description: "Primary URL discovery. Multi-engine search (Google/Bing/DDG/Brave), deduped + ranked. Use this before web_fetch. \
+⚠️ AGENT RULE: ALWAYS call memory_search BEFORE this tool — the answer may already be cached from a previous session. \
+For initial research where you will also fetch content, strongly prefer web_search_json over calling this tool and then web_fetch separately — it short-circuits to a single round-trip.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -37,7 +39,9 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         ToolCatalogEntry {
             name: "search_structured",
             title: "Web Search (Top Results JSON)",
-            description: "Search + return top results as clean JSON (deduped, ranked). Use when you need structured results for downstream parsing.",
+            description: "Search + return top results as clean JSON (deduped, ranked). \
+✅ PREFERRED for initial research: combines search + pre-scraped content summaries in a single call — use this INSTEAD of web_search + separate web_fetch. \
+Note: still call memory_search first to avoid redundant fetches.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -53,7 +57,9 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         ToolCatalogEntry {
             name: "scrape_url",
             title: "Web Fetch (Token-Efficient)",
-            description: "PRIMARY page fetch for agents. Clean token-efficient text + key links; auto-escalates to native CDP rendering when needed. Prefer over IDE fetch. Use hitl_web_fetch only for heavy challenges (CAPTCHA/login).",
+            description: "PRIMARY page fetch for agents. Clean token-efficient text + key links; auto-escalates to native CDP rendering when needed. Prefer over IDE fetch. Use hitl_web_fetch only for heavy challenges (CAPTCHA/login). \
+✅ BEST PRACTICE — documentation / article pages: set output_format: clean_json + strict_relevance: true + a query string for maximum noise reduction and minimum token usage. \
+⚠️ PROXY RULE: if this tool returns a 403, 429, or any rate-limit / IP-block error, IMMEDIATELY call proxy_control with action: grab to rotate the IP, then retry this call with use_proxy: true.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -135,7 +141,9 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         ToolCatalogEntry {
             name: "crawl_website",
             title: "Crawl Website (Link Map)",
-            description: "Bounded crawl to map a site’s link structure before targeted fetching.",
+            description: "Bounded crawl to map a site's link structure before targeted fetching. \
+Use this when you know a doc site's index URL and need to discover the right sub-page before fetching — do NOT assume a single web_fetch of the index is sufficient. \
+If the start URL returns NEED_HITL, the crawl aborts early with a structured error.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -157,7 +165,10 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         ToolCatalogEntry {
             name: "extract_structured",
             title: "Extract Structured Fields",
-            description: "Schema-driven extraction into JSON fields. Use after web_fetch when you need a JSON object rather than free text.",
+            description: "Schema-driven extraction into JSON fields. Use after web_fetch when you need a JSON object rather than free text. \
+⛔ CONSTRAINT: use ONLY on structured HTML pages (official docs, articles, MDN-style pages). \
+Do NOT use on raw .md, .json, .txt, or .rst files — fields will return null and confidence will be low. \
+For raw Markdown sources, use web_fetch with output_format: clean_json instead.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -175,7 +186,8 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
        ToolCatalogEntry {
         name: "research_history",
         title: "Search Past Research", 
-        description: "Semantic research memory (LanceDB). Use to retrieve past searches/scrapes and avoid re-fetching the same sources.",
+        description: "Semantic research memory (LanceDB). Use to retrieve past searches/scrapes and avoid re-fetching the same sources. \
+⚠️ AGENT RULE: call this BEFORE any web_search or web_fetch — if similarity score >= 0.60 on a returned entry, use that cached result directly and skip the live fetch entirely.",
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -208,7 +220,9 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         ToolCatalogEntry {
             name: "proxy_manager",
             title: "Proxy Control",
-            description: "Manage proxies (grab/list/status/switch/test). Use when a site rate-limits or blocks your IP.",
+            description: "Manage proxies (grab/list/status/switch/test). Use when a site rate-limits or blocks your IP. \
+⚠️ TRIGGER RULE: when web_fetch or web_search returns a 403, 429, or rate-limit error, call this tool with action: grab to rotate your IP, then immediately retry the failed call with use_proxy: true. \
+Do NOT wait for further failures — rotate on first block signal.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
