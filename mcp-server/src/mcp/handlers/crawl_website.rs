@@ -78,10 +78,22 @@ pub async fn handle(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    // BUG-9: cap total JSON output size to prevent large workspace storage spill.
+    // Agent can tune via `max_chars` (default 10_000).
+    let max_chars = arguments
+        .get("max_chars")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize)
+        .unwrap_or(10_000);
+
     match crawl::crawl_website(&state, url, config, use_proxy).await {
         Ok(response) => {
-            let json_str = serde_json::to_string_pretty(&response)
+            let mut json_str = serde_json::to_string_pretty(&response)
                 .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
+            if json_str.len() > max_chars {
+                json_str.truncate(max_chars);
+                json_str.push_str("\n... [truncated: increase max_chars to see more results]");
+            }
             Ok(Json(McpCallResponse {
                 content: vec![McpContent {
                     content_type: "text".to_string(),

@@ -168,8 +168,12 @@ impl RustScraper {
     ) -> Vec<CodeBlock> {
         let mut code_blocks = Vec::new();
 
-        // Extract <pre><code> blocks
-        if let Ok(selector) = Selector::parse("pre code, pre, code") {
+        // Extract real code blocks first:
+        // - <pre><code> ... </code></pre>
+        // - <pre> ... </pre>
+        // We intentionally do NOT blanket-match all <code> tags here; inline code
+        // fragments can drown out real blocks and create noisy Sniper outputs.
+        if let Ok(selector) = Selector::parse("pre code, pre") {
             for element in document.select(&selector) {
                 // Get the code content preserving whitespace
                 let code = element.text().collect::<Vec<_>>().join("");
@@ -237,6 +241,89 @@ impl RustScraper {
                     nuke_import_block(&code, language.as_deref())
                 } else {
                     code
+                };
+
+                code_blocks.push(CodeBlock {
+                    language,
+                    code,
+                    start_char: None,
+                    end_char: None,
+                });
+            }
+        }
+
+        // Secondary pass: keep only meaningful standalone <code> blocks that are
+        // likely signatures / examples (multi-line or long). This improves
+        // `clean_json` key_code_blocks on API docs where signatures are rendered
+        // as <code> without a <pre> wrapper.
+        if let Ok(selector) = Selector::parse("code") {
+            for element in document.select(&selector) {
+                let code = element.text().collect::<Vec<_>>().join("");
+                let trimmed = code.trim();
+                if trimmed.len() < 10 {
+                    continue;
+                }
+
+                // Heuristic: treat as a block only if it looks like a signature/example.
+                // Many API docs render signatures as single-line <code> elements.
+                let class_hint = element
+                    .value()
+                    .attr("class")
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                let has_language_class = class_hint.contains("language-")
+                    || class_hint.contains("lang-")
+                    || class_hint.contains("hljs")
+                    || class_hint.contains("rust")
+                    || class_hint.contains("typescript")
+                    || class_hint.contains("javascript")
+                    || class_hint.contains("python");
+
+                let siggy = {
+                    let t = trimmed;
+                    t.starts_with("fn ")
+                        || t.starts_with("pub ")
+                        || t.starts_with("struct ")
+                        || t.starts_with("trait ")
+                        || t.starts_with("enum ")
+                        || t.starts_with("impl ")
+                        || t.contains("->")
+                        || t.contains("::")
+                        || (t.contains('(') && t.contains(')'))
+                        || t.contains('{')
+                        || t.contains(';')
+                };
+
+                let is_blockish = trimmed.contains('\n')
+                    || trimmed.len() >= 80
+                    || ((has_language_class || siggy) && trimmed.len() >= 22);
+                if !is_blockish {
+                    continue;
+                }
+
+                let language = element
+                    .value()
+                    .attr("class")
+                    .and_then(|classes| {
+                        classes
+                            .split_whitespace()
+                            .find(|c| c.starts_with("language-") || c.starts_with("lang-"))
+                            .map(|c| {
+                                c.strip_prefix("language-")
+                                    .or_else(|| c.strip_prefix("lang-"))
+                                    .unwrap_or(c)
+                                    .to_string()
+                            })
+                    })
+                    .or_else(|| url_lang_hint.map(|s| s.to_string()));
+
+                let code = if !is_tutorial
+                    && crate::core::config::neurosiphon_enabled()
+                    && self.is_aggressive_mode()
+                {
+                    nuke_import_block(trimmed, language.as_deref())
+                } else {
+                    trimmed.to_string()
                 };
 
                 code_blocks.push(CodeBlock {

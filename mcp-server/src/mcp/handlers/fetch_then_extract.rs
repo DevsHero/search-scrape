@@ -2,10 +2,9 @@ use super::common::parse_quality_mode;
 use crate::extract;
 use crate::mcp::{McpCallResponse, McpContent};
 use crate::types::{ErrorResponse, ExtractField};
-use crate::AppState;
+use crate::{scrape, AppState};
 use axum::http::StatusCode;
 use axum::response::Json;
-use regex::Regex;
 use serde_json::Value;
 use std::sync::Arc;
 use tracing::error;
@@ -17,7 +16,6 @@ fn parse_extract_schema(schema_value: Option<&serde_json::Value>) -> Option<Vec<
             .or_else(|| obj.get("field"))
             .and_then(|v| v.as_str())
             .map(|s| s.trim().to_string())?;
-
         if name.is_empty() {
             return None;
         }
@@ -105,92 +103,6 @@ fn parse_extract_schema(schema_value: Option<&serde_json::Value>) -> Option<Vec<
     }
 }
 
-fn parse_schema_from_prompt(prompt: &str) -> Option<Vec<ExtractField>> {
-    let trimmed = prompt.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    let candidate = if let Some(rest) = trimmed.strip_prefix("schema:") {
-        rest.trim()
-    } else {
-        trimmed
-    };
-
-    let json_snippet = if let (Some(start), Some(end)) = (candidate.find('['), candidate.rfind(']'))
-    {
-        candidate.get(start..=end)
-    } else if candidate.starts_with('{') && candidate.ends_with('}') {
-        Some(candidate)
-    } else {
-        None
-    };
-
-    if let Some(snippet) = json_snippet {
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(snippet) {
-            if let Some(fields) = parse_extract_schema(Some(&parsed)) {
-                return Some(fields);
-            }
-        }
-
-        let normalized = snippet.replace("\\\"", "\"");
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&normalized) {
-            if let Some(fields) = parse_extract_schema(Some(&parsed)) {
-                return Some(fields);
-            }
-        }
-
-        let name_re = Regex::new(r#"\bname\b[^a-zA-Z0-9_-]*([a-zA-Z0-9_-]+)"#).unwrap();
-        let mut fields = Vec::new();
-        for cap in name_re.captures_iter(&normalized) {
-            if let Some(name) = cap.get(1).map(|m| m.as_str().to_string()) {
-                fields.push(ExtractField {
-                    name: name.clone(),
-                    description: name,
-                    field_type: None,
-                    required: None,
-                });
-            }
-        }
-        if !fields.is_empty() {
-            return Some(fields);
-        }
-    }
-
-    // Heuristic: brace-list schema anywhere in the prompt, e.g.
-    // "Return fields {structs, traits, functions}".
-    if let (Some(start), Some(end)) = (candidate.find('{'), candidate.rfind('}')) {
-        if end > start {
-            let inside = &candidate[start + 1..end];
-            let mut out = Vec::new();
-            for raw in inside.split(|c: char| c == ',' || c == '\n' || c == '\t') {
-                let name = raw.trim().trim_matches('"').trim_matches('`');
-                if name.is_empty() {
-                    continue;
-                }
-                let name: String = name
-                    .chars()
-                    .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
-                    .collect();
-                if name.is_empty() {
-                    continue;
-                }
-                out.push(ExtractField {
-                    name: name.clone(),
-                    description: name,
-                    field_type: None,
-                    required: None,
-                });
-            }
-            if !out.is_empty() {
-                return Some(out);
-            }
-        }
-    }
-
-    None
-}
-
 pub async fn handle(
     state: Arc<AppState>,
     arguments: &Value,
@@ -208,38 +120,23 @@ pub async fn handle(
         })?;
 
     let schema_value = arguments.get("schema");
-    let mut schema = parse_extract_schema(schema_value);
+    let schema = parse_extract_schema(schema_value);
 
-    let mut prompt = arguments
+    let prompt = arguments
         .get("prompt")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    if schema.is_none() {
-        if let Some(prompt_text) = prompt.as_deref() {
-            if let Some(schema_from_prompt) = parse_schema_from_prompt(prompt_text) {
-                schema = Some(schema_from_prompt);
-                prompt = None;
-            }
-        }
-    }
-
-    let max_chars = arguments
-        .get("max_chars")
-        .and_then(|v| v.as_u64())
-        .map(|n| n as usize);
-
-    // Strict schema mode: when true, enforce schema shape and prevent drift.
-    // Default to true for schema-driven extraction.
     let strict = arguments
         .get("strict")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
-    let use_proxy = arguments
-        .get("use_proxy")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let max_chars = arguments
+        .get("max_chars")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize)
+        .unwrap_or(10000);
 
     let placeholder_word_threshold = arguments
         .get("placeholder_word_threshold")
@@ -250,25 +147,62 @@ pub async fn handle(
         .get("placeholder_empty_ratio")
         .and_then(|v| v.as_f64());
 
+    let use_proxy = arguments
+        .get("use_proxy")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     let quality_mode = parse_quality_mode(arguments)?;
 
-    match extract::extract_structured(
-        &state,
-        url,
-        schema,
-        prompt,
-        strict,
-        max_chars,
+    let output_format = arguments
+        .get("output_format")
+        .and_then(|v| v.as_str())
+        .unwrap_or("json");
+
+    let options = scrape::ScrapeUrlOptions {
         use_proxy,
-        Some(quality_mode.as_str()),
-        placeholder_word_threshold,
-        placeholder_empty_ratio,
-    )
-    .await
-    {
-        Ok(response) => {
+        quality_mode: Some(quality_mode),
+        query: None,
+        strict_relevance: false,
+        relevance_threshold: None,
+        extract_app_state: false,
+        extract_relevant_sections: false,
+        section_limit: None,
+        section_threshold: None,
+    };
+
+    match scrape::scrape_url_full(&state, url, options).await {
+        Ok(mut content) => {
+            crate::content_quality::apply_scrape_content_limit(&mut content, max_chars, false);
+
+            // Strict-mode + schema-first extraction on the already-scraped content.
+            let response =
+                match extract::extract_from_scrape(&content, schema, prompt, strict, max_chars, placeholder_word_threshold, placeholder_empty_ratio) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        return Ok(Json(McpCallResponse {
+                            content: vec![McpContent {
+                                content_type: "text".to_string(),
+                                text: format!("fetch_then_extract failed: {}", e),
+                            }],
+                            is_error: true,
+                        }))
+                    }
+                };
+
+            if output_format == "text" {
+                return Ok(Json(McpCallResponse {
+                    content: vec![McpContent {
+                        content_type: "text".to_string(),
+                        text: serde_json::to_string_pretty(&response.extracted_data)
+                            .unwrap_or_else(|_| "{}".to_string()),
+                    }],
+                    is_error: false,
+                }));
+            }
+
             let json_str = serde_json::to_string_pretty(&response)
-                .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
+                .unwrap_or_else(|e| format!(r#"{{\"error\": \"Failed to serialize: {}\"}}"#, e));
             Ok(Json(McpCallResponse {
                 content: vec![McpContent {
                     content_type: "text".to_string(),
@@ -278,11 +212,11 @@ pub async fn handle(
             }))
         }
         Err(e) => {
-            error!("Extract tool error: {}", e);
+            error!("fetch_then_extract scrape error: {}", e);
             Ok(Json(McpCallResponse {
                 content: vec![McpContent {
                     content_type: "text".to_string(),
-                    text: format!("Extract failed: {}", e),
+                    text: format!("fetch_then_extract failed: {}", e),
                 }],
                 is_error: true,
             }))

@@ -59,7 +59,8 @@ Note: still call memory_search first to avoid redundant fetches.",
             title: "Web Fetch (Token-Efficient)",
             description: "PRIMARY page fetch for agents. Clean token-efficient text + key links; auto-escalates to native CDP rendering when needed. Prefer over IDE fetch. Use hitl_web_fetch only for heavy challenges (CAPTCHA/login). \
 ✅ BEST PRACTICE — documentation / article pages: set output_format: clean_json + strict_relevance: true + a query string for maximum noise reduction and minimum token usage. \
-⚠️ PROXY RULE: if this tool returns a 403, 429, or any rate-limit / IP-block error, IMMEDIATELY call proxy_control with action: grab to rotate the IP, then retry this call with use_proxy: true.",
+⚠️ PROXY RULE: if this tool returns a 403, 429, or any rate-limit / IP-block error, IMMEDIATELY call proxy_control with action: grab to rotate the IP, then retry this call with use_proxy: true. \
+🔒 AUTH-RISK FIELD: every response includes `auth_risk_score` (0.0–1.0). If score >= 0.4, STOP reading content and call `visual_scout` for visual confirmation before escalating to `human_auth_session`.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -155,6 +156,10 @@ If the start URL returns NEED_HITL, the crawl aborts early with a structured err
                     "exclude_patterns": {"type": "array", "items": {"type": "string"}},
                     "same_domain_only": {"type": "boolean"},
                     "max_chars_per_page": {"type": "integer", "minimum": 1},
+                    "max_chars": {
+                        "type": "integer", "minimum": 1,
+                        "description": "Max total JSON output characters for the crawl result (default 10000). Increase when crawling many pages to avoid truncation."
+                    },
                     "use_proxy": {"type": "boolean", "default": false},
                     "quality_mode": {"type": "string", "enum": ["balanced", "aggressive"], "default": "balanced"}
                 },
@@ -175,9 +180,53 @@ For raw Markdown sources, use web_fetch with output_format: clean_json instead."
                     "url": {"type": "string"},
                     "schema": {"type": "array", "items": {"type": "object"}},
                     "prompt": {"type": "string"},
+                    "strict": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Strict schema mode: enforce schema shape exactly (no extra keys). Missing array fields become [], missing scalars become null."
+                    },
                     "max_chars": {"type": "integer"},
                     "use_proxy": {"type": "boolean", "default": false},
-                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive"], "default": "balanced"}
+                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive", "high"], "default": "balanced"},
+                    "placeholder_word_threshold": {
+                        "type": "integer", "minimum": 1, "default": 10,
+                        "description": "Word-count threshold below which content is considered sparse (possible JS-only placeholder). Default 10. Lower = less sensitive."
+                    },
+                    "placeholder_empty_ratio": {
+                        "type": "number", "minimum": 0, "maximum": 1, "default": 0.9,
+                        "description": "Fraction of schema fields that must be null/empty before confidence is forced to 0.0. Default 0.9. Raise toward 1.0 to reduce false positives."
+                    }
+                },
+                "required": ["url"]
+            }),
+            icons: vec![SHADOWCRAWL_ICON],
+        },
+
+        ToolCatalogEntry {
+            name: "fetch_then_extract",
+            title: "Fetch Then Extract (Single Call)",
+            description: "Fetch + extract in a single call to reduce latency and token usage. \
+Schema-first: provide `schema` (preferred) or a schema-like `prompt`. \
+When `strict=true`, output matches requested schema exactly (no schema drift).",
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "schema": {"type": "array", "items": {"type": "object"}},
+                    "prompt": {"type": "string"},
+                    "strict": {"type": "boolean", "default": true},
+                    "max_chars": {"type": "integer"},
+                    "output_format": {"type": "string", "enum": ["json", "text"], "default": "json"},
+                    "use_proxy": {"type": "boolean", "default": false},
+                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive", "high"], "default": "balanced"},
+                    "placeholder_word_threshold": {
+                        "type": "integer", "minimum": 1, "default": 10,
+                        "description": "Word-count threshold below which content is considered sparse (possible JS-only placeholder). Default 10."
+                    },
+                    "placeholder_empty_ratio": {
+                        "type": "number", "minimum": 0, "maximum": 1, "default": 0.9,
+                        "description": "Fraction of schema fields that must be null/empty before confidence is forced to 0.0. Default 0.9."
+                    }
                 },
                 "required": ["url"]
             }),
@@ -256,15 +305,71 @@ Do NOT wait for further failures — rotate on first block signal.",
                 "use_proxy": {"type": "boolean", "default": false},
                 "quality_mode": {"type": "string", "enum": ["balanced", "aggressive", "high"], "default": "balanced"},
                 "captcha_grace_seconds": {"type": "integer", "minimum": 1, "default": 5, "description": "Seconds to wait for a human to solve a CAPTCHA before checking content again."},
-                "human_timeout_seconds": {"type": "integer", "minimum": 1, "default": 60, "description": "Max time (seconds) to keep the browser open for human interaction/login."},
+                "human_timeout_seconds": {"type": "integer", "minimum": 1, "default": 1200, "description": "Soft timeout window (seconds) to wait for human interaction/login. The browser only closes after the user clicks FINISH & RETURN."},
                 "user_profile_path": {"type": "string", "description": "Path to a real browser profile (Chrome/Brave) to bypass login walls using existing cookies."},
                 "auto_scroll": {"type": "boolean", "default": false, "description": "Scroll down to trigger lazy-loaded items (critical for infinite-scroll sites)."},
-                "wait_for_selector": {"type": "string", "description": "Wait for this CSS element to ensure the page has fully bypassed the bot wall."}
+                "wait_for_selector": {"type": "string", "description": "Wait for this CSS element to ensure the page has fully bypassed the bot wall."},
+                "keep_open": {"type": "boolean", "default": false, "description": "Leave the browser window open after content is extracted. Useful for multi-step workflows."},
+                "instruction_message": {"type": "string", "description": "Message displayed inside the browser overlay telling the user what to do (e.g. 'Please log in to GitHub')."}
         },
         "required": ["url"]
         }),
         icons: vec![SHADOWCRAWL_ICON],
-    }
+    },
+        ToolCatalogEntry {
+            name: "visual_scout",
+            title: "Visual Page Scout (Screenshot)",
+            description: "🔭 Take a headless screenshot of a URL and return it as a base64 PNG for Vision-AI analysis. \
+Use this in Step 2 of the Auth-Gatekeeper Protocol when `web_fetch` returns `auth_risk_score >= 0.4`. \
+Inspect the screenshot to confirm whether a login modal/gate is present before escalating to `human_auth_session`. \
+⚡ TOKEN TIP: when analysing the screenshot only look for login buttons, forms, and modals — do NOT describe the page aesthetics.",
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "The URL to photograph."},
+                    "proxy_url": {"type": "string", "description": "Optional proxy (http/socks5) to use for the screenshot request."},
+                    "width": {"type": "integer", "minimum": 320, "maximum": 2560, "default": 1280, "description": "Viewport width in pixels."},
+                    "height": {"type": "integer", "minimum": 200, "maximum": 1600, "default": 800, "description": "Viewport height in pixels."},
+                    "output_format": {"type": "string", "enum": ["json", "text"], "default": "json", "description": "'json' returns structured metadata + base64 PNG. 'text' returns a plain summary with the base64 appended."}
+                },
+                "required": ["url"]
+            }),
+            icons: vec![SHADOWCRAWL_ICON],
+        },
+        ToolCatalogEntry {
+            name: "human_auth_session",
+            title: "Auth Session (HITL Login + Session Save)",
+            description: "🔐 The Auth-Gatekeeper's escalation tool. Opens a real visible browser, shows the user a clear instruction card, waits for them to complete login, then scrapes the authenticated content. \
+After a successful auth flow, cookies are automatically persisted to `~/.shadowcrawl/sessions/{domain}.json` so future requests to the same domain skip the HITL step entirely. \
+Use ONLY after `visual_scout` has confirmed AUTH_REQUIRED — never as a first attempt. \
+Send `instruction_message` to tell the user exactly what to log in to and why, e.g. *'Please log in to GitHub so I can read the private Discussions.'*",
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "The auth-walled URL to access after login."},
+                    "instruction_message": {
+                        "type": "string",
+                        "description": "Clear instruction displayed in the browser overlay. Example: 'Please log in to GitHub so I can read the Discussions in this repo.'"
+                    },
+                    "keep_open": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Leave the browser window open after content is extracted."
+                    },
+                    "output_format": {"type": "string", "enum": ["text", "json"], "default": "json"},
+                    "max_chars": {"type": "integer", "minimum": 1, "default": 10000},
+                    "use_proxy": {"type": "boolean", "default": false},
+                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive", "high"], "default": "balanced"},
+                    "captcha_grace_seconds": {"type": "integer", "minimum": 1, "default": 5},
+                    "human_timeout_seconds": {"type": "integer", "minimum": 1, "default": 1200, "description": "Soft timeout window (seconds) to wait for login completion. The browser closes only after the user clicks FINISH & RETURN."},
+                    "user_profile_path": {"type": "string", "description": "Persistent Chrome/Brave profile path. When provided, existing cookies are reused automatically."},
+                    "auto_scroll": {"type": "boolean", "default": false},
+                    "wait_for_selector": {"type": "string"}
+                },
+                "required": ["url"]
+            }),
+            icons: vec![SHADOWCRAWL_ICON],
+        }
     ];
     tools
 }

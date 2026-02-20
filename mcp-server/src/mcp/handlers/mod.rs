@@ -1,6 +1,8 @@
 pub mod common;
 pub mod crawl_website;
 pub mod extract_structured;
+pub mod fetch_then_extract;
+pub mod human_auth_session;
 pub mod non_robot_search;
 pub mod proxy_manager;
 pub mod research_history;
@@ -8,3 +10,4 @@ pub mod scrape_batch;
 pub mod scrape_url;
 pub mod search_structured;
 pub mod search_web;
+pub mod visual_scout;

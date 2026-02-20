@@ -27,6 +27,21 @@ This tool is intentionally interactive (HITL = Human-In-The-Loop). It is **not**
 5. If a verification gate is detected, it asks you to complete it
 6. Extracts HTML → cleaned markdown/text/JSON (same output model as other scrapers)
 
+## Related tool: human_auth_session (strict manual login)
+
+For login/session bootstrapping (GitHub, LinkedIn, etc.) prefer `human_auth_session` first:
+
+- It opens a real browser and waits for you to click **FINISH & RETURN**.
+- It does **not** auto-close based on navigation events (strict manual-only flow).
+- On success, cookies are persisted under `~/.shadowcrawl/sessions/{domain}.json` so later fetches can reuse the authenticated session.
+
+Recommended escalation order:
+
+1) `web_fetch` (try normal/proxy)
+2) `visual_scout` if `auth_risk_score >= 0.4`
+3) `human_auth_session` for authenticated scraping
+4) `non_robot_search` for CAPTCHA / complex gates (full HITL)
+
 ## Safety / Interactivity model (must read)
 
 - Consent is required unless `SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW=1` is set.
@@ -129,7 +144,7 @@ If your MCP client runs without a TTY, ShadowCrawl will use a dialog by default.
 - `output_format`: `json` (default) or `text`
 - `max_chars`: default `10000`
 - `quality_mode`: `balanced` | `aggressive` | `high`
-- `human_timeout_seconds`: how long to wait for you during HITL (default 60)
+- `human_timeout_seconds`: soft timeout window while waiting for HITL (default 1200). The run returns only after you click **FINISH & RETURN**.
 - `captcha_grace_seconds`: initial grace period (default 5)
 - `user_profile_path`: see above
 - `auto_scroll`: enable lazy-load scrolling
@@ -145,7 +160,7 @@ Example MCP call payload (HTTP transport):
     "quality_mode": "high",
     "auto_scroll": true,
     "wait_for_selector": "main",
-    "human_timeout_seconds": 120,
+    "human_timeout_seconds": 1200,
     "user_profile_path": "~/Library/Application Support/BraveSoftware/Brave-Browser/Default"
   }
 }

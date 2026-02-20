@@ -244,14 +244,19 @@ pub async fn handle(
                     "powered by",
                 ];
 
-                let key_paragraphs: Vec<String> = content
+                // BUG-3a: On short pages (< 200 words — API index, reference stubs, etc.)
+                // the standard 8-word minimum discards everything.  Lower to 3 so that
+                // brief item descriptions on docs.rs module indexes are preserved.
+                let para_min_words: usize = if content.word_count < 200 { 3 } else { 8 };
+
+                let key_paragraphs_all: Vec<String> = content
                     .clean_content
                     .split("\n\n")
                     .filter_map(|para| {
                         let trimmed = para.trim();
                         let lower = trimmed.to_lowercase();
                         // Skip very short paragraphs (nav stubs, orphan headings, etc.)
-                        if trimmed.split_whitespace().count() < 8 {
+                        if trimmed.split_whitespace().count() < para_min_words {
                             return None;
                         }
                         // Skip paragraphs dominated by boilerplate keywords
@@ -259,6 +264,24 @@ pub async fn handle(
                             return None;
                         }
                         Some(trimmed.to_string())
+                    })
+                    .collect();
+
+                // BUG-3b: Apply max_chars budget to key_paragraphs to prevent unbounded
+                // serialisation on large pages (was spilling to workspace storage at 33KB).
+                // Reserve ~2 KB for metadata, code blocks, and JSON framing.
+                let para_budget = max_chars.saturating_sub(2000).max(500);
+                let mut para_total = 0usize;
+                let mut paragraphs_truncated = false;
+                let key_paragraphs: Vec<String> = key_paragraphs_all
+                    .into_iter()
+                    .filter(|p| {
+                        if para_total >= para_budget {
+                            paragraphs_truncated = true;
+                            return false;
+                        }
+                        para_total += p.len() + 4; // +4 for JSON comma/quote overhead
+                        true
                     })
                     .collect();
 
@@ -293,6 +316,17 @@ pub async fn handle(
                     })
                     .collect();
 
+                let mut sniper_warnings = content.warnings.clone();
+                if paragraphs_truncated {
+                    crate::content_quality::push_warning_unique(
+                        &mut sniper_warnings,
+                        &format!(
+                            "clean_json_truncated: key_paragraphs limited to ~{} chars; increase max_chars for full output",
+                            max_chars
+                        ),
+                    );
+                }
+
                 let sniper = SniperOutput {
                     title: content.title.clone(),
                     key_points,
@@ -304,7 +338,7 @@ pub async fn handle(
                         published_at: content.published_at.clone(),
                         word_count: content.word_count,
                         extraction_score: content.extraction_score,
-                        warnings: content.warnings.clone(),
+                        warnings: sniper_warnings,
                     },
                 };
 

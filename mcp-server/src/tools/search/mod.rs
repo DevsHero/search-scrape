@@ -167,6 +167,8 @@ impl InternalSearchService {
             user_profile_path: None,
             auto_scroll: false,
             wait_for_selector: None,
+            keep_open: false,
+            instruction_message: None,
         };
 
         match execute_non_robot_search(state, cfg).await {

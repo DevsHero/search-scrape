@@ -31,7 +31,7 @@ Rust implementation: https://github.com/MinishLab/model2vec-rs
 3. **Integration Points**
    - `mcp-server/src/features/history.rs`: memory logic (store/search/stats)
    - `mcp-server/src/tools/search.rs` / `scrape.rs`: auto-logging
-   - MCP tool: `research_history`
+   - MCP tool: `memory_search`
 
 ---
 
@@ -78,7 +78,7 @@ When enabled, ShadowCrawl automatically logs:
 - Searches (query + summary + full JSON result)
 - Scrapes (URL + preview/summary + full JSON result)
 
-### Manual Search (MCP tool: `research_history`)
+### Manual Search (MCP tool: `memory_search`)
 
 Example:
 
@@ -93,7 +93,11 @@ Example:
 Parameters:
 - `query` (required)
 - `limit` (optional, default: 10)
-- `threshold` (optional, default: 0.7)
+- `threshold` (optional, default: 0.6)
+
+Best practice:
+- Always call `memory_search` before `web_search` / `web_search_json`.
+- If you get a hit with similarity >= 0.60, use the cached result and skip live fetching.
 
 ---
 

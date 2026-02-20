@@ -92,23 +92,25 @@ async fn main() -> anyhow::Result<()> {
     // Create application state
     let mut state = AppState::new(http_client);
 
-    // Initialize semantic memory if LANCEDB_URI is set
+    // Initialize semantic memory (persistent by default; disable via SHADOWCRAWL_MEMORY_DISABLED=1)
     if let Some(lancedb_uri) = shadowcrawl::core::config::lancedb_uri() {
+        if !lancedb_uri.contains("://") {
+            // Best-effort create the directory for local-path URIs.
+            let _ = tokio::fs::create_dir_all(&lancedb_uri).await;
+        }
         info!("Initializing memory with LanceDB at: {}", lancedb_uri);
         match shadowcrawl::history::MemoryManager::new(&lancedb_uri).await {
             Ok(memory) => {
                 state = state.with_memory(Arc::new(memory));
                 info!("Memory initialized successfully");
             }
-            Err(e) => {
-                warn!(
-                    "Failed to initialize memory: {}. Continuing without memory feature.",
-                    e
-                );
-            }
+            Err(e) => warn!(
+                "Failed to initialize memory: {}. Continuing without memory feature.",
+                e
+            ),
         }
     } else {
-        info!("LANCEDB_URI not set. Memory feature disabled.");
+        info!("Semantic memory disabled (SHADOWCRAWL_MEMORY_DISABLED=1)");
     }
 
     // Initialize proxy manager if ip.txt exists

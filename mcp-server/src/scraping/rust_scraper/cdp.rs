@@ -52,12 +52,37 @@ impl RustScraper {
         .await
         .map_err(|e| anyhow!("Failed to inject stealth script: {}", e))?;
 
+        // Auto-inject any stored session cookies before navigation so the
+        // initial HTTP request is sent with a valid auth token.
+        let had_session = crate::features::session_store::auto_inject(&page, url).await;
+
         warn!("🌐 Navigating to: {}", url);
         page.goto(url)
             .await
             .map_err(|e| anyhow!("Failed to navigate: {}", e))?;
 
+        // Post-session stealth micro-interactions: short jitter + two simulated
+        // cursor positions.  Only performed when cookies were actually injected
+        // to avoid adding latency to cold (unauthenticated) fetches.
         use rand::distr::{Distribution, Uniform};
+        if had_session {
+            let jitter = {
+                let mut rng = rand::rng();
+                Uniform::new(100u64, 400).unwrap().sample(&mut rng)
+            };
+            tokio::time::sleep(Duration::from_millis(jitter)).await;
+            for (mx, my) in [(320u32, 240u32), (640, 380)] {
+                let _ = page
+                    .evaluate(format!("document.elementFromPoint({mx}, {my})"))
+                    .await;
+                tokio::time::sleep(Duration::from_millis(40 + jitter % 60)).await;
+            }
+            warn!(
+                "🖱️ Post-session jitter: {}ms + 2 micro-moves applied",
+                jitter
+            );
+        }
+
         let idle_time = {
             let mut rng = rand::rng();
             let dist = Uniform::new(1000u64, 3000).unwrap();
@@ -340,6 +365,13 @@ impl RustScraper {
             self.calculate_extraction_score(word_count, &published_at, &code_blocks, &headings);
 
         let domain = parsed_url.host_str().map(|h| h.to_string());
+        let (auth_risk_score_val, detection_factors) =
+            self.compute_auth_risk_score(&html, &clean_content, url);
+        let auth_risk_score = if auth_risk_score_val > 0.0 {
+            Some(auth_risk_score_val)
+        } else {
+            None
+        };
         Ok(ScrapeResponse {
             url: url.to_string(),
             title,
@@ -374,6 +406,9 @@ impl RustScraper {
             warnings,
             domain,
             auth_wall_reason,
+            auth_risk_score,
+            detection_factors,
+            final_url: None,
         })
     }
 

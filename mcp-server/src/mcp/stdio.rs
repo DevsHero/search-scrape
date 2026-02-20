@@ -87,6 +87,9 @@ impl McpService {
         let mut state = AppState::new(http_client);
 
         if let Some(lancedb_uri) = crate::core::config::lancedb_uri() {
+            if !lancedb_uri.contains("://") {
+                let _ = tokio::fs::create_dir_all(&lancedb_uri).await;
+            }
             info!("Initializing memory with LanceDB at: {}", lancedb_uri);
             match history::MemoryManager::new(&lancedb_uri).await {
                 Ok(memory) => {
@@ -99,7 +102,7 @@ impl McpService {
                 ),
             }
         } else {
-            info!("LANCEDB_URI not set. Memory feature disabled.");
+            info!("Semantic memory disabled (SHADOWCRAWL_MEMORY_DISABLED=1)");
         }
 
         let ip_list_path = env::var("IP_LIST_PATH").unwrap_or_else(|_| "ip.txt".to_string());
@@ -235,6 +238,9 @@ impl rmcp::ServerHandler for McpService {
             "extract_structured" => convert_http_handler_result(
                 handlers::extract_structured::handle(Arc::clone(&self.state), &internal_args).await,
             ),
+            "fetch_then_extract" => convert_http_handler_result(
+                handlers::fetch_then_extract::handle(Arc::clone(&self.state), &internal_args).await,
+            ),
             "research_history" => convert_http_handler_result(
                 handlers::research_history::handle(Arc::clone(&self.state), &internal_args).await,
             ),
@@ -243,6 +249,12 @@ impl rmcp::ServerHandler for McpService {
             ),
             "non_robot_search" => convert_http_handler_result(
                 handlers::non_robot_search::handle(Arc::clone(&self.state), &internal_args).await,
+            ),
+            "visual_scout" => convert_http_handler_result(
+                handlers::visual_scout::handle(Arc::clone(&self.state), &internal_args).await,
+            ),
+            "human_auth_session" => convert_http_handler_result(
+                handlers::human_auth_session::handle(Arc::clone(&self.state), &internal_args).await,
             ),
             _ => Err(ErrorData::new(
                 ErrorCode::METHOD_NOT_FOUND,

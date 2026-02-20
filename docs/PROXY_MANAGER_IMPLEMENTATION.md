@@ -2,7 +2,7 @@
 
 **Date:** 2026-02-12
 
-This repo uses **`ip.txt` as the primary proxy list** and exposes a single MCP tool: **`proxy_manager`**.
+This repo uses **`ip.txt` as the primary proxy list** and exposes the MCP tool: **`proxy_control`**.
 
 The older `proxies.yaml` registry approach is deprecated/removed.
 
@@ -15,7 +15,7 @@ The older `proxies.yaml` registry approach is deprecated/removed.
 
 - `proxy_source.json`
   - Public proxy list sources.
-  - Used by `proxy_manager` action `grab` (via `PROXY_SOURCE_PATH`).
+  - Used by `proxy_control` action `grab` (via `PROXY_SOURCE_PATH`).
 
 ## Runtime config (Zero-Docker)
 
@@ -34,7 +34,7 @@ PROXY_SOURCE_PATH="$PWD/proxy_source.json" \
 
 ## MCP tool
 
-Tool: `proxy_manager`
+Tool: `proxy_control`
 
 Actions:
 
@@ -48,5 +48,5 @@ Actions:
 
 - Runtime proxy manager: `mcp-server/src/features/proxy_manager.rs`
 - Proxy grabber: `mcp-server/src/features/proxy_grabber.rs`
-- MCP handler: `mcp-server/src/mcp/handlers/proxy_manager.rs`
+- MCP handler (internal routing): `mcp-server/src/mcp/handlers/proxy_manager.rs`
 

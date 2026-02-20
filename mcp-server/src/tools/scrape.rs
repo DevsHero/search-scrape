@@ -88,6 +88,24 @@ pub async fn scrape_url_full(
     let url_rewritten = rewrite_url_for_clean_content(requested_url);
     let url: &str = url_rewritten.as_deref().unwrap_or(requested_url);
 
+    // ─── Step 0: Smart Auth Cache pre-flight ────────────────────────────────
+    // Check whether the auth registry already knows this domain requires auth
+    // AND has a non-expired stored session.  When true, the session_store will
+    // auto-inject cookies in the CDP layer (cdp.rs / visual_scout.rs) so we
+    // can skip redundant risk-scoring on the happy path.
+    let cached_session_active = crate::features::auth_registry::is_session_valid(url);
+    if cached_session_active {
+        let last = crate::features::auth_registry::get(url)
+            .and_then(|r| r.last_success)
+            .map(|t| t.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+            .unwrap_or_else(|| "never".to_string());
+        info!(
+            "🔐 auth_registry: known auth-required domain — stored session valid, \
+             cookies will be pre-injected (last success: {})",
+            last
+        );
+    }
+
     // Cache key must include knobs that affect output; otherwise comparisons (and correctness)
     // are broken because a previous scrape can be returned for a different mode.
     let cache_key = compute_scrape_cache_key(
@@ -229,6 +247,7 @@ pub async fn scrape_url_full(
                             .scrape_cache
                             .insert(cache_key.clone(), result.clone())
                             .await;
+                        auth_cache_post_scrape(url, &result, cached_session_active);
                         return Ok(result);
                     }
                     Err(e) => {
@@ -294,6 +313,7 @@ pub async fn scrape_url_full(
                                             .scrape_cache
                                             .insert(cache_key.clone(), result.clone())
                                             .await;
+                                        auth_cache_post_scrape(url, &result, cached_session_active);
                                         return Ok(result);
                                     }
                                 }
@@ -473,6 +493,11 @@ pub async fn scrape_url_full(
                                                 }
                                             }
 
+                                            auth_cache_post_scrape(
+                                                url,
+                                                &proxy_result,
+                                                cached_session_active,
+                                            );
                                             return Ok(proxy_result);
                                         } else {
                                             warn!("⚠️ PROXY RETRY NO IMPROVEMENT: {} words vs {} before", 
@@ -531,6 +556,7 @@ pub async fn scrape_url_full(
                     }
                 }
 
+                auth_cache_post_scrape(url, &result, cached_session_active);
                 return Ok(result);
             }
             Err(e) => {
@@ -1211,6 +1237,9 @@ pub async fn scrape_url_fallback(state: &Arc<AppState>, url: &str) -> Result<Scr
             .ok()
             .and_then(|u| u.host_str().map(|h| h.to_string())),
         auth_wall_reason: None,
+        auth_risk_score: None,
+        detection_factors: Vec::new(),
+        final_url: None,
     };
 
     info!("Fallback scraper extracted {} words", result.word_count);
@@ -1252,6 +1281,48 @@ fn extract_domain(url: &str) -> String {
         .ok()
         .and_then(|u| u.host_str().map(|s| s.to_string()))
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Smart Auth Cache — post-scrape registry update
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Called at every successful fresh-scrape return point.
+///
+/// * If cookies were pre-injected (domain was in auth cache) but the page
+///   still returned a high `auth_risk_score` (≥ 0.40) → the stored session
+///   has expired server-side.  Invalidate the session file and registry entry
+///   so the next call triggers a fresh HITL login flow.
+///
+/// * If a scrape of a known auth-required domain succeeded (low risk score)
+///   → increment the `successful_injections` counter and update `last_success`.
+///
+/// * No-op for domains not in the auth registry.
+fn auth_cache_post_scrape(
+    url: &str,
+    result: &crate::types::ScrapeResponse,
+    had_stored_session: bool,
+) {
+    let risk = result.auth_risk_score.unwrap_or(0.0);
+
+    if had_stored_session && risk >= 0.40 {
+        // Cookies were injected but auth wall is still present → session expired.
+        tracing::warn!(
+            "⚠️  auth_registry: {} — injected session still returns auth_risk_score={:.2}; \
+             invalidating stale session and scheduling re-auth",
+            url,
+            risk
+        );
+        crate::features::session_store::invalidate(url);
+        return;
+    }
+
+    // Update last_success stats for any domain that the registry knows requires auth.
+    if let Some(record) = crate::features::auth_registry::get(url) {
+        if record.needs_auth && risk < 0.40 {
+            crate::features::auth_registry::mark_success(url);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1298,6 +1369,9 @@ mod tests {
             warnings: vec![],
             domain: None,
             auth_wall_reason: None,
+            auth_risk_score: None,
+            detection_factors: Vec::new(),
+            final_url: None,
         }
     }
 

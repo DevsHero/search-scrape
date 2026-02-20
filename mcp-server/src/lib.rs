@@ -13,7 +13,9 @@ pub use core::types::*;
 pub use core::AppState;
 
 // --- Backwards-compatible module paths ---
-pub use features::{antibot, history, non_robot_search, proxy_grabber, proxy_manager};
+pub use features::{
+    antibot, history, non_robot_search, proxy_grabber, proxy_manager, visual_scout,
+};
 pub use mcp::handlers as mcp_handlers;
 pub use mcp::stdio as stdio_service;
 pub use mcp::tooling as mcp_tooling;

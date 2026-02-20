@@ -6,35 +6,37 @@ Policy:
 
 ## Unreleased
 
-### Added
-
-- —
-
-### Changed
-
-- —
-
-### Fixed
-
-- —
-
-## v2.6.0 (2026-02-20)
+## v3.0.0 (2026-02-20)
 
 ### Added
 
-- **GitHub Discussions & Issues hydration**: `fetch_via_cdp` detects `github.com/*/discussions/*` and `/issues/*` URLs; extends network-idle window to 2.5 s / 12 s max and polls for `.timeline-comment`, `.js-discussion`, `.comment-body` DOM nodes before capturing HTML — eliminates `cdp_fallback_failed` on threaded pages.
-- **Contextual code blocks** (`clean_json` mode): `SniperCodeBlock` gains a `context: Option<String>` field. `extract_contextual_code_blocks()` performs a two-pass extraction: Pass 1 pulls the prose line preceding each fenced block; Pass 2 surfaces the Markdown sentence that contains each inline snippet. LLMs now receive `{"context": "Run it with", "code": "--no-watch"}` instead of bare `{"code": "--no-watch"}`.
-- **IDE copilot-instructions guide** (README): new `🤖 Agent Optimal Setup` section documents how to wire the ShadowCrawl priority rules into VS Code (`copilot-instructions.md`), Cursor (`.cursorrules`), Cline (`.clinerules`, already in repo), Claude Desktop (system prompt), and any other agent framework.
-- **`.clinerules`** workspace file: all 7 priority rules + decision-flow diagram + per-tool quick-reference table — loaded automatically by Cline, copy-pasteable into any other IDE.
-- **Agent priority rules in tool schemas**: every MCP tool description now carries machine-readable `⚠️ AGENT RULE` / `✅ BEST PRACTICE` / `⛔ CONSTRAINT` guidance so any LLM parsing the schema immediately sees the correct operational workflow.
+- **`human_auth_session` (The Nuclear Option)**: Launches a visible browser for human login/CAPTCHA solving. Captures and persists full authentication cookies to `~/.shadowcrawl/sessions/{domain}.json`. Enables full automation for protected URLs after a single manual session.
+- **Instruction Overlay**: `human_auth_session` now displays a custom green "ShadowCrawl" instruction banner on top of the browser window to guide users through complex auth walls.
+- **Persistent Session Auto-Injection**: `web_fetch`, `web_crawl`, and `visual_scout` now automatically check for and inject matching cookies from the local session store.
+- **`extract_structured` / `fetch_then_extract`**: new optional params `placeholder_word_threshold` (int, default 10) and `placeholder_empty_ratio` (float 0–1, default 0.9) allow agents to tune placeholder detection sensitivity per-call.
+- **`web_crawl`**: new optional `max_chars` param (default 10 000) caps total JSON output size to prevent workspace storage spill.
+- **Rustdoc module extraction**: `extract_structured` / `fetch_then_extract` correctly populate `modules: [...]` on docs.rs pages using the `NAME/index.html` sub-directory convention.
+- **GitHub Discussions & Issues hydration**: `fetch_via_cdp` detects `github.com/*/discussions/*` and `/issues/*` URLs; extends network-idle window to 2.5 s / 12 s max and polls for `.timeline-comment`, `.js-discussion`, `.comment-body` DOM nodes.
+- **Contextual code blocks** (`clean_json` mode): `SniperCodeBlock` gains a `context: Option<String>` field. Performs two-pass extraction for prose preceding fenced blocks and Markdown sentences containing inline snippets.
+- **IDE copilot-instructions guide** (README): new `🤖 Agent Optimal Setup` section.
+- **`.clinerules`** workspace file: all 7 priority rules + decision-flow diagram + per-tool quick-reference table.
+- **Agent priority rules in tool schemas**: every MCP tool description now carries machine-readable `⚠️ AGENT RULE` / `✅ BEST PRACTICE`.
 
 ### Changed
 
-- **Short-content bypass** (`strict_relevance` / `extract_relevant_sections`): both `apply_semantic_shaving_if_enabled` and `apply_relevant_section_extract_if_enabled` now exit early with a descriptive warning when `word_count < 200`. Short pages (GitHub Discussions, Q&A threads) are returned whole — no context is discarded.
+- **Placeholder detection (Scalar-Only Logic)**: Confidence override to 0.0 now only considers **scalar (non-array)** fields. Pure-array schemas (headers, modules, structs) never trigger fake placeholder warnings, fixing false-positives on rich but list-heavy documentation pages.
+- `web_fetch(output_format="clean_json")`: applies a `max_chars`-based paragraph budget and emits `clean_json_truncated` when output is clipped.
+- `extract_fields` / `fetch_then_extract`: placeholder/unrendered pages (very low content + mostly empty schema fields) force `confidence=0.0`.
+- **Short-content bypass** (`strict_relevance` / `extract_relevant_sections`): early exit with a descriptive warning when `word_count < 200`. Short pages (GitHub Discussions, Q&A threads) are returned whole.
 
 ### Fixed
 
-- **`cdp_fallback_failed` on GitHub Discussions**: threaded pages with lazily-rendered comments no longer fall back to the low-quality static path; extended CDP hydration window and comment-selector polling ensures full thread content is captured.
+- **BUG-6**: `modules: []` always empty on rustdoc pages — refactored regex to support both absolute and simple relative module links (`init/index.html`, `optim/index.html`).
+- **BUG-7**: false-positive `confidence=0.0` on real docs.rs pages; replaced whole-schema empty ratio with scalar-only ratio + raised threshold.
+- **BUG-9**: `web_crawl` could spill 16 KB+ of JSON into VS Code workspace storage; handler now truncates response to `max_chars` (default 10 000).
+- `web_fetch(output_format="clean_json")`: paragraph filter now adapts for `word_count < 200`.
+- `fetch_then_extract`: prevents false-high confidence on JS-only placeholder pages (e.g. crates.io) by overriding confidence to 0.0.
+- **`cdp_fallback_failed` on GitHub Discussions**: extended CDP hydration window and selector polling ensures full thread capture.
 
 ## v2.5.0 (2026-02-19)
 

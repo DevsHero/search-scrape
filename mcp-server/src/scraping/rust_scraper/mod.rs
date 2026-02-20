@@ -326,6 +326,17 @@ impl RustScraper {
             warnings.push("content_restricted".to_string());
         }
 
+        // 🎯 Auth-Risk Score — continuous 0.0–1.0 probability computed from content + DOM signals.
+        // Always populated so agents can take graduated action (escalate at ≥ 0.4).
+        let (auth_risk_score_val, detection_factors) =
+            self.compute_auth_risk_score(&html, &clean_content, url);
+        // Coerce to None when the score is effectively zero (no signals triggered).
+        let auth_risk_score = if auth_risk_score_val > 0.0 {
+            Some(auth_risk_score_val)
+        } else {
+            None
+        };
+
         clean_content = self.append_image_context_markdown(clean_content, &images, &title);
         let word_count = self.count_words(&clean_content);
         let reading_time_minutes = Some(((word_count as f64 / 200.0).ceil() as u32).max(1));
@@ -372,6 +383,9 @@ impl RustScraper {
             warnings,
             domain,
             auth_wall_reason,
+            auth_risk_score,
+            detection_factors,
+            final_url: None,
         };
 
         info!(

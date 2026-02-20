@@ -328,6 +328,170 @@ impl RustScraper {
 
         None
     }
+
+    /// Compute a continuous auth-risk score on a **0.0 – 1.0** scale.
+    ///
+    /// Unlike the binary `detect_auth_wall` / `detect_auth_wall_html` functions this
+    /// method is additive: every detected signal contributes weight so agents can
+    /// distinguish "almost certainly an auth wall" (≥ 0.6) from "suspicious but
+    /// uncertain" (0.4 – 0.6) from "probably fine" (< 0.4).
+    ///
+    /// Returns `(score, detection_factors)`.
+    pub(super) fn compute_auth_risk_score(
+        &self,
+        html: &str,
+        clean_content: &str,
+        url: &str,
+    ) -> (f32, Vec<String>) {
+        let mut score: f32 = 0.0;
+        let mut factors: Vec<String> = Vec::new();
+
+        // ── Signal 1: High-confidence text keywords (+0.55) ─────────────────────
+        let lower_content = clean_content.to_lowercase();
+        let high_kw = lower_content.contains("sign in to continue")
+            || lower_content.contains("log in to continue")
+            || lower_content.contains("please sign in")
+            || lower_content.contains("please log in")
+            || lower_content.contains("sign in with google")
+            || lower_content.contains("sign in with github")
+            || lower_content.contains("sign in with microsoft")
+            || lower_content.contains("login to continue")
+            || lower_content.contains("you must be logged in to");
+
+        if high_kw {
+            score += 0.55;
+            factors.push("high_confidence_auth_keyword".to_string());
+        }
+
+        // ── Signal 2: Short content with paired auth/registration keywords (+0.25) ─
+        let word_count = clean_content.split_whitespace().count();
+        let is_short = word_count < 80;
+
+        let low_kw_short = is_short
+            && ((lower_content.contains("sign in") && lower_content.contains("sign up"))
+                || (lower_content.contains("log in") && lower_content.contains("sign up"))
+                || (lower_content.contains("create an account")
+                    && lower_content.contains("sign in")));
+
+        if low_kw_short {
+            score += 0.25;
+            factors.push(format!(
+                "short_content_with_auth_signals: {word_count} words"
+            ));
+        } else if is_short && !high_kw {
+            score += 0.05;
+            factors.push(format!("very_short_content: {word_count} words"));
+        }
+
+        // ── Signal 3: DOM login selectors (+0.50) / auth form action (+0.40) / auth title (+0.35) ─
+        let preview_len = html.len().min(60_000);
+        let preview_lower = html[..preview_len].to_lowercase();
+
+        let has_html_signal = preview_lower.contains("password")
+            || preview_lower.contains("sign in")
+            || preview_lower.contains("login");
+
+        if has_html_signal {
+            let document = Html::parse_document(html);
+
+            let login_selectors: &[(&str, &str)] = &[
+                ("#login_field", "github-username-field"),
+                ("[type='password']", "password-input"),
+                (".auth-form", "auth-form-class"),
+                (".login-form", "login-form-class"),
+                ("#loginForm", "loginForm-id"),
+                ("#sign_in_form", "sign_in_form-id"),
+                ("[name='password']", "password-name-attr"),
+            ];
+
+            for (sel_str, label) in login_selectors {
+                if let Ok(sel) = Selector::parse(sel_str) {
+                    if document.select(&sel).next().is_some() {
+                        score += 0.50;
+                        factors.push(format!("dom_login_selector: {label}"));
+                        break;
+                    }
+                }
+            }
+
+            // Form action check (+0.40)
+            if let Ok(form_sel) = Selector::parse("form") {
+                let auth_actions = [
+                    "/login",
+                    "/signin",
+                    "/sign_in",
+                    "/session",
+                    "/auth/login",
+                    "/account/login",
+                    "/users/sign_in",
+                ];
+                'outer: for form in document.select(&form_sel) {
+                    if let Some(action) = form.value().attr("action") {
+                        let act = action.to_lowercase();
+                        if auth_actions
+                            .iter()
+                            .any(|a| act.ends_with(a) || act.contains(a))
+                        {
+                            if score < 0.50 {
+                                score += 0.40;
+                            }
+                            factors.push(format!("dom_auth_form_action: {action}"));
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+
+            // Page title check (+0.35)
+            if let Ok(title_sel) = Selector::parse("title") {
+                if let Some(el) = document.select(&title_sel).next() {
+                    let t = el.text().collect::<String>();
+                    let tl = t.trim().to_lowercase();
+                    if tl.starts_with("sign in")
+                        || tl.starts_with("log in")
+                        || tl.starts_with("login")
+                        || tl.ends_with("- sign in")
+                        || tl.ends_with("· sign in")
+                        || tl.ends_with("- log in")
+                        || tl.ends_with("· log in")
+                    {
+                        score += 0.35;
+                        factors.push(format!("auth_page_title: \"{}\"", t.trim()));
+                    }
+                }
+            }
+        }
+
+        // ── Signal 4: Content-to-nav ratio (+0.12) ──────────────────────────────
+        {
+            let preview = &html[..html.len().min(30_000)];
+            let preview_lc = preview.to_lowercase();
+            let nav_count = preview_lc.matches("<nav").count()
+                + preview_lc.matches("role=\"navigation\"").count();
+            if nav_count > 1 && word_count < 100 {
+                score += 0.12;
+                factors.push(format!(
+                    "high_nav_density: {nav_count} nav elements, {word_count} content words"
+                ));
+            }
+        }
+
+        // ── Signal 5: Auth-like URL pattern (+0.20) ─────────────────────────────
+        {
+            let url_lower = url.to_lowercase();
+            if url_lower.contains("/login")
+                || url_lower.contains("/signin")
+                || url_lower.contains("/sign-in")
+                || url_lower.contains("/auth/")
+                || url_lower.contains("/session")
+            {
+                score += 0.20;
+                factors.push("auth_url_pattern".to_string());
+            }
+        }
+
+        (score.min(1.0), factors)
+    }
 }
 
 #[cfg(test)]
@@ -479,5 +643,76 @@ mod tests {
         let html = "<html><body><h1>Hello World</h1><p>Welcome to our site.</p></body></html>";
         let result = s.detect_auth_wall_html(html, "https://example.com");
         assert!(result.is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // (a) Strict-redirect auth wall — e.g. GitHub login page
+    // Expected: score > 0.70 (strong auth-wall signal)
+    // ------------------------------------------------------------------
+    #[test]
+    fn test_auth_risk_strict_redirect_github_login() {
+        let s = scraper();
+        let html = r#"
+            <!DOCTYPE html>
+            <html>
+            <head><title>Sign in to GitHub</title></head>
+            <body>
+              <form method="post" action="/session">
+                <label for="login_field">Username or email address</label>
+                <input type="text" id="login_field" name="login">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password">
+                <input type="submit" value="Sign in">
+              </form>
+              <a href="/password_reset">Forgot password?</a>
+              <p>Please sign in to continue using GitHub.</p>
+            </body>
+            </html>
+        "#;
+        let clean = "Please sign in to continue using GitHub. Username or email address Password Sign in Forgot password?";
+        let (score, _factors) =
+            s.compute_auth_risk_score(html, clean, "https://github.com/session");
+        assert!(
+            score > 0.70,
+            "GitHub login page should score > 0.70, got {score:.3}"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // (b) Soft overlay — e.g. Medium membership prompt over real content
+    // Expected: score > 0.0 AND score < 0.50 (soft / partial signal only)
+    // ------------------------------------------------------------------
+    #[test]
+    fn test_auth_risk_soft_overlay_medium_paywall() {
+        let s = scraper();
+        let html = r#"
+            <!DOCTYPE html>
+            <html>
+            <head><title>How to Write Great Code - Medium</title></head>
+            <body>
+              <article>
+                <h1>How to Write Great Code</h1>
+                <p>Clean code is the foundation of maintainable software...</p>
+                <p>In this article we explore the key principles...</p>
+              </article>
+              <div class="paywall-overlay">
+                <p>This story is only available to Medium members.</p>
+                <a href="/membership">Become a member</a>
+                <a href="/login">Sign in</a>
+              </div>
+            </body>
+            </html>
+        "#;
+        let clean = "How to Write Great Code. Clean code is the foundation of maintainable software. This story is only available to Medium members. Become a member. Sign in.";
+        let (score, _factors) =
+            s.compute_auth_risk_score(html, clean, "https://medium.com/some-article");
+        assert!(
+            score > 0.0,
+            "Soft paywall page should score > 0.0, got {score:.3}"
+        );
+        assert!(
+            score < 0.50,
+            "Soft paywall page should score < 0.50 (not a hard gate), got {score:.3}"
+        );
     }
 }

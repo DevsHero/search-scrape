@@ -122,6 +122,19 @@ pub struct ScrapeResponse {
     /// The handler uses this to return a structured `blocked_by_auth` response.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_wall_reason: Option<String>,
+
+    /// Continuous auth-risk probability (0.0 = safe, 1.0 = almost certainly an auth wall).
+    /// Agents should call `visual_scout` when this value is >= 0.4.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_risk_score: Option<f32>,
+
+    /// Human-readable factors that contributed to `auth_risk_score`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub detection_factors: Vec<String>,
+
+    /// Final URL after any server-side redirects, when detectable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_url: Option<String>,
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -229,6 +242,8 @@ pub struct ScrapeBatchResult {
     pub data: Option<ScrapeResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
     pub duration_ms: u64,
 }
 

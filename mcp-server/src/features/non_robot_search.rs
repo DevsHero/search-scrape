@@ -95,6 +95,13 @@ pub struct NonRobotSearchConfig {
     // Deep extraction features
     pub auto_scroll: bool,
     pub wait_for_selector: Option<String>,
+    /// When `true` the visible browser window is left open after content is extracted.
+    /// The browser process will still be cleaned up when the session is eventually dropped.
+    pub keep_open: bool,
+    /// Optional instruction displayed inside the in-browser overlay and the desktop notification.
+    /// Use this to tell the user exactly what to log in to and why.
+    /// Example: "Please log in to GitHub so I can read the Discussions in this repo."
+    pub instruction_message: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -111,6 +118,9 @@ pub enum NonRobotSearchError {
     #[error("timeout waiting for human intervention")]
     HumanUnavailable,
 
+    #[error("auth session not established (no session-like cookies captured)")]
+    AuthCookiesMissing,
+
     #[error("browser window was closed during HITL")]
     BrowserClosed,
 
@@ -119,6 +129,247 @@ pub enum NonRobotSearchError {
 
     #[error("automation failed: {0}")]
     AutomationFailed(String),
+}
+
+/// `execute_manual_auth_flow` — strict manual-only HITL flow.
+///
+/// This is used by the `human_auth_session` tool. It intentionally does **not**
+/// attempt to detect "challenge resolved" or infer completion from navigation.
+/// The browser remains open until the user clicks **FINISH & RETURN** or the
+/// configured `human_timeout` elapses.
+pub async fn execute_manual_auth_flow(
+    state: &Arc<AppState>,
+    cfg: NonRobotSearchConfig,
+) -> Result<ScrapeResponse, NonRobotSearchError> {
+    #[cfg(feature = "non_robot_search")]
+    {
+        execute_manual_auth_flow_inner(state, cfg).await
+    }
+
+    #[cfg(not(feature = "non_robot_search"))]
+    {
+        let _ = (state, cfg);
+        Err(NonRobotSearchError::AutomationFailed(
+            "feature not enabled".to_string(),
+        ))
+    }
+}
+
+#[cfg(feature = "non_robot_search")]
+async fn execute_manual_auth_flow_inner(
+    state: &Arc<AppState>,
+    cfg: NonRobotSearchConfig,
+) -> Result<ScrapeResponse, NonRobotSearchError> {
+    log_state(NonRobotState::Initial);
+
+    // Ensure sequential execution of non-robot tool calls.
+    let _serial_guard = state.non_robot_search_lock.lock().await;
+
+    notify_and_prompt_user(&cfg)?;
+
+    let (abort_tx, mut abort_rx) = watch::channel(false);
+    let killswitch = KillSwitch::start(abort_tx);
+
+    let input_controller: Box<dyn InputController> = Box::new(NoopInputController);
+
+    // Acquire proxy (if requested) before input locking.
+    let proxy_arg = if cfg.use_proxy {
+        if let Some(manager) = &state.proxy_manager {
+            match manager.switch_to_best_proxy().await {
+                Ok(proxy_url) => Some(proxy_url),
+                Err(e) => {
+                    warn!("non_robot_search: proxy requested but unavailable: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Lock inputs for the automation phase.
+    input_controller.lock().ok();
+    let lock_guard = InputLockGuard::new(&*input_controller);
+
+    let mut session =
+        BrowserSession::launch(proxy_arg.as_deref(), cfg.user_profile_path.as_deref())
+            .await
+            .map_err(|e| NonRobotSearchError::BrowserLaunchFailed(e.to_string()))?;
+
+    log_state(NonRobotState::VisibleBrowserLaunch);
+
+    // Strict manual-only flow: navigate, then wait ONLY for FINISH or timeout.
+    let mut result = run_manual_auth_flow(
+        state,
+        &cfg,
+        &mut session,
+        input_controller.as_ref(),
+        &mut abort_rx,
+    )
+    .await;
+
+    drop(lock_guard);
+    log_state(NonRobotState::Unlocking);
+
+    // Always attempt to persist cookies (even on timeout) so partial sessions
+    // are not lost.
+    let cookie_health = match save_session_cookies_checked(&session.page, &cfg.url).await {
+        Ok(h) => Some(h),
+        Err(e) => {
+            warn!(
+                "non_robot_search: manual_auth_flow cookie save failed: {}",
+                e
+            );
+            None
+        }
+    };
+
+    // Confirm session success after explicit FINISH.
+    if result.is_ok() {
+        let ok = cookie_health
+            .as_ref()
+            .map(|h| h.has_session_like)
+            .unwrap_or(false);
+        if !ok {
+            result = Err(NonRobotSearchError::AuthCookiesMissing);
+        }
+    }
+
+    // Optionally leave the browser open so the user can continue browsing.
+    if cfg.keep_open {
+        info!("non_robot_search: keep_open=true — browser will remain open (process detached)");
+        let _ = session.page.evaluate(
+            r#"(() => {
+                const id = '__sc_keep_open__';
+                if (document.getElementById(id)) return;
+                const b = document.createElement('div');
+                b.id = id;
+                b.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647;padding:10px 16px;border-radius:10px;background:rgba(20,20,24,0.92);color:#a0ffc0;font-family:system-ui,sans-serif;font-size:13px;font-weight:700;border:1px solid rgba(80,255,160,0.25);box-shadow:0 4px 16px rgba(0,0,0,0.4)';
+                b.textContent = '✅ ShadowCrawl: manual auth flow complete — browser left open as requested';
+                document.body.appendChild(b);
+                setTimeout(() => b.remove(), 15000);
+            })()"#
+        ).await;
+        session.handler_task.abort();
+    } else {
+        session.close().await;
+    }
+
+    killswitch.stop();
+    log_state(NonRobotState::Done);
+
+    // Record proxy result.
+    if let (Some(proxy_url), Some(manager)) = (proxy_arg.as_ref(), state.proxy_manager.as_ref()) {
+        let success = result.is_ok();
+        let _ = manager.record_proxy_result(proxy_url, success, None).await;
+    }
+
+    result
+}
+
+#[cfg(feature = "non_robot_search")]
+struct CookieHealth {
+    total: usize,
+    session_like_names: Vec<String>,
+    has_session_like: bool,
+}
+
+#[cfg(feature = "non_robot_search")]
+fn cookie_name_is_session_like(name: &str) -> bool {
+    let n = name.trim().to_ascii_lowercase();
+    // Site-agnostic heuristics.
+    n == "session"
+        || n.contains("session")
+        || n.contains("sess")
+        || n.contains("auth")
+        || n.contains("token")
+        || n == "sid"
+        || n.ends_with("_sid")
+        || n == "jwt"
+        || n.contains("jwt")
+}
+
+#[cfg(feature = "non_robot_search")]
+async fn save_session_cookies_checked(
+    page: &chromiumoxide::Page,
+    url: &str,
+) -> Result<CookieHealth, NonRobotSearchError> {
+    let domain_key = url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.replace('.', "_").replace(':', "_")))
+        .unwrap_or_else(|| "unknown_domain".to_string());
+
+    let cookies = page.get_cookies().await.map_err(|e| {
+        NonRobotSearchError::AutomationFailed(format!(
+            "save_session_cookies — failed to retrieve cookies: {}",
+            e
+        ))
+    })?;
+
+    let mut session_like_names = Vec::new();
+    for c in &cookies {
+        if cookie_name_is_session_like(&c.name) {
+            session_like_names.push(c.name.clone());
+        }
+    }
+    session_like_names.sort();
+    session_like_names.dedup();
+    let has_session_like = !session_like_names.is_empty();
+
+    let cookies_json = serde_json::to_string_pretty(&cookies).map_err(|e| {
+        NonRobotSearchError::AutomationFailed(format!(
+            "save_session_cookies — failed to serialize cookies: {}",
+            e
+        ))
+    })?;
+
+    let sessions_dir = dirs::home_dir()
+        .ok_or_else(|| {
+            NonRobotSearchError::AutomationFailed("cannot locate home directory".to_string())
+        })?
+        .join(".shadowcrawl")
+        .join("sessions");
+
+    std::fs::create_dir_all(&sessions_dir).map_err(|e| {
+        NonRobotSearchError::AutomationFailed(format!(
+            "save_session_cookies — cannot create sessions dir: {}",
+            e
+        ))
+    })?;
+
+    let cookie_file = sessions_dir.join(format!("{}.json", domain_key));
+    std::fs::write(&cookie_file, &cookies_json).map_err(|e| {
+        NonRobotSearchError::AutomationFailed(format!(
+            "save_session_cookies — failed to write {}: {}",
+            cookie_file.display(),
+            e
+        ))
+    })?;
+
+    info!(
+        "non_robot_search: 💾 saved {} cookies for {} → {} (session-like: {})",
+        cookies.len(),
+        domain_key,
+        cookie_file.display(),
+        if has_session_like {
+            format!("yes: {}", session_like_names.join(", "))
+        } else {
+            "no".to_string()
+        }
+    );
+
+    let raw_values: Vec<serde_json::Value> =
+        serde_json::from_str(&cookies_json).unwrap_or_default();
+    let expiry = super::session_store::effective_session_expiry(&raw_values);
+    super::auth_registry::mark_requires_auth(url, expiry);
+
+    Ok(CookieHealth {
+        total: cookies.len(),
+        session_like_names,
+        has_session_like,
+    })
 }
 
 pub async fn execute_non_robot_search(
@@ -144,24 +395,12 @@ async fn execute_non_robot_search_impl(
     state: &Arc<AppState>,
     cfg: NonRobotSearchConfig,
 ) -> Result<ScrapeResponse, NonRobotSearchError> {
-    // Global timeout: human_timeout + 30s safety margin
-    let global_timeout = cfg.human_timeout + Duration::from_secs(30);
-
-    match tokio::time::timeout(global_timeout, execute_non_robot_search_inner(state, cfg)).await {
-        Ok(result) => result,
-        Err(_) => {
-            warn!(
-                "non_robot_search: global timeout exceeded ({}s), force-killing browser",
-                global_timeout.as_secs()
-            );
-            // Emergency cleanup: kill all debug browsers on port 9222
-            force_kill_all_debug_browsers(9222);
-            Err(NonRobotSearchError::AutomationFailed(format!(
-                "global timeout exceeded ({}s)",
-                global_timeout.as_secs()
-            )))
-        }
-    }
+    // IMPORTANT: Do not wrap the HITL flow in a strict `tokio::time::timeout`.
+    // Operators must be able to complete real logins (2FA / CAPTCHA / OAuth)
+    // and explicitly click "FINISH & RETURN" before we proceed to cookie
+    // capture + close. A strict timeout would drop the session and close the
+    // visible browser window prematurely.
+    execute_non_robot_search_inner(state, cfg).await
 }
 
 #[cfg(feature = "non_robot_search")]
@@ -246,7 +485,35 @@ async fn execute_non_robot_search_inner(
 
     drop(lock_guard);
     log_state(NonRobotState::Unlocking);
-    session.close().await;
+
+    // 💾 Session Persistence: save cookies after a successful auth flow so future
+    // requests to the same domain don't require user interaction again.
+    if result.is_ok() {
+        save_session_cookies(&session.page, &cfg.url).await;
+    }
+
+    // Optionally leave the browser open so the user can continue browsing.
+    if cfg.keep_open {
+        info!("non_robot_search: keep_open=true — browser will remain open (process detached)");
+        // Show a non-blocking notice inside the browser.
+        let _ = session.page.evaluate(
+            r#"(() => {
+                const id = '__sc_keep_open__';
+                if (document.getElementById(id)) return;
+                const b = document.createElement('div');
+                b.id = id;
+                b.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647;padding:10px 16px;border-radius:10px;background:rgba(20,20,24,0.92);color:#a0ffc0;font-family:system-ui,sans-serif;font-size:13px;font-weight:700;border:1px solid rgba(80,255,160,0.25);box-shadow:0 4px 16px rgba(0,0,0,0.4)';
+                b.textContent = '✅ ShadowCrawl: content extracted — browser left open as requested';
+                document.body.appendChild(b);
+                setTimeout(() => b.remove(), 15000);
+            })()"#
+        ).await;
+        // Detach handler task so the browser process continues independently.
+        session.handler_task.abort();
+    } else {
+        session.close().await;
+    }
+
     killswitch.stop();
 
     log_state(NonRobotState::Done);
@@ -584,14 +851,34 @@ async fn run_flow(
     // This ensures operators see what is happening even when consent is auto-allowed.
     let _ = session
         .page
-        .evaluate(get_prelaunch_overlay_script(&cfg.url))
+        .evaluate(get_prelaunch_overlay_script(
+            &cfg.url,
+            cfg.instruction_message.as_deref(),
+        ))
         .await;
+
+    // Auto-inject any stored session cookies before navigation so the browser
+    // starts with a valid auth state rather than triggering a login page.
+    super::session_store::auto_inject(&session.page, &cfg.url).await;
 
     session
         .page
         .goto(&cfg.url)
         .await
         .map_err(|e| NonRobotSearchError::AutomationFailed(format!("goto failed: {}", e)))?;
+
+    // Inject the persistent instruction banner so the user knows exactly what
+    // to do while interacting with the visible browser window.
+    if let Some(msg) = cfg.instruction_message.as_deref() {
+        let banner = get_persistent_instruction_banner_script(msg);
+        // Register as a persistent on-new-document script so it survives
+        // navigations to login pages, OAuth flows, and redirects.
+        let _ = session.page.execute(
+            chromiumoxide::cdp::browser_protocol::page::AddScriptToEvaluateOnNewDocumentParams::new(banner.clone())
+        ).await;
+        // Also fire immediately into the already-loaded page.
+        let _ = session.page.evaluate(banner).await;
+    }
 
     human_like_idle(abort_rx).await?;
     human_like_scroll(&session.page, abort_rx).await?;
@@ -855,15 +1142,128 @@ async fn run_flow(
         }
     }
 
-    // Run Janitor again immediately before extraction; some flows (auto-scroll, settle) can re-trigger overlays.
+    extract_current_page(state, cfg, session, settle_time_ms).await
+}
+
+#[cfg(feature = "non_robot_search")]
+async fn run_manual_auth_flow(
+    state: &Arc<AppState>,
+    cfg: &NonRobotSearchConfig,
+    session: &mut BrowserSession,
+    input_controller: &dyn InputController,
+    abort_rx: &mut watch::Receiver<bool>,
+) -> Result<ScrapeResponse, NonRobotSearchError> {
+    info!(
+        "non_robot_search: manual_auth_flow navigating to {}",
+        cfg.url
+    );
+    log_state(NonRobotState::Interaction);
+
+    let _ = session
+        .page
+        .evaluate(get_prelaunch_overlay_script(
+            &cfg.url,
+            cfg.instruction_message.as_deref(),
+        ))
+        .await;
+
+    // Auto-inject stored cookies before navigation.
+    super::session_store::auto_inject(&session.page, &cfg.url).await;
+
+    session
+        .page
+        .goto(&cfg.url)
+        .await
+        .map_err(|e| NonRobotSearchError::AutomationFailed(format!("goto failed: {}", e)))?;
+
+    // Persistent instruction banner (survives navigations/redirects).
+    if let Some(msg) = cfg.instruction_message.as_deref() {
+        let banner = get_persistent_instruction_banner_script(msg);
+        let _ = session
+            .page
+            .execute(
+                chromiumoxide::cdp::browser_protocol::page::AddScriptToEvaluateOnNewDocumentParams::new(
+                    banner.clone(),
+                ),
+            )
+            .await;
+        let _ = session.page.evaluate(banner).await;
+    }
+
+    // Enter HITL immediately. No challenge heuristics.
+    log_state(NonRobotState::HitlTrigger);
+    request_human_help(session, input_controller).await?;
+    log_state(NonRobotState::UserActionCompletionDetection);
+
+    let finished = wait_for_manual_finish_only(session, cfg.human_timeout, abort_rx).await?;
+    if !finished {
+        return Err(NonRobotSearchError::HumanUnavailable);
+    }
+
+    // After manual finish, re-lock input and extract.
+    input_controller.lock().ok();
+    log_state(NonRobotState::ResumeAndExtract);
+
+    extract_current_page(state, cfg, session, None).await
+}
+
+#[cfg(feature = "non_robot_search")]
+async fn wait_for_manual_finish_only(
+    session: &BrowserSession,
+    timeout: Duration,
+    abort_rx: &mut watch::Receiver<bool>,
+) -> Result<bool, NonRobotSearchError> {
+    let start = Instant::now();
+    let mut last_heartbeat = Instant::now();
+    loop {
+        abort_if_needed(abort_rx)?;
+        if session.is_closed() {
+            return Err(NonRobotSearchError::BrowserClosed);
+        }
+
+        if check_manual_return_triggered(&session.page).await {
+            info!("non_robot_search: 🚀 Manual return button clicked (strict manual mode)");
+            play_tone(Tone::Success);
+            let _ = session.page.evaluate(
+                r#"(() => { const el = document.getElementById('__shadowcrawl_hitl_overlay__'); if (el) el.remove(); })()"#,
+            ).await;
+            return Ok(true);
+        }
+
+        if start.elapsed() >= timeout {
+            warn!(
+                "non_robot_search: strict manual wait timed out ({}s) — proceeding to cookie capture/close",
+                timeout.as_secs()
+            );
+            return Ok(false);
+        }
+
+        if last_heartbeat.elapsed() >= Duration::from_secs(10) {
+            let _ = session.page.evaluate("Date.now()").await;
+            info!(
+                "non_robot_search: heartbeat — awaiting user FINISH & RETURN (strict manual mode)"
+            );
+            last_heartbeat = Instant::now();
+        }
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
+#[cfg(feature = "non_robot_search")]
+async fn extract_current_page(
+    state: &Arc<AppState>,
+    cfg: &NonRobotSearchConfig,
+    session: &BrowserSession,
+    settle_time_ms: Option<u64>,
+) -> Result<ScrapeResponse, NonRobotSearchError> {
+    // Some flows (manual interaction, redirects) can re-trigger overlays.
     wait_for_network_idle_heuristic(&session.page, Duration::from_secs(10)).await;
     run_pre_scrape_janitor_v2(&session.page).await;
 
-    // Wait for click handlers/animations to finish.
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     info!("non_robot_search: extracting HTML");
-    // After HITL, the connection can be more fragile; prefer an evaluation-based snapshot.
     let html = get_html_snapshot(&session.page, session.is_closed())
         .await
         .map_err(|e| {
@@ -875,14 +1275,12 @@ async fn run_flow(
         NonRobotSearchError::AutomationFailed(format!("process_html failed: {}", e))
     })?;
 
-    // Deep Metadata Hunt: if the normal extractor missed JSON-LD / JobPosting evidence, do a fallback scan.
     apply_metadata_fallback_from_html(&mut scraped, &html);
 
     if let Some(ms) = settle_time_ms {
         scraped.hydration_status.settle_time_ms = Some(ms);
     }
 
-    // Cache + history, mirroring scrape_url.
     state
         .scrape_cache
         .insert(cfg.url.clone(), scraped.clone())
@@ -904,7 +1302,6 @@ async fn run_flow(
             .await;
     }
 
-    // Ensure max_chars in handler layer; keep full here.
     Ok(scraped)
 }
 
@@ -1130,16 +1527,21 @@ fn notify_and_prompt_user(cfg: &NonRobotSearchConfig) -> Result<(), NonRobotSear
     // Always do a best-effort user-facing notice. This is intentionally non-blocking.
     // (Some environments do not have desktop notifications; ignore failures.)
     let target_line = format!("Target URL: {}", cfg.url);
+    let instruction_line = cfg
+        .instruction_message
+        .as_deref()
+        .map(|m| format!("\nInstruction: {}", m))
+        .unwrap_or_default();
 
     let notification_body = if auto_allow && !force_dialog {
         format!(
-            "ShadowCrawl will open a visible browser for HITL rendering.\n\n{}\n\nTip: If a site blocks automation, solve it in the browser and click FINISH & RETURN.\nEmergency stop: hold ESC for ~3 seconds.",
-            target_line
+            "ShadowCrawl will open a visible browser for HITL rendering.\n\n{}{}\n\nTip: If a site blocks automation, solve it in the browser and click FINISH & RETURN.\nEmergency stop: hold ESC for ~3 seconds.",
+            target_line, instruction_line
         )
     } else {
         format!(
-            "ShadowCrawl is requesting permission to open a visible browser and navigate to the target page.\n\n{}\n\nClick OK to continue or Cancel to abort.\nEmergency stop: hold ESC for ~3 seconds.",
-            target_line
+            "ShadowCrawl is requesting permission to open a visible browser and navigate to the target page.\n\n{}{}\n\nClick OK to continue or Cancel to abort.\nEmergency stop: hold ESC for ~3 seconds.",
+            target_line, instruction_line
         )
     };
 
@@ -1480,10 +1882,33 @@ fn linux_gui_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchE
 }
 
 #[cfg(feature = "non_robot_search")]
-fn get_prelaunch_overlay_script(target_url: &str) -> String {
+fn get_prelaunch_overlay_script(target_url: &str, instruction_message: Option<&str>) -> String {
     // NOTE: This overlay is a UX notice (non-blocking). It improves operator clarity,
     // especially when consent is auto-allowed or when tools are invoked via curl.
     let url_json = serde_json::to_string(target_url).unwrap_or_else(|_| "\"\"".to_string());
+
+    // Inject instruction card JS snippet (or empty string when no instruction given).
+    let instruction_card_js = instruction_message
+        .map(|msg| {
+            let msg_json = serde_json::to_string(msg).unwrap_or_else(|_| "\"\"".to_string());
+            format!(
+                r#"
+        const instr = document.createElement('div');
+        instr.style.marginTop = '12px';
+        instr.style.padding = '10px 14px';
+        instr.style.borderRadius = '10px';
+        instr.style.background = 'rgba(0, 180, 100, 0.12)';
+        instr.style.border = '1px solid rgba(0, 200, 100, 0.30)';
+        instr.style.color = '#a0ffc0';
+        instr.style.fontSize = '13px';
+        instr.style.lineHeight = '1.5';
+        instr.innerHTML = '\u26a1 <b>Instruction:</b> ' + {msg_json};
+        card.appendChild(instr);"#,
+                msg_json = msg_json
+            )
+        })
+        .unwrap_or_default();
+
     format!(
         r#"(() => {{
     try {{
@@ -1572,6 +1997,7 @@ fn get_prelaunch_overlay_script(target_url: &str) -> String {
         card.appendChild(h);
         card.appendChild(sub);
         card.appendChild(url);
+        {instruction_card_js}
         card.appendChild(ul);
         card.appendChild(actions);
         overlay.appendChild(card);
@@ -1585,8 +2011,97 @@ fn get_prelaunch_overlay_script(target_url: &str) -> String {
     }} catch (e) {{
         // ignore
     }}
-}})()"#
+}})()"#,
+        url_json = url_json,
+        instruction_card_js = instruction_card_js
     )
+}
+
+/// Generate a self-contained JS IIFE that injects a **persistent floating
+/// instruction banner** anchored to the top of the viewport.
+#[cfg(feature = "non_robot_search")]
+fn get_persistent_instruction_banner_script(instruction_message: &str) -> String {
+    let msg_json =
+        serde_json::to_string(instruction_message).unwrap_or_else(|_| "\"\"".to_string());
+
+    format!(
+        r#"(function() {{
+    'use strict';
+    var _sc_id = '__sc_instruction_banner__';
+    if (document.getElementById(_sc_id)) return;
+    var _sc_msg = {msg_json};
+    function _sc_build() {{
+        if (document.getElementById(_sc_id)) return;
+        var b = document.createElement('div');
+        b.id = _sc_id;
+        b.style.cssText = [
+            'position:fixed',
+            'top:0',
+            'left:0',
+            'right:0',
+            'z-index:2147483647',
+            'background:linear-gradient(90deg,#061510,#0d3321)',
+            'border-bottom:2px solid rgba(0,230,95,0.38)',
+            'padding:9px 14px 9px 16px',
+            'display:flex',
+            'align-items:center',
+            'gap:10px',
+            'box-shadow:0 3px 14px rgba(0,0,0,0.55)',
+            'font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif',
+            'font-size:13px',
+            'color:#b0ffcc',
+            'line-height:1.4'
+        ].join(';');
+        var icon = document.createElement('span');
+        icon.textContent = '\u26a1';
+        icon.style.cssText = 'font-size:17px;flex-shrink:0;';
+        var lbl = document.createElement('span');
+        lbl.textContent = 'ShadowCrawl:';
+        lbl.style.cssText = 'font-weight:800;color:#3dffa0;flex-shrink:0;letter-spacing:0.2px;';
+        var txt = document.createElement('span');
+        txt.textContent = _sc_msg;
+        txt.style.cssText = 'flex:1;opacity:0.95;';
+        var x = document.createElement('button');
+        x.textContent = '\u2715';
+        x.title = 'Dismiss';
+        x.style.cssText = [
+            'margin-left:auto',
+            'background:none',
+            'border:1px solid rgba(255,255,255,0.18)',
+            'border-radius:6px',
+            'color:#a0ffc0',
+            'cursor:pointer',
+            'padding:2px 9px',
+            'font-size:12px',
+            'flex-shrink:0'
+        ].join(';');
+        x.onclick = function() {{ b.remove(); }};
+        b.appendChild(icon);
+        b.appendChild(lbl);
+        b.appendChild(txt);
+        b.appendChild(x);
+        document.body.insertBefore(b, document.body.firstChild);
+    }}
+    if (document.readyState === 'loading') {{
+        document.addEventListener('DOMContentLoaded', _sc_build);
+    }} else {{
+        _sc_build();
+    }}
+}})()"#,
+        msg_json = msg_json
+    )
+}
+
+/// Extract all browser cookies after a successful auth flow and persist them to
+/// `~/.shadowcrawl/sessions/{sanitised_domain}.json`.
+///
+/// Also computes the minimum cookie `expires` timestamp and registers the
+/// session with [`super::auth_registry`] so future scrapes can pre-emptively
+/// inject cookies without running the full auth-risk scoring pipeline.
+#[cfg(feature = "non_robot_search")]
+async fn save_session_cookies(page: &chromiumoxide::Page, url: &str) {
+    // Legacy convenience wrapper.
+    let _ = save_session_cookies_checked(page, url).await;
 }
 
 #[cfg(all(feature = "non_robot_search", target_os = "macos"))]
@@ -1682,6 +2197,9 @@ async fn wait_for_human_resolution(
     abort_rx: &mut watch::Receiver<bool>,
 ) -> Result<(), NonRobotSearchError> {
     let start = Instant::now();
+    let mut last_heartbeat = Instant::now();
+    let mut ready_notice_sent = false;
+    let mut timeout_notice_sent = false;
     loop {
         abort_if_needed(abort_rx)?;
         if session.is_closed() {
@@ -1699,9 +2217,9 @@ async fn wait_for_human_resolution(
             return Ok(());
         }
 
-        // Consider it resolved if verification markers are gone and the page is no longer an interstitial.
-        // Be conservative: transient evaluation errors during redirects/navigation should not be treated
-        // as "resolved".
+        // Keep a conservative view of whether the page still looks challenged.
+        // We DO NOT auto-advance on "resolved" — the operator must click
+        // FINISH & RETURN explicitly.
         let challenged = match is_challenged_conservative(&session.page).await {
             Ok(v) => v,
             Err(e) => {
@@ -1712,17 +2230,38 @@ async fn wait_for_human_resolution(
                 true
             }
         };
-        if !challenged {
+
+        if !challenged && !ready_notice_sent {
+            ready_notice_sent = true;
             play_tone(Tone::Success);
-            // Remove overlay.
             let _ = session.page.evaluate(
-                r#"(() => { const el = document.getElementById('__shadowcrawl_hitl_overlay__'); if (el) el.remove(); })()"#,
+                r#"(() => {
+                    const id = '__shadowcrawl_hitl_overlay__';
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    el.textContent = '✅ SHADOWCRAWL: Verification looks complete — click FINISH & RETURN when ready';
+                    el.style.background = 'linear-gradient(90deg, rgba(30,170,90,0.95) 0%, rgba(40,200,120,0.95) 100%)';
+                    el.style.borderBottom = '2px solid rgba(40,220,120,0.85)';
+                })()"#,
             ).await;
-            return Ok(());
         }
 
-        if start.elapsed() >= timeout {
-            return Err(NonRobotSearchError::HumanUnavailable);
+        // Soft timeout: after the configured window, keep waiting but log a
+        // warning so operators understand why it hasn't returned yet.
+        if start.elapsed() >= timeout && !timeout_notice_sent {
+            timeout_notice_sent = true;
+            warn!(
+                "non_robot_search: human_timeout ({}s) exceeded — still waiting for explicit FINISH & RETURN",
+                timeout.as_secs()
+            );
+        }
+
+        // Heartbeat ping to keep the browser transport + MCP call alive while
+        // we wait for manual user completion.
+        if last_heartbeat.elapsed() >= Duration::from_secs(10) {
+            let _ = session.page.evaluate("Date.now()").await;
+            info!("non_robot_search: heartbeat — awaiting user FINISH & RETURN");
+            last_heartbeat = Instant::now();
         }
 
         tokio::time::sleep(Duration::from_millis(250)).await;

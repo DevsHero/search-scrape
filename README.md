@@ -1,4 +1,4 @@
-# 🥷 ShadowCrawl MCP — v2.6.0
+# 🥷 ShadowCrawl MCP — v3.0.0
 
 <div align="center">
 <img src="media/logo.svg" alt="ShadowCrawl Logo" width="180">
@@ -20,9 +20,9 @@ When every other tool gets blocked, ShadowCrawl doesn't retreat — it **escalat
 
 ---
 
-## ⚡ God-Tier Internal Meta-Search (v2.6.0)
+## ⚡ God-Tier Internal Meta-Search (v3.0.0)
 
-ShadowCrawl v2.6.0 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
+ShadowCrawl v3.0.0 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
 
 | Engine | Coverage | Notes |
 |--------|----------|-------|
@@ -57,6 +57,7 @@ ShadowCrawl v2.6.0 ships a **100% Rust-native metasearch engine** that queries 4
 |---------|---------|
 | 🔍 **God-Tier Meta-Search** | Parallel Google / Bing / DDG / Brave · dedup · scoring · breadcrumbs · `published_at` |
 | 🕷 **Universal Scraper** | Rust-native + native Chromium CDP for JS-heavy and anti-bot sites |
+| 🛂 **Human Auth (HITL)** | `human_auth_session`: Real browser + persistent cookies + instruction overlay + Automatic Re-injection. Fetch any protected URL. |
 | 🧠 **Semantic Memory** | Embedded LanceDB + Model2Vec for long-term research recall (no DB container) |
 | 🤖 **HITL Non-Robot Search** | Visible Brave Browser + keyboard hooks for human CAPTCHA / login-wall bypass |
 | 🌐 **Deep Crawler** | Recursive, bounded crawl to map entire subdomains |
@@ -75,24 +76,25 @@ ShadowCrawl is **pure binary**: a single Rust executable exposes MCP tools (stdi
 
 ---
 
-## 💎 The Nuclear Option: Non-Robot Search (HITL)
+## 💎 The Nuclear Option: Human Auth Session (v3.0.0)
 
-Automation hits a wall? ShadowCrawl **uses a real human** when it matters.
+When standard automation fails (Cloudflare, CAPTCHA, complex logins), ShadowCrawl **activates the human element.**
 
-`non_robot_search` launches a **visible, native Brave Browser** on your machine. If the site demands a CAPTCHA, login, or puzzle — you solve it once; the agent continues uninterrupted.
+### 🛂 `human_auth_session` — The "Unblocker"
+This is our signature tool that surpasses all competitors. While most scrapers fail on login-walled content, `human_auth_session` opens a **real, visible browser window** for you to solve the challenge. 
 
-- 🦁 **Brave Integration** — Real browser profiles (cookies, sessions) indistinguishable from legitimate traffic
-- 🛡 **Safety Kill Switch** — Hold `ESC` for 3 seconds to abort any runaway automation
-- 🔄 **Session Continuity** — `SHADOWCRAWL_RENDER_PROFILE_DIR` persists cookies between runs
-- 📈 **Automatic Escalation** — Normal scrape → native Chromium CDP → HITL. You control the ceiling.
+Once you click **FINISH & RETURN**, all authentication cookies are transparently captured and persisted in `~/.shadowcrawl/sessions/`. Subsequent requests to the same domain automatically inject these cookies — making future fetches **fully automated** and **effortless.**
 
-> ⚠️ HITL requires the binary running **natively** (desktop session). The visible browser needs access to your host display, keyboard hooks, and OS permissions.
+- 🟢 **Instruction Overlay** — A native green banner guides the user on what to solve.
+- 🍪 **Persistent Sessions** — Solve once, scrape forever. No need to log in manually again for weeks.
+- 🛡 **Security first** — Cookies are stored locally and encrypted (optional/upcoming).
+- 🚀 **Auto-injection** — Next `web_fetch` or `web_crawl` calls automatically load found sessions.
 
 ---
 
 ## 💥 Boss-Level Anti-Bot Evidence
 
-We don't claim — we show receipts. All captured with `non_robot_search` + Safety Kill Switch (2026-02-14):
+We don't claim — we show receipts. All captured with `human_auth_session` and our advanced CDP engines (2026-02-20):
 
 | Target | Protection | Evidence | Extracted |
 |--------|-----------|----------|-----------|
@@ -163,34 +165,38 @@ Prerequisites for HITL:
 - **Accessibility permission** (macOS: System Preferences → Privacy & Security → Accessibility)
 - A desktop session (not SSH-only)
 
-Platform guides: [WINDOWS_DESKTOP.md](docs/WINDOWS_DESKTOP.md) · [UBUNTU_DESKTOP.md](docs/UBUNTU_DESKTOP.md)
+Platform guides: [docs/window_setup.md](docs/window_setup.md) · [docs/ubuntu_setup.md](docs/ubuntu_setup.md)
 
 > After any binary rebuild/update, **restart your MCP client session** to pick up new tool definitions.
+
+---
+
+## ✅ Agent Best Practices (ShadowCrawl Rules)
+
+Use this exact decision flow to get the highest-quality results with minimal tokens:
+
+1) `memory_search` first (avoid re-fetching)
+2) `web_search_json` for initial research (search + content summaries in one call)
+3) `web_fetch` for specific URLs (docs/articles)
+        - `output_format="clean_json"` for token-efficient output
+        - set `query` + `strict_relevance=true` when you want only query-relevant paragraphs
+4) If `web_fetch` returns 403/429/rate-limit → `proxy_control` `grab` then retry with `use_proxy=true`
+5) If `web_fetch` returns `auth_risk_score >= 0.4` → `visual_scout` (confirm login wall) → `human_auth_session` (The God-Tier Nuclear Option)
+
+Structured extraction (schema-first):
+- Prefer `fetch_then_extract` for one-shot **fetch + extract**.
+- `strict=true` (default) enforces schema shape: missing arrays become `[]`, missing scalars become `null` (no schema drift).
+- Treat `confidence=0.0` as “placeholder / unrendered page” (often JS-only like crates.io). Escalate to browser rendering (CDP/HITL) instead of trusting the fields.
+- 💡 **New in v3.0.0**: Placeholder detection is now **scalar-only**. Pure-array schemas (only lists/structs) never trigger confidence=0.0, fixing prior regressions.
+
+`clean_json` notes:
+- Large pages are truncated to respect `max_chars` (look for `clean_json_truncated` warning). Increase `max_chars` to see more.
+- `key_code_blocks` is extracted from fenced blocks and signature-like inline code; short docs pages are supported.
+- 🕷 **v3.0.0 fix**: Module extraction on `docs.rs` works recursively for all relative and absolute sub-paths.
 
 
 
 ---
-
-## 🧬 NeuroSiphon Token-Saving Pipeline (v2.4.0)
-
-ShadowCrawl v2.4.0 integrates **token-efficiency techniques** inspired by NeuroSiphon:
-
-- Repo: https://github.com/DevsHero/NeuroSiphon
-- Kill switch: set `SHADOWCRAWL_NEUROSIPHON=0` to disable all NeuroSiphon behaviors.
-
-These techniques focus on **returning only the most useful content to the agent**, avoiding token leaks (raw HTML, boilerplate imports, DOM scaffolding on SPAs).
-
-| Technique | Trigger | Output behavior | Benefit (tokenizer) |
-|----------|---------|-----------------|---------------------|
-| **Semantic Shaving** (Rule A + Hotfix A) | `web_fetch` (alias: `scrape_url`) with `query` + `strict_relevance=true` | Keeps only semantically relevant paragraphs | Cuts 50–80% noisy text on long pages |
-| **Import Nuker** (Rule B + Hotfix B) | NeuroSiphon enabled + aggressive mode + non-tutorial URL | Removes large `import/require/use` blocks (guarded by heuristics + 15-line minimum) | Removes high-noise “dependency walls” in code blocks |
-| **SPA State Fast-Path** (Rule C) | SPA detected and embedded state exists | Prefers hydration JSON when it’s large enough (≥100 words) | Avoids DOM boilerplate on JS-heavy sites |
-| **Strict App State Mode** (Task 3) | `extract_app_state=true` and SPA state found | Returns hydration JSON as the **only** content; clears `code_blocks`, `links`, `images`, `headings` | Prevents DOM scaffolding from wasting tokens |
-| **Raw HTML Leak Stopper** (Task 1) | NeuroSiphon enabled OR aggressive mode | Forces `include_raw_html=false` even if caller requests it | Prevents massive `<!DOCTYPE html>` token leaks |
-| **Tutorial Immunity** (Task 2) | docs/tutorial/guide URLs | Disables import nuking entirely | Preserves critical tutorial context |
-| **Search Snippet Floor** (Rule D) | internal metasearch | Ensures snippets are useful (min-length) | Avoids useless micro-snippets that waste context |
-
-
 
 ## 🧩 MCP Integration
 
@@ -342,7 +348,37 @@ hitl_web_fetch  (LAST RESORT)
 
 ---
 
+## v3.0.0 (2026-02-20)
 
+### Added
+
+- **`human_auth_session` (The Nuclear Option)**: Launches a visible browser for human login/CAPTCHA solving. Captures and persists full authentication cookies to `~/.shadowcrawl/sessions/{domain}.json`. Enables full automation for protected URLs after a single manual session.
+- **Instruction Overlay**: `human_auth_session` now displays a custom green "ShadowCrawl" instruction banner on top of the browser window to guide users through complex auth walls.
+- **Persistent Session Auto-Injection**: `web_fetch`, `web_crawl`, and `visual_scout` now automatically check for and inject matching cookies from the local session store.
+- **`extract_structured` / `fetch_then_extract`**: new optional params `placeholder_word_threshold` (int, default 10) and `placeholder_empty_ratio` (float 0–1, default 0.9) allow agents to tune placeholder detection sensitivity per-call.
+- **`web_crawl`**: new optional `max_chars` param (default 10 000) caps total JSON output size to prevent workspace storage spill.
+- **Rustdoc module extraction**: `extract_structured` / `fetch_then_extract` correctly populate `modules: [...]` on docs.rs pages using the `NAME/index.html` sub-directory convention.
+- **GitHub Discussions & Issues hydration**: `fetch_via_cdp` detects `github.com/*/discussions/*` and `/issues/*` URLs; extends network-idle window to 2.5 s / 12 s max and polls for `.timeline-comment`, `.js-discussion`, `.comment-body` DOM nodes.
+- **Contextual code blocks** (`clean_json` mode): `SniperCodeBlock` gains a `context: Option<String>` field. Performs two-pass extraction for prose preceding fenced blocks and Markdown sentences containing inline snippets.
+- **IDE copilot-instructions guide** (README): new `🤖 Agent Optimal Setup` section.
+- **`.clinerules`** workspace file: all 7 priority rules + decision-flow diagram + per-tool quick-reference table.
+- **Agent priority rules in tool schemas**: every MCP tool description now carries machine-readable `⚠️ AGENT RULE` / `✅ BEST PRACTICE`.
+
+### Changed
+
+- **Placeholder detection (Scalar-Only Logic)**: Confidence override to 0.0 now only considers **scalar (non-array)** fields. Pure-array schemas (headers, modules, structs) never trigger fake placeholder warnings, fixing false-positives on rich but list-heavy documentation pages.
+- `web_fetch(output_format="clean_json")`: applies a `max_chars`-based paragraph budget and emits `clean_json_truncated` when output is clipped.
+- `extract_fields` / `fetch_then_extract`: placeholder/unrendered pages (very low content + mostly empty schema fields) force `confidence=0.0`.
+- **Short-content bypass** (`strict_relevance` / `extract_relevant_sections`): early exit with a descriptive warning when `word_count < 200`. Short pages (GitHub Discussions, Q&A threads) are returned whole.
+
+### Fixed
+
+- **BUG-6**: `modules: []` always empty on rustdoc pages — refactored regex to support both absolute and simple relative module links (`init/index.html`, `optim/index.html`).
+- **BUG-7**: false-positive `confidence=0.0` on real docs.rs pages; replaced whole-schema empty ratio with scalar-only ratio + raised threshold.
+- **BUG-9**: `web_crawl` could spill 16 KB+ of JSON into VS Code workspace storage; handler now truncates response to `max_chars` (default 10 000).
+- `web_fetch(output_format="clean_json")`: paragraph filter now adapts for `word_count < 200`.
+- `fetch_then_extract`: prevents false-high confidence on JS-only placeholder pages (e.g. crates.io) by overriding confidence to 0.0.
+- **`cdp_fallback_failed` on GitHub Discussions**: extended CDP hydration window and selector polling ensures full thread capture.
 
 ### ☕ Acknowledgments & Support
 

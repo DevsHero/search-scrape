@@ -93,9 +93,12 @@ pub async fn call_tool(
         "crawl_website" => handlers::crawl_website::handle(state, &internal_args).await,
         "scrape_batch" => handlers::scrape_batch::handle(state, &internal_args).await,
         "extract_structured" => handlers::extract_structured::handle(state, &internal_args).await,
+        "fetch_then_extract" => handlers::fetch_then_extract::handle(state, &internal_args).await,
         "research_history" => handlers::research_history::handle(state, &internal_args).await,
         "proxy_manager" => handlers::proxy_manager::handle(state, &internal_args).await,
         "non_robot_search" => handlers::non_robot_search::handle(state, &internal_args).await,
+        "visual_scout" => handlers::visual_scout::handle(state, &internal_args).await,
+        "human_auth_session" => handlers::human_auth_session::handle(state, &internal_args).await,
         _ => Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {

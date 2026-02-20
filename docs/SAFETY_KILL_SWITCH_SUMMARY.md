@@ -126,13 +126,13 @@ ps aux | grep -E "9222" | grep -v grep
 
 ### Timeout Calculation
 ```
-global_timeout = human_timeout_seconds + 30s
+human_timeout_seconds = soft wait window (no forced browser close)
 ```
 
 **Example**:
-- User sets `human_timeout_seconds: 120` (for HITL challenges)
-- Global timeout = 150 seconds
-- After 150s: Emergency force-kill triggers
+- User sets `human_timeout_seconds: 1200` (20 minutes)
+- During HITL: the browser remains open until the user clicks **FINISH & RETURN**
+- A periodic heartbeat keeps the browser/CDP transport active while waiting
 
 ### Cleanup Sequence
 
@@ -142,7 +142,7 @@ run_flow() → extract content → session.close()
     → close tabs → close CDP → wait 500ms → force-kill → Drop trait
 
 Timeout path:
-run_flow() → timeout after 150s → force_kill_all_debug_browsers()
+run_flow() → (no strict timeout) → user clicks FINISH & RETURN → extract content → session.close()
     → Drop trait (cleanup temp profiles)
 
 Panic path:

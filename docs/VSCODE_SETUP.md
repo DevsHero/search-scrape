@@ -53,8 +53,19 @@ VS Code caches tool lists. If tools don’t appear or look stale:
 
 ## Tool catalog
 
-- Default build: 8 tools (`search_web`, `search_structured`, `scrape_url`, `scrape_batch`, `crawl_website`, `extract_structured`, `research_history`, `proxy_manager`)
-- Optional: `non_robot_search` (HITL / visible browser) when built with `--features non_robot_search`
+Tool names shown in VS Code come from the MCP tool catalog. The core agent-facing tools are:
+
+- `memory_search` (semantic research recall)
+- `web_search` / `web_search_json`
+- `web_fetch` / `web_fetch_batch`
+- `web_crawl`
+- `extract_fields` (schema/prompt extraction)
+- `fetch_then_extract` (one-shot fetch + extract)
+- `proxy_control` (rotate/list/test proxies)
+- `visual_scout` (headless screenshot for auth-gate confirmation)
+- `hitl_web_fetch` / `human_auth_session` (last-resort login/CAPTCHA bypass)
+
+Optional: `non_robot_search` (HITL / visible browser) when built with `--features non_robot_search`.
 
 ## non_robot_search (HITL) — important
 

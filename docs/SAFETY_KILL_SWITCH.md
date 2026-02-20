@@ -26,27 +26,19 @@ async fn execute_non_robot_search_impl(
     cfg: NonRobotSearchConfig,
 ) -> Result<ScrapeResponse, NonRobotSearchError> {
     // Global timeout: human_timeout + 30s safety margin
-    let global_timeout = cfg.human_timeout + Duration::from_secs(30);
-    
-    match tokio::time::timeout(global_timeout, execute_non_robot_search_inner(state, cfg)).await {
-        Ok(result) => result,
-        Err(_) => {
-            // Emergency cleanup: kill all debug browsers on port 9222
-            force_kill_all_debug_browsers(9222);
-            Err(NonRobotSearchError::AutomationFailed(...))
-        }
-    }
+    // HITL no longer uses a strict `tokio::time::timeout` wrapper.
+    // The visible browser should remain open until the operator explicitly
+    // clicks "FINISH & RETURN" in the in-browser overlay.
+    execute_non_robot_search_inner(state, cfg).await
 }
 ```
 
 **Behavior**:
-- Wraps the entire scrape operation with `tokio::time::timeout`
-- If execution exceeds `human_timeout_seconds + 30s`, it:
-  1. Logs a warning
-  2. Force-kills all browser processes on debugging port 9222
-  3. Returns an error with timeout information
+- HITL waits for explicit user termination via **FINISH & RETURN**
+- `human_timeout_seconds` is treated as a **soft** window (used for warnings / operator expectations), not as a kill deadline
+- A periodic heartbeat keeps the browser/CDP transport active while waiting
 
-**Why it matters**: Even if the graceful shutdown fails, the global timeout ensures the process never hangs indefinitely.
+**Why it matters**: Real-world logins (2FA / OAuth / CAPTCHA) can take minutes. The system should not close the headed browser until the user confirms completion.
 
 ---
 
@@ -228,7 +220,7 @@ ps aux | grep -E "(Brave|Chrome)" | grep -E "remote-debugging"
 ### Timeout Calculation
 
 ```rust
-global_timeout = human_timeout_seconds + 30s
+human_timeout_seconds = soft wait window (no forced browser close)
 ```
 
 **Example**:

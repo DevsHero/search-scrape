@@ -38,6 +38,34 @@ pub async fn scrape_batch(
                     Ok(mut data) => {
                         data.actual_chars = data.clean_content.len();
 
+                        // If CDP fallback failed and we only got a title / a handful of words,
+                        // do NOT report this as a successful extraction. This prevents silent
+                        // failure cases where agents key off `success: true`.
+                        let cdp_failed = data.warnings.iter().any(|w| w == "cdp_fallback_failed");
+                        let effectively_empty = data.word_count <= 8
+                            && data.code_blocks.is_empty()
+                            && data.headings.is_empty();
+
+                        // Strict content check: if we only got a title (or near-title)
+                        // and body is empty / unusable, mark as failure.
+                        let body_empty = data.clean_content.trim().is_empty();
+                        let insufficient_content = !data.title.trim().is_empty()
+                            && (body_empty
+                                || (data.word_count <= 3
+                                    && data.code_blocks.is_empty()
+                                    && data.headings.is_empty()));
+
+                        let treat_as_failure =
+                            (cdp_failed && effectively_empty) || insufficient_content;
+
+                        let failure_reason = if cdp_failed && effectively_empty {
+                            Some("cdp_fallback_failed_with_effectively_empty_content".to_string())
+                        } else if insufficient_content {
+                            Some("insufficient_content".to_string())
+                        } else {
+                            None
+                        };
+
                         // Truncate content if max_chars specified
                         if let Some(max) = max_chars {
                             crate::content_quality::apply_scrape_content_limit(
@@ -55,9 +83,14 @@ pub async fn scrape_batch(
 
                         ScrapeBatchResult {
                             url,
-                            success: true,
+                            success: !treat_as_failure,
                             data: Some(data),
-                            error: None,
+                            error: if treat_as_failure {
+                                failure_reason.clone()
+                            } else {
+                                None
+                            },
+                            failure_reason,
                             duration_ms: url_start.elapsed().as_millis() as u64,
                         }
                     }
@@ -68,6 +101,7 @@ pub async fn scrape_batch(
                             success: false,
                             data: None,
                             error: Some(e.to_string()),
+                            failure_reason: Some("scrape_error".to_string()),
                             duration_ms: url_start.elapsed().as_millis() as u64,
                         }
                     }
