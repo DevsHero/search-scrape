@@ -141,8 +141,7 @@ impl RustScraper {
         // 🗨️ GitHub threaded content (Discussions / Issues) — React renders comments
         // lazily; the 1.5 s network-idle window above often captures an empty shell.
         // Extend the settle window and poll for the comment DOM before capture.
-        if url.contains("github.com")
-            && (url.contains("/discussions/") || url.contains("/issues/"))
+        if url.contains("github.com") && (url.contains("/discussions/") || url.contains("/issues/"))
         {
             warn!("🗨️ GitHub threaded page detected — extended comment hydration");
             browser_manager::wait_until_stable(&page, 2500, 12_000)
@@ -494,7 +493,10 @@ async fn wait_for_discussion_comments(page: &chromiumoxide::Page) -> anyhow::Res
             .and_then(|j| j.as_bool())
             .unwrap_or(false);
         if found {
-            warn!("✅ GitHub: comment DOM nodes detected after {:?}", start.elapsed());
+            warn!(
+                "✅ GitHub: comment DOM nodes detected after {:?}",
+                start.elapsed()
+            );
             break;
         }
         tokio::time::sleep(Duration::from_millis(POLL_MS)).await;

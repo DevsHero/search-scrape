@@ -1,4 +1,4 @@
-# 🥷 ShadowCrawl MCP — v2.5.0
+# 🥷 ShadowCrawl MCP — v2.6.0
 
 <div align="center">
 <img src="media/logo.svg" alt="ShadowCrawl Logo" width="180">
@@ -20,9 +20,9 @@ When every other tool gets blocked, ShadowCrawl doesn't retreat — it **escalat
 
 ---
 
-## ⚡ God-Tier Internal Meta-Search (v2.5.0)
+## ⚡ God-Tier Internal Meta-Search (v2.6.0)
 
-ShadowCrawl v2.5.0 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
+ShadowCrawl v2.6.0 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
 
 | Engine | Coverage | Notes |
 |--------|----------|-------|
@@ -289,6 +289,85 @@ Use the same stdio setup as VS Code (run `shadowcrawl-mcp` locally and pass env 
 | **Semantic Memory** | None | **Embedded LanceDB + Model2Vec** |
 | **Proxy Support** | Paid add-on | **Native SOCKS5/HTTP rotation** |
 | **MCP Native** | Partial | **Full MCP stdio + HTTP** |
+
+
+---
+
+## 🤖 Agent Optimal Setup: IDE Copilot Instructions
+
+ShadowCrawl works best when your AI agent **knows the operational rules** before it starts — which tool to call first, when to rotate proxies, and when *not* to use `extract_fields`. Without these rules, agents waste tokens re-fetching cached data and can misuse tools on incompatible sources.
+
+The complete rules file is already in this repo as [`.clinerules`](.clinerules). Copy the block below into the IDE-specific file for your editor.
+
+---
+
+### 🗂️ VS Code — `.github/copilot-instructions.md`
+
+Create (or append to) `.github/copilot-instructions.md` in your workspace root:
+
+```markdown
+## MCP Usage Guidelines — ShadowCrawl
+
+### Shadowcrawl Priority Rules
+- ALWAYS call `memory_search` BEFORE `web_search` or `web_search_json` — skip live fetch when similarity ≥ 0.60
+- For initial research, use `web_search_json` (search + content in one call) instead of `web_search` + separate `web_fetch`
+- For doc/article pages: `web_fetch` with `output_format: clean_json`, `strict_relevance: true`, `query: "<your question>"`
+- If `web_fetch` returns 403/429/rate-limit: call `proxy_control` with `action: "grab"` then retry with `use_proxy: true`
+- Use `extract_fields` ONLY on structured HTML (docs, articles). NOT on raw `.md` / `.json` / `.txt` files
+- Use `web_crawl` to discover sub-pages on a large doc site before targeted fetching
+- `hitl_web_fetch` is last resort only — try automated methods + proxy rotation first
+```
+
+---
+
+### 🐾 Cursor — `.cursorrules`
+
+Create or append to `.cursorrules` in your project root with the same block above.
+
+---
+
+### 🟩 Cline (VS Code extension) — `.clinerules`
+
+Already included in this repository as [`.clinerules`](.clinerules). Cline loads it automatically — no action needed.
+
+---
+
+### 🧠 Claude Desktop — System Prompt / Custom Instructions
+
+Paste the rules block into the **Custom Instructions** or **System Prompt** field in Claude Desktop settings (Settings → Advanced → System Prompt).
+
+---
+
+### 🧳 Other Agents (Windsurf, Aider, Continue, AutoGen, etc.)
+
+Any agent that accepts a system prompt or workspace instruction file: paste the same block. The rules are plain markdown and tool-agnostic.
+
+---
+
+### Quick Decision Flow
+
+```
+Question / research task
+        │
+        ▼
+memory_search ──► hit (≥ 0.60)? ──► use cached result, STOP
+        │ miss
+        ▼
+web_search_json ──► enough content? ──► use it, STOP
+        │ need deeper page
+        ▼
+web_fetch(clean_json + strict_relevance + query)
+        │ 403 / 429 / blocked?
+        ▼
+proxy_control grab ──► retry with use_proxy: true
+        │ still blocked?
+        ▼
+hitl_web_fetch  (LAST RESORT)
+```
+
+> 📖 Full rules + per-tool quick-reference table: [`.clinerules`](.clinerules)
+
+---
 
 
 

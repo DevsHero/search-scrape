@@ -18,6 +18,24 @@ Policy:
 
 - —
 
+## v2.6.0 (2026-02-20)
+
+### Added
+
+- **GitHub Discussions & Issues hydration**: `fetch_via_cdp` detects `github.com/*/discussions/*` and `/issues/*` URLs; extends network-idle window to 2.5 s / 12 s max and polls for `.timeline-comment`, `.js-discussion`, `.comment-body` DOM nodes before capturing HTML — eliminates `cdp_fallback_failed` on threaded pages.
+- **Contextual code blocks** (`clean_json` mode): `SniperCodeBlock` gains a `context: Option<String>` field. `extract_contextual_code_blocks()` performs a two-pass extraction: Pass 1 pulls the prose line preceding each fenced block; Pass 2 surfaces the Markdown sentence that contains each inline snippet. LLMs now receive `{"context": "Run it with", "code": "--no-watch"}` instead of bare `{"code": "--no-watch"}`.
+- **IDE copilot-instructions guide** (README): new `🤖 Agent Optimal Setup` section documents how to wire the ShadowCrawl priority rules into VS Code (`copilot-instructions.md`), Cursor (`.cursorrules`), Cline (`.clinerules`, already in repo), Claude Desktop (system prompt), and any other agent framework.
+- **`.clinerules`** workspace file: all 7 priority rules + decision-flow diagram + per-tool quick-reference table — loaded automatically by Cline, copy-pasteable into any other IDE.
+- **Agent priority rules in tool schemas**: every MCP tool description now carries machine-readable `⚠️ AGENT RULE` / `✅ BEST PRACTICE` / `⛔ CONSTRAINT` guidance so any LLM parsing the schema immediately sees the correct operational workflow.
+
+### Changed
+
+- **Short-content bypass** (`strict_relevance` / `extract_relevant_sections`): both `apply_semantic_shaving_if_enabled` and `apply_relevant_section_extract_if_enabled` now exit early with a descriptive warning when `word_count < 200`. Short pages (GitHub Discussions, Q&A threads) are returned whole — no context is discarded.
+
+### Fixed
+
+- **`cdp_fallback_failed` on GitHub Discussions**: threaded pages with lazily-rendered comments no longer fall back to the low-quality static path; extended CDP hydration window and comment-selector polling ensures full thread content is captured.
+
 ## v2.5.0 (2026-02-19)
 
 ### Added
