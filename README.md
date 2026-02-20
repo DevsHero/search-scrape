@@ -167,33 +167,6 @@ Platform guides: [WINDOWS_DESKTOP.md](docs/WINDOWS_DESKTOP.md) · [UBUNTU_DESKTO
 
 > After any binary rebuild/update, **restart your MCP client session** to pick up new tool definitions.
 
----
-## 🧾 Raw Samples (NeuroSiphon vs non-NeuroSiphon vs fetch)
-
-Generate raw sample files to study output completeness/quality and tokenizer savings.
-
-- NeuroSiphon **enabled** (default)
-- NeuroSiphon **disabled**: `SHADOWCRAWL_NEUROSIPHON=0`
-- `fetch` baseline: direct HTTP GET saved as raw HTML
-
-This also generates metasearch samples (JSON) via the `/search` endpoint.
-
-```bash
-python3 ./scripts/generate_samples.py --release
-```
-
-If you want the script to build the release binaries first:
-
-```bash
-python3 ./scripts/generate_samples.py --build --release
-```
-
-Outputs are saved under `samples/`.
-
-Tip (short output): when you only need the parts of a long doc that match your question, use `web_fetch` with:
-
-- `query`: your question
-- `extract_relevant_sections=true`: returns only the top matching sections (short, avoids huge tool outputs)
 
 
 ---
