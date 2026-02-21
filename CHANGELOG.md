@@ -8,7 +8,9 @@ Policy:
 
 ### Changed
 
-- Agent rules (`.github/copilot-instructions.md`): add a cache-quality guard so `research_history` hits with very low `word_count` (or placeholder/sparse warnings) do not cause agents to skip a fresh fetch (canonical example: `crates.io` JS-render pages). Also notes that private/internal tools may require going directly to a known repo/docs URL instead of relying on search.
+- Agent rules (`.github/copilot-instructions.md`): add `entry_type == "search"` check to the cache-quality guard — search-index cache entries carry no `word_count` metadata, so a high similarity score on a search entry must never cause agents to skip `scrape_url` on the top result URL.
+- Agent rules: cache-quality guard expanded with word_count < 50 guard and placeholder-warnings check (canonical example: `crates.io` JS-render pages); private/internal tools note added (skip `search_structured`, go directly to `scrape_url` on known URL).
+- README `🤖 Agent Optimal Setup` section fully refreshed: updated tool names (`research_history`, `search_structured`, `scrape_url`, `proxy_manager`, `non_robot_search`), full 7-rule block, new decision flow diagram with cache-quality guard and confidence-escalation path, removed stale `memory_search`/`hitl_web_fetch`/`extract_fields` references.
 
 ## v3.1.0 (2026-02-21)
 

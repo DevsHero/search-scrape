@@ -274,9 +274,9 @@ Use the same stdio setup as VS Code (run `shadowcrawl-mcp` locally and pass env 
 
 ## 🤖 Agent Optimal Setup: IDE Copilot Instructions
 
-ShadowCrawl works best when your AI agent **knows the operational rules** before it starts — which tool to call first, when to rotate proxies, and when *not* to use `extract_fields`. Without these rules, agents waste tokens re-fetching cached data and can misuse tools on incompatible sources.
+ShadowCrawl works best when your AI agent **knows the operational rules** before it starts — which tool to call first, when to rotate proxies, and when *not* to use `extract_structured`. Without these rules, agents waste tokens re-fetching cached data and can misuse tools on incompatible sources.
 
-The complete rules file is already in this repo as [`.clinerules`](.clinerules). Copy the block below into the IDE-specific file for your editor.
+The complete rules file lives at [`.github/copilot-instructions.md`](.github/copilot-instructions.md) (VS Code / GitHub Copilot) and is also available as [`.clinerules`](.clinerules) for Cline. Copy the block below into the IDE-specific file for your editor.
 
 ---
 
@@ -288,13 +288,40 @@ Create (or append to) `.github/copilot-instructions.md` in your workspace root:
 ## MCP Usage Guidelines — ShadowCrawl
 
 ### Shadowcrawl Priority Rules
-- ALWAYS call `memory_search` BEFORE `web_search` or `web_search_json` — skip live fetch when similarity ≥ 0.60
-- For initial research, use `web_search_json` (search + content in one call) instead of `web_search` + separate `web_fetch`
-- For doc/article pages: `web_fetch` with `output_format: clean_json`, `strict_relevance: true`, `query: "<your question>"`
-- If `web_fetch` returns 403/429/rate-limit: call `proxy_control` with `action: "grab"` then retry with `use_proxy: true`
-- Use `extract_fields` ONLY on structured HTML (docs, articles). NOT on raw `.md` / `.json` / `.txt` files
-- Use `web_crawl` to discover sub-pages on a large doc site before targeted fetching
-- `hitl_web_fetch` is last resort only — try automated methods + proxy rotation first
+
+1. **Memory first (NEVER skip):** ALWAYS call `research_history` BEFORE calling `search_web`,
+   `search_structured`, or `scrape_url`.
+   **Cache-quality guard:** only skip a live fetch when ALL of the following are true:
+   - similarity score ≥ 0.60
+   - entry_type is NOT "search" (search entries have no word_count — always follow up with scrape_url)
+   - word_count ≥ 50 (cached crates.io pages are JS-placeholders with ~11 words)
+   - no placeholder/sparse warnings (placeholder_page, short_content, content_restricted)
+
+2. **Initial research:** use `search_structured` (search + content summaries in one call).
+   For private/internal tools not indexed publicly, skip search and go directly to
+   `scrape_url` on the known repo/docs URL.
+
+3. **Doc/article pages:** `scrape_url` with `output_format: clean_json`,
+   `strict_relevance: true`, `query: "<your question>"`.
+   Raw `.md`/`.txt` URLs are auto-detected — HTML pipeline is skipped, raw content returned.
+
+4. **Proxy rotation (mandatory on first block):** if `scrape_url` or `search_web` returns
+   403/429/rate-limit, immediately call `proxy_manager` with `action: "grab"` then retry
+   with `use_proxy: true`. Do NOT wait for a second failure.
+
+4a. **Auto-escalation on low confidence:** if `scrape_url` returns confidence < 0.3 or
+    extraction_score < 0.4 → retry with `quality_mode: "aggressive"` → `visual_scout`
+    → `human_auth_session`. Never stay stuck on a low-confidence result.
+
+5. **Schema extraction:** use `fetch_then_extract` (one-shot) or `extract_structured`.
+   Both auto-inject `raw_markdown_url` warning when called on raw file URLs.
+   Do NOT point at raw `.md`/`.json`/`.txt` unless intentional.
+
+6. **Sub-page discovery:** use `crawl_website` before `scrape_url` when you only know
+   an index URL and need to find the right sub-page.
+
+7. **Last resort:** `non_robot_search` only after direct fetch + proxy rotation have both
+   failed (Cloudflare / CAPTCHA / login walls). Session cookies are persisted after login.
 ```
 
 ---
@@ -329,22 +356,25 @@ Any agent that accepts a system prompt or workspace instruction file: paste the 
 Question / research task
         │
         ▼
-memory_search ──► hit (≥ 0.60)? ──► use cached result, STOP
-        │ miss
+research_history ──► hit (≥ 0.60)? ──► cache-quality guard:
+        │ miss            │  entry_type=="search"? ──► don't skip; do scrape_url
+        │                 │  word_count < 50 or placeholder warnings? ──► don't skip
+        │                 └──► quality OK? ──► use cached result, STOP
+        │
         ▼
-web_search_json ──► enough content? ──► use it, STOP
+search_structured ──► enough content? ──► use it, STOP
         │ need deeper page
         ▼
-web_fetch(clean_json + strict_relevance + query)
-        │ 403 / 429 / blocked?
-        ▼
-proxy_control grab ──► retry with use_proxy: true
-        │ still blocked?
-        ▼
-hitl_web_fetch  (LAST RESORT)
+scrape_url (clean_json + strict_relevance + query)
+  │ confidence < 0.3 or extraction_score < 0.4?
+  ├──► retry quality_mode: aggressive ──► visual_scout ──► human_auth_session
+  │ 403/429/blocked? ──► proxy_manager grab ──► retry use_proxy: true
+  │ still blocked? ──► non_robot_search  (LAST RESORT)
+  │
+  └── need schema JSON? ──► fetch_then_extract (schema + strict=true)
 ```
 
-> 📖 Full rules + per-tool quick-reference table: [`.clinerules`](.clinerules)
+> 📖 Full rules + per-tool quick-reference table: [`.github/copilot-instructions.md`](.github/copilot-instructions.md)
 
 ---
 

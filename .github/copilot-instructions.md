@@ -9,20 +9,20 @@
 
 **Megatool Quick‑Reference**
 
-| Task | Megatool | Action Enum | Required Params |
-|---|---|---|---|
-| Repo overview (files + public symbols) | `cortex_code_explorer` | `map_overview` | `target_dir` (use `.` for whole repo) |
-| Token-budgeted context slice (XML) | `cortex_code_explorer` | `deep_slice` | `target` |
-| Extract exact symbol source | `cortex_symbol_analyzer` | `read_source` | `path` + `symbol_name` *(or `path` + `symbol_names` for batch)* |
-| Find all usages before signature change | `cortex_symbol_analyzer` | `find_usages` | `symbol_name` + `target_dir` |
-| Find trait/interface implementors | `cortex_symbol_analyzer` | `find_implementations` | `symbol_name` + `target_dir` |
-| Blast radius before rename/move/delete | `cortex_symbol_analyzer` | `blast_radius` | `symbol_name` + `target_dir` |
-| Cross-boundary update checklist | `cortex_symbol_analyzer` | `propagation_checklist` | `symbol_name` *(or legacy `changed_path`)* |
-| Save pre-change snapshot | `cortex_chronos` | `save_checkpoint` | `path` + `symbol_name` + `semantic_tag` |
-| List snapshots | `cortex_chronos` | `list_checkpoints` | *(none)* |
-| Compare snapshots (AST diff) | `cortex_chronos` | `compare_checkpoint` | `symbol_name` + `tag_a` + `tag_b` *(use `tag_b="__live__"` + `path` to diff against current state)* |
-| Delete old snapshots (housekeeping) | `cortex_chronos` | `delete_checkpoint` | `symbol_name` and/or `semantic_tag` *(optional: `path`, `namespace`)* — Automatically searches legacy flat `checkpoints/` if no matches in namespace. |
-| Compile/lint diagnostics | `run_diagnostics` | *(none)* | `repoPath` |
+| Task | Megatool | Action Enum | Required Params | Key Optional Params |
+|---|---|---|---|---|
+| Repo overview (files + public symbols) | `cortex_code_explorer` | `map_overview` | `target_dir` (use `.` for whole repo) | `exclude` (dir-name array), `search_filter`, `max_chars`, `ignore_gitignore` |
+| Token-budgeted context slice (XML) | `cortex_code_explorer` | `deep_slice` | `target` | `exclude` (dir-name array), `budget_tokens`, `skeleton_only`, `query`, `query_limit` |
+| Extract exact symbol source | `cortex_symbol_analyzer` | `read_source` | `path` + `symbol_name` *(or `path` + `symbol_names` for batch)* | `instance_index` (0-based), `skeleton_only` |
+| Find all usages before signature change | `cortex_symbol_analyzer` | `find_usages` | `symbol_name` + `target_dir` | |
+| Find trait/interface implementors | `cortex_symbol_analyzer` | `find_implementations` | `symbol_name` + `target_dir` | |
+| Blast radius before rename/move/delete | `cortex_symbol_analyzer` | `blast_radius` | `symbol_name` + `target_dir` | |
+| Cross-boundary update checklist | `cortex_symbol_analyzer` | `propagation_checklist` | `symbol_name` *(or legacy `changed_path`)* | `aliases` |
+| Save pre-change snapshot | `cortex_chronos` | `save_checkpoint` | `path` + `symbol_name` + `semantic_tag` | `namespace` |
+| List snapshots | `cortex_chronos` | `list_checkpoints` | *(none)* | `namespace` |
+| Compare snapshots (AST diff) | `cortex_chronos` | `compare_checkpoint` | `symbol_name` + `tag_a` + `tag_b` *(use `tag_b="__live__"` + `path` to diff against current state)* | `namespace`, `path` |
+| Delete old snapshots (housekeeping) | `cortex_chronos` | `delete_checkpoint` | `symbol_name` and/or `semantic_tag` *(optional: `path`, `namespace`)* — Automatically searches legacy flat `checkpoints/` if no matches in namespace. | |
+| Compile/lint diagnostics | `run_diagnostics` | *(none)* | `repoPath` | |
 
 ## The Ultimate CortexAST Refactoring SOP
 
@@ -61,6 +61,22 @@ Follow this sequence for any non-trivial refactor (especially renames, signature
 **Output safety (spill prevention):**
 - Output is truncated server-side at `max_chars` (default **8000**). VS Code Copilot writes responses larger than ~8 KB to workspace storage — the 8000 default is calibrated to stay below that threshold. Set `max_chars` explicitly (e.g. `3000`) for large-scope queries; increase only if your client handles larger inline output.
 
+**`exclude` best practice (map_overview + deep_slice):**
+- If `map_overview` returns “Massive Directory” or counts look inflated (e.g. `node_modules/`, build outputs, generated code), pass `exclude: ["node_modules", "vendor", "__pycache__", "build", "dist"]`.
+- `exclude` matches directory **base names** (not full paths) and prunes at every depth.
+- Prefer `exclude` over widening `target_dir` — it keeps scans focused and avoids summary-only mode.
+
+**`instance_index` best practice (read_source):**
+- Some files legitimately contain multiple same-named definitions. When that happens, `read_source` will prepend a “Disambiguation: Found N instances…” header.
+- Default is instance 0. To select a different one, pass `instance_index: 1` (second), `2` (third), etc.
+- If your goal is “where is this used?”, use `find_usages` first; if your goal is “show me all defs”, call `read_source` repeatedly with different `instance_index` values.
+
+**`deep_slice` path hint behavior:**
+- If you pass a target that doesn’t exist (e.g. `"orchestrator"` instead of `"orchestrator.rs"`), the server may return “Did you mean one of: …” suggestions. Use one of the suggested paths to avoid a retry loop.
+
+**`compare_checkpoint` identical behavior:**
+- If the two snapshots are identical, Chronos will return a compact “✅ NO STRUCTURAL DIFF” summary instead of printing the full symbol twice.
+
 **`repoPath` best practice:**
 - Always pass `repoPath` explicitly on every tool call (e.g. `repoPath="/Users/me/project"`) when you know the path. Without it, the server uses the root established by the MCP `initialize` handshake.
 - **CRITICAL Safeguard:** For safety, if CortexAST resolves to a "dead root" (OS root or Home directory), it returns a **CRITICAL error** instead of proceeding. You MUST catch this and provide the correct `repoPath`.
@@ -98,6 +114,7 @@ the same efficient, hallucination-resistant research process.
 **Cache-quality guard (mandatory):**
 - If the cached entry indicates `word_count < 50` (or similarly sparse content), treat it as a **low-quality scrape** and DO NOT skip a live fetch.
 - If the cached entry contains warnings that imply placeholder/blocked/sparse content (e.g. `placeholder_page`, `short_content`, `content_restricted`, `low_extraction_score`), treat it as **low-quality** and DO NOT skip a live fetch.
+- If the cached entry has `entry_type == "search"` (a search-index summary, not a page scrape), **do NOT treat a similarity ≥ 0.60 hit as a reason to skip `scrape_url`**. Search entries carry no per-page `word_count` metadata — always follow up with a fresh `scrape_url` on the top result URL.
 - Canonical example: `https://crates.io/crates/{name}` is often JS-rendered and can return a tiny placeholder. For Rust crates, prefer a fresh fetch on `https://docs.rs/crate/{name}/latest` (server-rendered) when cache looks sparse.
 
 ### 1a. Dynamic Parameters — Always Tune for the Task (mandatory)
@@ -203,8 +220,11 @@ Input constraint:
 Question / research task
         │
         ▼
-research_history ──► hit (≥ 0.60)? ──► use cached result, STOP
-        │ miss
+research_history ──► hit (≥ 0.60)? ──► cache-quality guard:
+        │ miss            │  entry_type=="search"? ──► do NOT skip scrape_url
+        │                 │  word_count < 50 or placeholder warnings? ──► do NOT skip
+        │                 └──► quality OK? ──► use cached result, STOP
+        │
         ▼
 search_structured ──► enough content? ──► use it, STOP
         │ need deeper page
