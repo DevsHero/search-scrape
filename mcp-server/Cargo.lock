@@ -6938,7 +6938,7 @@ dependencies = [
 
 [[package]]
 name = "shadowcrawl"
-version = "3.0.0"
+version = "3.0.2"
 dependencies = [
  "accessibility-sys",
  "aho-corasick",
