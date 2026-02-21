@@ -89,11 +89,16 @@ the same efficient, hallucination-resistant research process.
 ## Shadowcrawl Priority Rules
 
 ### 1. Memory Before Search (mandatory — NEVER skip)
-- **ALWAYS** call `memory_search` BEFORE calling `web_search`, `web_search_json`, **or** `web_fetch`
+- **ALWAYS** call `research_history` BEFORE calling `search_web`, `search_structured`, **or** `scrape_url`
 - If a result is returned with similarity score ≥ 0.60, use the cached data directly
-  and skip the live fetch entirely
-- Only proceed to a fresh live search when memory returns no relevant hit
+  and skip the live fetch entirely **ONLY IF** it passes the cache-quality guard below
+- Only proceed to a fresh live search/fetch when `research_history` returns no relevant hit
 - This rule applies to EVERY research cycle, including retries and follow-up fetches
+
+**Cache-quality guard (mandatory):**
+- If the cached entry indicates `word_count < 50` (or similarly sparse content), treat it as a **low-quality scrape** and DO NOT skip a live fetch.
+- If the cached entry contains warnings that imply placeholder/blocked/sparse content (e.g. `placeholder_page`, `short_content`, `content_restricted`, `low_extraction_score`), treat it as **low-quality** and DO NOT skip a live fetch.
+- Canonical example: `https://crates.io/crates/{name}` is often JS-rendered and can return a tiny placeholder. For Rust crates, prefer a fresh fetch on `https://docs.rs/crate/{name}/latest` (server-rendered) when cache looks sparse.
 
 ### 1a. Dynamic Parameters — Always Tune for the Task (mandatory)
 - **`max_chars` controls the TOTAL serialized output payload**, not just the text field.
@@ -110,9 +115,10 @@ the same efficient, hallucination-resistant research process.
   | `placeholder_word_threshold` | 10 | Tune for JS-heavy pages |
 
 ### 2. Prefer `web_search_json` Over `web_search` + `web_fetch`
-- `web_search_json` combines search + pre-scraped content summaries in a **single call**
-- Use `web_search_json` as the **default first step** for any research task
-- Only fall back to `web_search` (without content) when you specifically need raw URLs only
+- `search_structured` combines search + pre-scraped content summaries in a **single call**
+- Use `search_structured` as the **default first step** for any research task
+- Only fall back to `search_web` (without content) when you specifically need raw URLs only
+- For private/internal/unlisted tools that won’t be indexed publicly: skip search and go directly to `scrape_url` on the known repo/docs URL (if you have it).
 
 ### 3. Use `web_fetch` with Noise Reduction for Documentation Pages
 - For documentation, article, or tutorial pages always set:
@@ -125,17 +131,17 @@ the same efficient, hallucination-resistant research process.
 - Token savings are typically 60–80 % compared to raw text output
 - If you see `clean_json_truncated` in warnings, increase `max_chars` (the tool clips large pages to prevent output spilling).
 - Note: semantic shaving intentionally bypasses when `word_count < 200` (short pages are returned whole).
-- **Raw file auto-detection**: when the URL ends in `.md`, `.mdx`, `.rst`, `.txt`, `.csv`, `.toml`, `.yaml`, or `.yml`, `clean_json` mode **automatically skips the HTML extraction pipeline** and returns the raw content directly — no duplicate frontmatter, no noise. The response will contain a `raw_markdown_url` warning. To read a raw GitHub file, prefer `web_fetch(output_format: "text")` for prose or `web_fetch(output_format: "clean_json")` for structured paragraphs.
+- **Raw file auto-detection**: when the URL ends in `.md`, `.mdx`, `.rst`, `.txt`, `.csv`, `.toml`, `.yaml`, or `.yml`, `clean_json` mode **automatically skips the HTML extraction pipeline** and returns the raw content directly — no duplicate frontmatter, no noise. The response will contain a `raw_markdown_url` warning. To read a raw GitHub file, prefer `scrape_url(output_format: "text")` for prose or `scrape_url(output_format: "clean_json")` for structured paragraphs.
 
 ### 4. Rotate Proxy on First Block Signal (mandatory)
-- If `web_fetch` or `web_search` returns **403 / 429 / rate-limit / IP-block**:
-  1. Immediately call `proxy_control` with `action: "grab"`
+- If `scrape_url` or `search_web` returns **403 / 429 / rate-limit / IP-block**:
+  1. Immediately call `proxy_manager` with `action: "grab"`
   2. Retry the failed call with `use_proxy: true`
-- Do NOT retry the same call without rotating first; do NOT escalate to `hitl_web_fetch`
+- Do NOT retry the same call without rotating first; do NOT escalate to `non_robot_search`
   until proxy rotation has also failed
 
 ### 4a. Auto-Escalation on Low Confidence (mandatory — no repeat prompt)
-- If `web_fetch` returns `confidence < 0.3` OR `extraction_score < 0.4` in the response:
+- If `scrape_url` returns `confidence < 0.3` OR `extraction_score < 0.4` in the response:
   1. **First**: retry with `quality_mode: "aggressive"` (triggers full CDP browser rendering)
   2. **If still failing**: automatically escalate to `visual_scout` to screenshot the page
   3. **If auth-wall confirmed**: escalate to `human_auth_session` WITHOUT waiting for further

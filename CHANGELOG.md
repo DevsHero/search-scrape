@@ -6,6 +6,10 @@ Policy:
 
 ## Unreleased
 
+### Changed
+
+- Agent rules (`.github/copilot-instructions.md`): add a cache-quality guard so `research_history` hits with very low `word_count` (or placeholder/sparse warnings) do not cause agents to skip a fresh fetch (canonical example: `crates.io` JS-render pages). Also notes that private/internal tools may require going directly to a known repo/docs URL instead of relying on search.
+
 ## v3.1.0 (2026-02-21)
 
 ### Added
