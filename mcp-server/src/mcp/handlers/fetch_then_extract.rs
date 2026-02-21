@@ -103,6 +103,17 @@ fn parse_extract_schema(schema_value: Option<&serde_json::Value>) -> Option<Vec<
     }
 }
 
+/// Returns `true` when the URL points to a raw text/markdown file where schema
+/// extraction is unreliable (fields typically return null, confidence is low).
+fn is_raw_content_url(url: &str) -> bool {
+    let path_only = url.split('?').next().unwrap_or(url).to_ascii_lowercase();
+    let ext = path_only.rsplit('.').next().unwrap_or("");
+    matches!(
+        ext,
+        "md" | "mdx" | "rst" | "txt" | "csv" | "toml" | "yaml" | "yml"
+    )
+}
+
 pub async fn handle(
     state: Arc<AppState>,
     arguments: &Value,
@@ -174,6 +185,16 @@ pub async fn handle(
     match scrape::scrape_url_full(&state, url, options).await {
         Ok(mut content) => {
             crate::content_quality::apply_scrape_content_limit(&mut content, max_chars, false);
+            // FIX #4 — Schema Validation: Warn when URL is a raw markdown/text file.
+            if is_raw_content_url(url) {
+                crate::content_quality::push_warning_unique(
+                    &mut content.warnings,
+                    "raw_markdown_url: Extraction on raw .md/.mdx/.rst/.txt files is unreliable \
+                     — fields may return null and confidence will be low. \
+                     Recommended: use web_fetch with output_format: clean_json for raw Markdown \
+                     sources, or web_fetch (text mode) to read the raw content directly.",
+                );
+            }
 
             // Strict-mode + schema-first extraction on the already-scraped content.
             let response =

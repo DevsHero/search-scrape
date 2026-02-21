@@ -21,7 +21,7 @@
 | Save pre-change snapshot | `cortex_chronos` | `save_checkpoint` | `path` + `symbol_name` + `semantic_tag` |
 | List snapshots | `cortex_chronos` | `list_checkpoints` | *(none)* |
 | Compare snapshots (AST diff) | `cortex_chronos` | `compare_checkpoint` | `symbol_name` + `tag_a` + `tag_b` *(use `tag_b="__live__"` + `path` to diff against current state)* |
-| Delete old snapshots (housekeeping) | `cortex_chronos` | `delete_checkpoint` | `symbol_name` and/or `semantic_tag` *(optional: `path`, `namespace`)* — OR `namespace` alone to purge all checkpoints in that namespace |
+| Delete old snapshots (housekeeping) | `cortex_chronos` | `delete_checkpoint` | `symbol_name` and/or `semantic_tag` *(optional: `path`, `namespace`)* — Automatically searches legacy flat `checkpoints/` if no matches in namespace. |
 | Compile/lint diagnostics | `run_diagnostics` | *(none)* | `repoPath` |
 
 ## The Ultimate CortexAST Refactoring SOP
@@ -62,8 +62,17 @@ Follow this sequence for any non-trivial refactor (especially renames, signature
 - Output is truncated server-side at `max_chars` (default **8000**). VS Code Copilot writes responses larger than ~8 KB to workspace storage — the 8000 default is calibrated to stay below that threshold. Set `max_chars` explicitly (e.g. `3000`) for large-scope queries; increase only if your client handles larger inline output.
 
 **`repoPath` best practice:**
-- Always pass `repoPath` explicitly on every tool call (e.g. `repoPath="/Users/me/project"`). Without it, the server tries `git rev-parse --show-toplevel` → `initialize` workspace root → `cwd`, but VS Code may spawn the MCP server with `$HOME` as cwd, causing all path resolution to fail silently.
+- Always pass `repoPath` explicitly on every tool call (e.g. `repoPath="/Users/me/project"`) when you know the path. Without it, the server uses the root established by the MCP `initialize` handshake.
+- **CRITICAL Safeguard:** For safety, if CortexAST resolves to a "dead root" (OS root or Home directory), it returns a **CRITICAL error** instead of proceeding. You MUST catch this and provide the correct `repoPath`.
 - Use the absolute workspace root path, not a subdirectory.
+- **Server owners**: configure `--root /absolute/path/to/project` in your MCP server args (or set `CORTEXAST_ROOT` env var). This is the most reliable fix — it sets the default root at server startup so every tool call resolves correctly even without an explicit `repoPath`. Example VS Code `settings.json`: `"args": ["mcp", "--root", "/Users/me/my-project"]`.
+- **Root resolution order** (first non-dead value wins):
+  1. `repoPath` param in the tool call — per-call override
+  2. Root from the MCP `initialize` request (`rootUri` / `rootPath` / `workspaceFolders[0].uri`) — **the authoritative protocol-level value**; overwrites the bootstrap
+  3. `--root` CLI flag / `CORTEXAST_ROOT` env var — startup bootstrap
+  4. IDE env vars: `VSCODE_WORKSPACE_FOLDER`, `VSCODE_CWD`, `IDEA_INITIAL_DIRECTORY`, `PWD`/`INIT_CWD` (if ≠ `$HOME`) — checked both at startup AND directly inside every tool call (belt-and-suspenders)
+  5. Find-up heuristic on the tool's own `path` / `target_dir` / `target` argument — walks ancestors looking for `.git`, `Cargo.toml`, `package.json`
+  6. `cwd` — **refused if it equals `$HOME` or OS root** (CRITICAL error)
 
 **Propagation best practice (Hybrid Omni‑Match):**
 - `propagation_checklist` automatically matches common casing variants of `symbol_name` (PascalCase / camelCase / snake_case).
@@ -79,11 +88,26 @@ the same efficient, hallucination-resistant research process.
 
 ## Shadowcrawl Priority Rules
 
-### 1. Memory Before Search (mandatory)
-- ALWAYS call `memory_search` BEFORE calling `web_search` or `web_search_json`
+### 1. Memory Before Search (mandatory — NEVER skip)
+- **ALWAYS** call `memory_search` BEFORE calling `web_search`, `web_search_json`, **or** `web_fetch`
 - If a result is returned with similarity score ≥ 0.60, use the cached data directly
   and skip the live fetch entirely
 - Only proceed to a fresh live search when memory returns no relevant hit
+- This rule applies to EVERY research cycle, including retries and follow-up fetches
+
+### 1a. Dynamic Parameters — Always Tune for the Task (mandatory)
+- **`max_chars` controls the TOTAL serialized output payload**, not just the text field.
+  Increase it for large pages (e.g. `max_chars: 50000`), decrease for tight token budgets.
+- **Agent-tunable parameters** — set these to match your task:
+  | Param | Default | When to change |
+  |---|---|---|
+  | `max_chars` | 10000 | Increase for deep content; decrease for summaries |
+  | `snippet_chars` | 120/200 | Increase for detailed research snippets |
+  | `max_headings` | 10 | Decrease for summary output |
+  | `max_images` | 3 | Increase for image-rich pages |
+  | `short_content_threshold` | 50 | Adjust for minimal/sparse pages |
+  | `extraction_score_threshold` | 0.4 | Lower for low-quality HTML pages |
+  | `placeholder_word_threshold` | 10 | Tune for JS-heavy pages |
 
 ### 2. Prefer `web_search_json` Over `web_search` + `web_fetch`
 - `web_search_json` combines search + pre-scraped content summaries in a **single call**
@@ -101,6 +125,7 @@ the same efficient, hallucination-resistant research process.
 - Token savings are typically 60–80 % compared to raw text output
 - If you see `clean_json_truncated` in warnings, increase `max_chars` (the tool clips large pages to prevent output spilling).
 - Note: semantic shaving intentionally bypasses when `word_count < 200` (short pages are returned whole).
+- **Raw file auto-detection**: when the URL ends in `.md`, `.mdx`, `.rst`, `.txt`, `.csv`, `.toml`, `.yaml`, or `.yml`, `clean_json` mode **automatically skips the HTML extraction pipeline** and returns the raw content directly — no duplicate frontmatter, no noise. The response will contain a `raw_markdown_url` warning. To read a raw GitHub file, prefer `web_fetch(output_format: "text")` for prose or `web_fetch(output_format: "clean_json")` for structured paragraphs.
 
 ### 4. Rotate Proxy on First Block Signal (mandatory)
 - If `web_fetch` or `web_search` returns **403 / 429 / rate-limit / IP-block**:
@@ -109,12 +134,23 @@ the same efficient, hallucination-resistant research process.
 - Do NOT retry the same call without rotating first; do NOT escalate to `hitl_web_fetch`
   until proxy rotation has also failed
 
-### 5. Structured Extraction — `fetch_then_extract` / `extract_fields`
+### 4a. Auto-Escalation on Low Confidence (mandatory — no repeat prompt)
+- If `web_fetch` returns `confidence < 0.3` OR `extraction_score < 0.4` in the response:
+  1. **First**: retry with `quality_mode: "aggressive"` (triggers full CDP browser rendering)
+  2. **If still failing**: automatically escalate to `visual_scout` to screenshot the page
+  3. **If auth-wall confirmed**: escalate to `human_auth_session` WITHOUT waiting for further
+     user instructions — surface the reason and proceed autonomously
+- For `extract_structured` / `fetch_then_extract`: if response includes `confidence == 0.0`
+  AND `placeholder_page` warning, immediately retry via `non_robot_search` (HITL/CDP)
+- **Never** leave the agent stuck on a low-confidence result without attempting escalation
+
+### 5. Structured Extraction — `fetch_then_extract` / `extract_structured`
 
 Use schema-driven extraction when you need a stable JSON shape for downstream agent logic.
 
 - Prefer `fetch_then_extract` for **one-shot** workflows (fetch + extract in the same tool call).
-- Use `extract_fields` when you already fetched/scraped content (or when the agent framework routes through it).
+- Use `extract_structured` when you need schema extraction on an already-known URL (agent framework routes through it).
+- **`raw_markdown_url` auto-warn**: both `extract_structured` and `fetch_then_extract` automatically inject a warning into `warnings[]` when the URL is a raw `.md`/`.mdx`/`.rst`/`.txt` file — fields will likely return `null` and confidence will be low. Use `web_fetch(output_format: "clean_json")` instead for raw Markdown sources.
 
 Strict mode (default):
 - `strict: true` enforces schema shape (no drift):
@@ -138,8 +174,7 @@ Confidence safety (mandatory):
 
 Input constraint:
 - Don’t point structured extraction at raw `.md` / `.json` / `.txt` unless that’s intentionally your source.
-  For docs pages, prefer `web_fetch(output_format="clean_json")` then extract.
-
+  For docs pages, prefer `web_fetch(output_format="clean_json")` then extract.- If you receive a `raw_markdown_url` warning in the response, switch to `web_fetch` instead.
 ### 6. `web_crawl` — Use When Sub-Page Discovery Is Needed
 - Use `web_crawl` when you know a doc site's index URL but do not know which sub-page
   holds the information you need
@@ -148,10 +183,11 @@ Input constraint:
 - Output is capped at `max_chars` (default 10 000) to prevent workspace storage spill.
   Pass a higher value (e.g. `max_chars: 30000`) when crawling many pages.
 
-### 7. `hitl_web_fetch` — Last Resort Only
+### 7. `non_robot_search` — Last Resort Only
 - Use ONLY when both direct fetch AND proxy rotation have failed
 - Intended for: heavy Cloudflare challenges, CAPTCHA, login walls
 - Do NOT use as a first attempt for any site — always try automated methods first
+- After a successful HITL session, cookies are saved to `~/.shadowcrawl/sessions/{domain}.json` — future `web_fetch` calls to that domain are automatically authenticated
 
 ---
 
@@ -161,37 +197,49 @@ Input constraint:
 Question / research task
         │
         ▼
-memory_search ──► hit (≥ 0.60)? ──► use cached result, STOP
+research_history ──► hit (≥ 0.60)? ──► use cached result, STOP
         │ miss
         ▼
-web_search_json ──► enough content? ──► use it, STOP
+search_structured ──► enough content? ──► use it, STOP
         │ need deeper page
         ▼
-web_fetch (clean_json + strict_relevance + query)
+scrape_url (clean_json + strict_relevance + query)
+  │ raw .md/.mdx/.rst/.txt URL? ──► HTML pipeline skipped, raw content returned + raw_markdown_url warning
+  │
+  │ confidence < 0.3 or extraction_score < 0.4?
+  ├──► retry with quality_mode: aggressive (CDP rendering)
+  │        │ still low? ──► visual_scout ──► human_auth_session (saves session cookies)
+  │
   │ need schema-stable JSON?
   ▼
 fetch_then_extract (schema + strict=true)
-        │ 403/429/blocked?
-        ▼
-proxy_control grab ──► retry web_fetch with use_proxy: true
+  │ raw_markdown_url warning? ──► switch to scrape_url(clean_json) instead
+  │ confidence == 0.0 + placeholder_page? ──► non_robot_search (no repeat prompt needed)
+  │
+  │ 403/429/blocked?
+  ▼
+proxy_manager grab ──► retry scrape_url with use_proxy: true
         │ still blocked?
         ▼
-hitl_web_fetch  (LAST RESORT)
+non_robot_search  (LAST RESORT — persists session after login)
 ```
 
 ---
 
 ## Tool Quick-Reference
 
-| Tool | When to use | When NOT to use |
+| Tool (MCP name) | When to use | When NOT to use |
 |---|---|---|
-| `memory_search` | First step, before every search | — |
-| `web_search_json` | Initial research (search + content) | When only raw URLs needed |
-| `web_search` | Raw URL list only | As substitute for `web_search_json` |
-| `web_fetch` | Fetching a specific known URL | As primary research step |
-| `web_fetch` `clean_json` | Documentation / article pages (token-efficient) | When you need full raw HTML (use `json` + `include_raw_html=true`, but expect large output) |
-| `web_crawl` | Doc site sub-page discovery | Single-page fetches |
-| `fetch_then_extract` | One-shot fetch + strict schema extraction | When you only need prose; use `web_fetch(clean_json)` instead |
-| `extract_fields` | Strict schema extraction from scraped pages | Raw .md / .json / .txt files (unless intentional) |
-| `proxy_control` | After any 403/429 error | Proactively without a block signal |
-| `hitl_web_fetch` | CAPTCHA / login wall | Any automatable page |
+| `research_history` | **First step**, before every search/fetch | — |
+| `search_structured` | Initial research (search + content summaries, single call) | When only raw URLs needed |
+| `search_web` | Raw URL list only | As substitute for `search_structured` |
+| `scrape_url` | Fetching a specific known URL | As primary research step (use `search_structured` instead) |
+| `scrape_url` `clean_json` | Documentation / article pages (token-efficient, noise-free) | Raw `.md`/`.txt` files — use `text` or `clean_json` (auto-detected) |
+| `scrape_url` `json` | When you need the full structured ScrapeResponse | Large pages without `max_chars` — output will be capped at `max_chars` |
+| `crawl_website` | Doc site sub-page link discovery | Single-page fetches |
+| `fetch_then_extract` | One-shot fetch + strict schema extraction | When you only need prose; use `scrape_url(clean_json)` instead |
+| `extract_structured` | Schema extraction; auto-warns on raw markdown URLs | Raw `.md`/`.json`/`.txt` files — check for `raw_markdown_url` warning |
+| `proxy_manager` | After any 403/429/rate-limit error | Proactively without a block signal |
+| `visual_scout` | Screenshot a page to check for auth-walls (`auth_risk_score ≥ 0.4`) | General content fetching |
+| `human_auth_session` | Full HITL login — persists session cookies for future calls | Before trying `non_robot_search` first |
+| `non_robot_search` | CAPTCHA / Cloudflare / login wall (last resort) | Any page automatable via proxy rotation |

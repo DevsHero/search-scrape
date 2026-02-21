@@ -95,11 +95,33 @@ pub async fn handle(
                 })
                 .unwrap_or(10000);
 
+            // Dynamic thresholds — agents can tune per-task instead of using fixed values.
+            let short_content_threshold = arguments
+                .get("short_content_threshold")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize)
+                .unwrap_or(50);
+            let extraction_score_threshold = arguments
+                .get("extraction_score_threshold")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.4);
+            // Dynamic output-shaping for text mode.
+            let max_headings = arguments
+                .get("max_headings")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize)
+                .unwrap_or(10);
+            let max_images = arguments
+                .get("max_images")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize)
+                .unwrap_or(3);
+
             crate::content_quality::apply_scrape_content_limit(&mut content, max_chars, false);
-            if content.word_count < 50 {
+            if content.word_count < short_content_threshold {
                 crate::content_quality::push_warning_unique(&mut content.warnings, "short_content");
             }
-            if content.extraction_score.map(|s| s < 0.4).unwrap_or(false) {
+            if content.extraction_score.map(|s| s < extraction_score_threshold).unwrap_or(false) {
                 crate::content_quality::push_warning_unique(
                     &mut content.warnings,
                     "low_extraction_score",
@@ -216,8 +238,20 @@ pub async fn handle(
                     );
                 }
 
-                let json_str = serde_json::to_string_pretty(&json_content)
+                let mut json_str = serde_json::to_string_pretty(&json_content)
                     .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
+                // FIX #1 — max_chars caps the TOTAL serialized JSON payload, not just the text
+                // extraction field. A CDP-rendered page can balloon to 93KB even with a 3000-char
+                // text limit because links[], images[], code_blocks[] are NOT bounded by text cap.
+                if json_str.len() > max_chars {
+                    let full_kb = json_str.len() / 1024;
+                    json_str.truncate(max_chars);
+                    json_str.push_str(&format!(
+                        "\n// \u{26a0}\u{fe0f} JSON_PAYLOAD_TRUNCATED: full response was ~{}KB, capped at {} chars. \
+                         Use output_format: clean_json for token-efficient output, or increase max_chars.",
+                        full_kb, max_chars
+                    ));
+                }
                 return Ok(Json(McpCallResponse {
                     content: vec![McpContent {
                         content_type: "text".to_string(),
@@ -231,6 +265,59 @@ pub async fn handle(
             // Returns only title, substantive paragraphs, code blocks, and metadata.
             // Strips 100 % of headers, footers, nav menus, and boilerplate noise.
             if output_format == "clean_json" {
+                // FIX #2 — Media-Aware Auto-detection for raw .md / .mdx / .rst / .txt URLs.
+                // HTML extraction on raw text produces duplicate frontmatter appearing in BOTH
+                // key_paragraphs AND key_code_blocks. Skip the noisy HTML pipeline entirely.
+                if is_raw_content_url(url) {
+                    let para_budget = max_chars.saturating_sub(1000).max(500);
+                    let mut raw_para_total = 0usize;
+                    let key_paragraphs: Vec<String> = content
+                        .clean_content
+                        .split("\n\n")
+                        .map(|p| p.trim().to_string())
+                        .filter(|p| !p.is_empty())
+                        .filter(|p| {
+                            if raw_para_total >= para_budget {
+                                return false;
+                            }
+                            raw_para_total += p.len() + 4;
+                            true
+                        })
+                        .collect();
+                    let mut raw_warnings = content.warnings.clone();
+                    crate::content_quality::push_warning_unique(
+                        &mut raw_warnings,
+                        "raw_markdown_url: HTML extraction skipped — content returned as-is \
+                         to avoid duplication. For schema extraction use extract_structured.",
+                    );
+                    let sniper = SniperOutput {
+                        title: content.title.clone(),
+                        key_points: vec![
+                            "Raw text/markdown file — returned as-is (HTML extraction skipped)."
+                                .to_string(),
+                        ],
+                        key_paragraphs,
+                        key_code_blocks: vec![],
+                        metadata: SniperMetadata {
+                            url: content.url.clone(),
+                            author: content.author.clone(),
+                            published_at: content.published_at.clone(),
+                            word_count: content.word_count,
+                            extraction_score: content.extraction_score,
+                            warnings: raw_warnings,
+                        },
+                    };
+                    let json_str = serde_json::to_string_pretty(&sniper)
+                        .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
+                    return Ok(Json(McpCallResponse {
+                        content: vec![McpContent {
+                            content_type: "text".to_string(),
+                            text: json_str,
+                        }],
+                        is_error: false,
+                    }));
+                }
+
                 let noise_terms: &[&str] = &[
                     "terms of service",
                     "privacy policy",
@@ -342,8 +429,18 @@ pub async fn handle(
                     },
                 };
 
-                let json_str = serde_json::to_string_pretty(&sniper)
+                let mut json_str = serde_json::to_string_pretty(&sniper)
                     .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
+                // FIX #1 (clean_json): Also apply max_chars to total serialized payload.
+                if json_str.len() > max_chars {
+                    let full_kb = json_str.len() / 1024;
+                    json_str.truncate(max_chars);
+                    json_str.push_str(&format!(
+                        "\n// \u{26a0}\u{fe0f} CLEAN_JSON_PAYLOAD_TRUNCATED: ~{}KB \u{2192} capped at {} chars. \
+                         Increase max_chars for full output.",
+                        full_kb, max_chars,
+                    ));
+                }
                 return Ok(Json(McpCallResponse {
                     content: vec![McpContent {
                         content_type: "text".to_string(),
@@ -388,13 +485,13 @@ pub async fn handle(
                 let image_preview_section = crate::content_quality::build_image_markdown_hints(
                     &content.images,
                     &content.title,
-                    3,
+                    max_images,
                 );
 
                 let headings = content
                     .headings
                     .iter()
-                    .take(10)
+                    .take(max_headings)
                     .map(|h| format!("- {} {}", h.level.to_uppercase(), h.text))
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -470,6 +567,17 @@ pub async fn handle(
             }))
         }
     }
+}
+
+/// Returns `true` when the URL points to a raw text/data file where HTML extraction
+/// is unhelpful and produces noisy/duplicate content (Fix #2 — Media-Aware Auto-detection).
+fn is_raw_content_url(url: &str) -> bool {
+    let path_only = url.split('?').next().unwrap_or(url).to_ascii_lowercase();
+    let ext = path_only.rsplit('.').next().unwrap_or("");
+    matches!(
+        ext,
+        "md" | "mdx" | "rst" | "txt" | "csv" | "toml" | "yaml" | "yml"
+    )
 }
 
 /// Extract code blocks from Markdown with surrounding prose as context.

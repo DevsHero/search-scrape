@@ -28,6 +28,13 @@ pub async fn handle(
         .and_then(|v| v.as_u64())
         .map(|n| n as usize)
         .unwrap_or(10);
+    // Dynamic snippet length — controls how many chars of each result's content snippet
+    // are displayed. Default: 120 (NeuroSiphon mode) / 200 (standard), but agents can
+    // override for deep research (bigger snippets) or token-constrained tasks (smaller).
+    let snippet_chars: Option<usize> = arguments
+        .get("snippet_chars")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize);
 
     let overrides = search::SearchParamOverrides {
         engines: arguments
@@ -153,10 +160,12 @@ pub async fn handle(
                 source_type,
                 published,
                 score,
-                // 🧬 Rule D: under NeuroSiphon, use compact 120-char snippets so more
-                // results fit in the same token budget; 200 chars in standard mode.
+                // Snippet length: agent-controllable via snippet_chars param.
+                // Falls back to NeuroSiphon-aware defaults (120 compact / 200 standard).
                 {
-                    let limit = if crate::core::config::neurosiphon_enabled() { 120 } else { 200 };
+                    let limit = snippet_chars.unwrap_or_else(|| {
+                        if crate::core::config::neurosiphon_enabled() { 120 } else { 200 }
+                    });
                     result.content.chars().take(limit).collect::<String>()
                 }
             ));

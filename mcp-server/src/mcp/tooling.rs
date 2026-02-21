@@ -30,7 +30,13 @@ For initial research where you will also fetch content, strongly prefer web_sear
                     "safesearch": {"type": "integer", "minimum": 0, "maximum": 2},
                     "time_range": {"type": "string", "enum": ["day", "week", "month", "year"]},
                     "pageno": {"type": "integer", "minimum": 1},
-                    "max_results": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10}
+                    "max_results": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10},
+                    "snippet_chars": {
+                        "type": "integer",
+                        "minimum": 20,
+                        "maximum": 1000,
+                        "description": "Max chars of each result's content snippet. Default: 120 (NeuroSiphon) / 200 (standard). Increase for deep research; decrease for token-constrained tasks."
+                    }
                 },
                 "required": ["query"]
             }),
@@ -100,8 +106,36 @@ Note: still call memory_search first to avoid redundant fetches.",
                         "default": 0.35,
                         "description": "Cosine similarity threshold for Semantic Shaving (default 0.35). Lower = keep more; higher = keep less."
                     },
-                    "max_chars": {"type": "integer"},
+                    "max_chars": {
+                        "type": "integer",
+                        "description": "Hard cap on the TOTAL serialized output payload (not just the text field). Prevents workspace storage spills. In json mode, caps the entire ScrapeResponse JSON including links[], images[], code_blocks[]. Default: 10000."
+                    },
                     "max_links": {"type": "integer", "minimum": 1},
+                    "max_headings": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 10,
+                        "description": "Max headings to include in text mode output. Default: 10."
+                    },
+                    "max_images": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 3,
+                        "description": "Max image markdown hints to include in text mode output. Default: 3."
+                    },
+                    "short_content_threshold": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 50,
+                        "description": "Word-count threshold below which short_content warning fires. Default: 50. Set to 0 to disable."
+                    },
+                    "extraction_score_threshold": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                        "default": 0.4,
+                        "description": "Extraction quality threshold below which low_extraction_score warning fires. Default: 0.4. Set to 0.0 to disable."
+                    },
                     "output_format": {
                         "type": "string",
                         "enum": ["text", "json", "clean_json"],
@@ -173,7 +207,8 @@ If the start URL returns NEED_HITL, the crawl aborts early with a structured err
             description: "Schema-driven extraction into JSON fields. Use after web_fetch when you need a JSON object rather than free text. \
 ⛔ CONSTRAINT: use ONLY on structured HTML pages (official docs, articles, MDN-style pages). \
 Do NOT use on raw .md, .json, .txt, or .rst files — fields will return null and confidence will be low. \
-For raw Markdown sources, use web_fetch with output_format: clean_json instead.",
+For raw Markdown sources, use web_fetch with output_format: clean_json instead. \
+⚠️ AUTO-WARN: if the URL is a raw markdown/text file, a raw_markdown_url warning is automatically injected into the response.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {

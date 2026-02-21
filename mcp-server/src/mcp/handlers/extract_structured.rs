@@ -191,6 +191,17 @@ fn parse_schema_from_prompt(prompt: &str) -> Option<Vec<ExtractField>> {
     None
 }
 
+/// Returns `true` when the URL points to a raw text/markdown file where schema
+/// extraction is unreliable (fields typically return null, confidence is low).
+fn is_raw_content_url(url: &str) -> bool {
+    let path_only = url.split('?').next().unwrap_or(url).to_ascii_lowercase();
+    let ext = path_only.rsplit('.').next().unwrap_or("");
+    matches!(
+        ext,
+        "md" | "mdx" | "rst" | "txt" | "csv" | "toml" | "yaml" | "yml"
+    )
+}
+
 pub async fn handle(
     state: Arc<AppState>,
     arguments: &Value,
@@ -266,7 +277,19 @@ pub async fn handle(
     )
     .await
     {
-        Ok(response) => {
+        Ok(mut response) => {
+            // FIX #4 — Schema Validation: Warn when URL is a raw markdown/text file.
+            // Extraction on raw files is unreliable — fields often return null and
+            // confidence is low. Recommend web_fetch with clean_json instead.
+            if is_raw_content_url(url) {
+                response.warnings.push(
+                    "raw_markdown_url: Extraction on raw .md/.mdx/.rst/.txt files is unreliable \
+                     — fields may return null and confidence will be low. \
+                     Recommended: use web_fetch with output_format: clean_json for raw Markdown \
+                     sources, or web_fetch (text mode) to read the raw content directly."
+                        .to_string(),
+                );
+            }
             let json_str = serde_json::to_string_pretty(&response)
                 .unwrap_or_else(|e| format!(r#"{{"error": "Failed to serialize: {}"}}"#, e));
             Ok(Json(McpCallResponse {

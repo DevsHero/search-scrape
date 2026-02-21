@@ -6,6 +6,32 @@ Policy:
 
 ## Unreleased
 
+## v3.1.0 (2026-02-21)
+
+### Added
+
+- **Dynamic payload cap (`max_chars`)** — `web_fetch` (`scrape_url`) now applies `max_chars` to the **total serialized JSON payload** in both `json` and `clean_json` modes, not just the `clean_content` text field. Prevents 93 KB workspace-storage spills caused by unbounded `links[]`, `images[]`, `code_blocks[]`. A `⚠️ JSON_PAYLOAD_TRUNCATED` / `CLEAN_JSON_PAYLOAD_TRUNCATED` notice is appended when truncation occurs.
+- **Media-Aware Extraction (`clean_json` mode)** — `web_fetch` auto-detects raw file URLs (`.md`, `.mdx`, `.rst`, `.txt`, `.csv`, `.toml`, `.yaml`, `.yml`) and skips the HTML extraction pipeline entirely. Content is returned as-is to eliminate duplicate frontmatter. Response includes a `raw_markdown_url` warning.
+- **`raw_markdown_url` auto-warn** — `extract_structured` and `fetch_then_extract` automatically inject `raw_markdown_url` into `warnings[]` when called on raw text/markdown files, alerting agents that schema fields will likely return `null`.
+- **Agent-tunable dynamic parameters** — previously hardcoded values are now per-call overridable:
+  - `short_content_threshold` (default `50`) — word-count floor for `short_content` warning
+  - `extraction_score_threshold` (default `0.4`) — quality floor for `low_extraction_score` warning
+  - `max_headings` (default `10`) — heading count in `text` mode output
+  - `max_images` (default `3`) — image markdown hints in `text` mode output
+  - `snippet_chars` (default `120` NeuroSiphon / `200` standard) — search result snippet length
+- **Copilot/agent instructions hardened** (`.github/copilot-instructions.md`):
+  - **Rule 1** extended: `memory_search`-first applies to `web_fetch` too, not just `web_search`
+  - **Rule 1a** (new): _Dynamic Parameters_ table documents all new tunable params
+  - **Rule 4a** (new): _Auto-Escalation on Low Confidence_ — agents must retry with `quality_mode: aggressive` → `visual_scout` → `human_auth_session` autonomously when `confidence < 0.3` or `extraction_score < 0.4`
+  - **Decision flow diagram** updated with confidence-check branches, raw markdown path, and corrected tool names throughout
+  - **Tool Quick-Reference** updated to use actual MCP tool names (`research_history`, `search_web`, `search_structured`, `scrape_url`, `crawl_website`, `extract_structured`, `proxy_manager`, `non_robot_search`) and includes `visual_scout` and `human_auth_session`
+
+### Changed
+
+- `scrape_url` tool schema: `max_chars` description updated to clarify it caps the full serialized payload, not just the text field.
+- `extract_structured` tool description: added `⚠️ AUTO-WARN` note about `raw_markdown_url` injection.
+- Copilot instructions: Rule 7 renamed from `hitl_web_fetch` to `non_robot_search` (correct MCP tool name); session persistence note added.
+
 ## v3.0.0 (2026-02-20)
 
 ### Added
