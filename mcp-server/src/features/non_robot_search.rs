@@ -2623,17 +2623,25 @@ impl BrowserSession {
         );
 
         // Close tabs first (more "human" shutdown), reducing Brave's "Restore tabs?" prompt.
-        let _ = close_all_tabs_via_json(self.debugging_port).await;
+        // Timeout guard: if the browser is already dead/unresponsive this HTTP call would
+        // hang indefinitely without a deadline.
+        let _ = tokio::time::timeout(
+            Duration::from_secs(3),
+            close_all_tabs_via_json(self.debugging_port),
+        )
+        .await;
 
-        // Then close the CDP connection/browser gracefully.
-        let _ = self.browser.close().await;
-        let _ = self.browser.wait().await;
+        // Close the CDP connection and wait for graceful process exit.
+        // Both calls MUST have timeouts: when the browser was already closed by the user
+        // (or the CDP WebSocket dropped), `browser.close()` blocks waiting for a response
+        // that will never arrive, and `browser.wait()` blocks waiting for process exit
+        // that already happened without our notification — both hang forever without these.
+        let _ = tokio::time::timeout(Duration::from_secs(3), self.browser.close()).await;
+        let _ = tokio::time::timeout(Duration::from_secs(3), self.browser.wait()).await;
         self.handler_task.abort();
 
-        // Wait briefly for graceful shutdown
+        // Brief pause then unconditionally force-kill any survivors.
         tokio::time::sleep(Duration::from_millis(500)).await;
-
-        // Force-kill any remaining browser processes
         force_kill_all_debug_browsers(self.debugging_port);
 
         if self.created_profile_dir {
@@ -2645,9 +2653,14 @@ impl BrowserSession {
 
     async fn relaunch(&mut self) -> anyhow::Result<()> {
         // Best effort: close existing browser and abort handler.
-        let _ = close_all_tabs_via_json(self.debugging_port).await;
-        let _ = self.browser.close().await;
-        let _ = self.browser.wait().await;
+        // Same timeout guards as close() to avoid hanging on dead sessions.
+        let _ = tokio::time::timeout(
+            Duration::from_secs(3),
+            close_all_tabs_via_json(self.debugging_port),
+        )
+        .await;
+        let _ = tokio::time::timeout(Duration::from_secs(3), self.browser.close()).await;
+        let _ = tokio::time::timeout(Duration::from_secs(3), self.browser.wait()).await;
         self.handler_task.abort();
 
         self.closed.store(false, Ordering::SeqCst);

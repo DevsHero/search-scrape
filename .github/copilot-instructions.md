@@ -12,12 +12,12 @@
 | Task | Megatool | Action Enum | Required Params | Key Optional Params |
 |---|---|---|---|---|
 | Repo overview (files + public symbols) | `cortex_code_explorer` | `map_overview` | `target_dir` (use `.` for whole repo) | `exclude` (dir-name array), `search_filter`, `max_chars`, `ignore_gitignore` |
-| Token-budgeted context slice (XML) | `cortex_code_explorer` | `deep_slice` | `target` | `exclude` (dir-name array), `budget_tokens`, `skeleton_only`, `query`, `query_limit` |
+| Token-budgeted context slice (XML) | `cortex_code_explorer` | `deep_slice` | `target` | `exclude` (dir-name array), `budget_tokens`, `skeleton_only`, `query`, `query_limit`, `single_file` (bool — exact target only, no vector spill), `only_dir` (string — restrict query to this subdir) |
 | Extract exact symbol source | `cortex_symbol_analyzer` | `read_source` | `path` + `symbol_name` *(or `path` + `symbol_names` for batch)* | `instance_index` (0-based), `skeleton_only` |
 | Find all usages before signature change | `cortex_symbol_analyzer` | `find_usages` | `symbol_name` + `target_dir` | |
 | Find trait/interface implementors | `cortex_symbol_analyzer` | `find_implementations` | `symbol_name` + `target_dir` | |
 | Blast radius before rename/move/delete | `cortex_symbol_analyzer` | `blast_radius` | `symbol_name` + `target_dir` | |
-| Cross-boundary update checklist | `cortex_symbol_analyzer` | `propagation_checklist` | `symbol_name` *(or legacy `changed_path`)* | `aliases` |
+| Cross-boundary update checklist | `cortex_symbol_analyzer` | `propagation_checklist` | `symbol_name` *(or legacy `changed_path`)* | `aliases`, `only_dir` (restrict scan to one microservice dir) |
 | Save pre-change snapshot | `cortex_chronos` | `save_checkpoint` | `path` + `symbol_name` + `semantic_tag` | `namespace` |
 | List snapshots | `cortex_chronos` | `list_checkpoints` | *(none)* | `namespace` |
 | Compare snapshots (AST diff) | `cortex_chronos` | `compare_checkpoint` | `symbol_name` + `tag_a` + `tag_b` *(use `tag_b="__live__"` + `path` to diff against current state)* | `namespace`, `path` |
@@ -65,7 +65,15 @@ Follow this sequence for any non-trivial refactor (especially renames, signature
 - If `map_overview` returns “Massive Directory” or counts look inflated (e.g. `node_modules/`, build outputs, generated code), pass `exclude: ["node_modules", "vendor", "__pycache__", "build", "dist"]`.
 - `exclude` matches directory **base names** (not full paths) and prunes at every depth.
 - Prefer `exclude` over widening `target_dir` — it keeps scans focused and avoids summary-only mode.
+**`single_file` and `only_dir` best practice (deep_slice):**
+- Use `single_file: true` when you want **exactly one file** — it skips all vector search and returns only the `target`. Takes priority over `query`. Eliminates the "goes wide" issue for known targets.
+- Use `only_dir` when `target` is a file but you still want semantic `query=` ranking, scoped to a specific subdirectory. Example: `target='src/auth.rs', query='token refresh', only_dir='src/auth'`.
+- In polyrepo / microservice setups with many services sharing a symbol, prefer `only_dir='services/auth'` over a global `target_dir='.'` to avoid blowing the file cap.
 
+**`only_dir` best practice (propagation_checklist):**
+- `only_dir` overrides `target_dir` — use it to scope checklist output to one microservice without changing `target_dir='.'` semantics.
+- Useful when a symbol is ubiquitous (would hit the 50-file blast-radius cap) and you want to tackle one service at a time.
+- Example: `symbol_name='TrainingJob', only_dir='services/training'`.
 **`instance_index` best practice (read_source):**
 - Some files legitimately contain multiple same-named definitions. When that happens, `read_source` will prepend a “Disambiguation: Found N instances…” header.
 - Default is instance 0. To select a different one, pass `instance_index: 1` (second), `2` (third), etc.
