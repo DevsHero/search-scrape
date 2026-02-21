@@ -1513,7 +1513,12 @@ Observability tooling such as Prometheus and Grafana helps track key metrics.
 
     #[test]
     fn test_rewrite_github_blob_url_ignores_non_blob() {
-        assert!(rewrite_url_for_clean_content("https://github.com/user/repo").is_none());
+        // Repo root now rewrites to raw README instead of returning None
+        assert_eq!(
+            rewrite_url_for_clean_content("https://github.com/user/repo").as_deref(),
+            Some("https://raw.githubusercontent.com/user/repo/HEAD/README.md")
+        );
+        // Sub-paths other than blob and repo-root should NOT be rewritten
         assert!(rewrite_url_for_clean_content("https://github.com/user/repo/issues/1").is_none());
         assert!(rewrite_url_for_clean_content("https://docs.python.org/3/").is_none());
         assert!(rewrite_url_for_clean_content(

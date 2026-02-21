@@ -34,7 +34,9 @@ pub async fn handle(
         .get("threshold")
         .and_then(|v| v.as_f64())
         .map(|n| n as f32)
-        .unwrap_or(0.5);
+        // Default 0.60 — matches the cache-quality guard in agent instructions.
+        // Below 0.60 is ambiguous; agents should always do a fresh fetch.
+        .unwrap_or(0.60);
 
     let entry_type = arguments.get("entry_type").and_then(|v| v.as_str());
 
@@ -65,11 +67,43 @@ pub async fn handle(
                             "Low Match"
                         };
 
+                        // skip_live_fetch signal — applies the full cache-quality guard so agents
+                        // don't have to re-implement it.  Only true when ALL hold:
+                        //   1. score >= 0.60
+                        //   2. entry_type is Scrape (Search entries have no word_count metadata)
+                        //   3. word_count >= 50
+                        //   4. no sparse/placeholder warnings in the stored result
+                        let is_search = matches!(entry.entry_type, EntryType::Search);
+                        let word_count: Option<u64> = if !is_search {
+                            entry.full_result.get("word_count").and_then(|v| v.as_u64())
+                        } else {
+                            None
+                        };
+                        let has_sparse_warning = entry
+                            .full_result
+                            .get("warnings")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter().any(|w| {
+                                    let s = w.as_str().unwrap_or("");
+                                    s.contains("placeholder") || s == "short_content"
+                                        || s.contains("content_restricted")
+                                        || s.contains("low_extraction_score")
+                                })
+                            })
+                            .unwrap_or(false);
+                        let skip_live_fetch = !is_search
+                            && *score >= 0.60
+                            && word_count.map(|wc| wc >= 50).unwrap_or(false)
+                            && !has_sparse_warning;
+
                         serde_json::json!({
                             "query": entry.query,
                             "entry_type": format!("{:?}", entry.entry_type),
                             "similarity_score": score,
                             "match_quality": match_quality,
+                            "skip_live_fetch": skip_live_fetch,
+                            "word_count": word_count,
                             "timestamp": entry.timestamp.to_rfc3339(),
                             "domain": entry.domain,
                             "summary": entry.summary

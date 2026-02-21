@@ -6,8 +6,18 @@ Policy:
 
 ## Unreleased
 
+### Added
+
+- **`skip_live_fetch` machine-readable boolean** in `research_history` response — each result entry now includes:
+  - `skip_live_fetch` (`bool`): `true` only when the entry is a Scrape (not Search), similarity ≥ 0.60, `word_count` ≥ 50, and no sparse-content warnings. Agents should consume this field directly rather than re-implementing the cache-quality guard.
+  - `word_count` (`u64 | null`): extracted from the stored `ScrapeResponse`; `null` for Search-type entries.
+- **GitHub repo root → raw README auto-rewrite** — `scrape_url` now redirects `github.com/{owner}/{repo}` (exactly 2 path segments) to `raw.githubusercontent.com/{owner}/{repo}/HEAD/README.md` before scraping. Avoids `NEED_HITL` on public repos caused by GitHub's React SPA rendering.
+
 ### Changed
 
+- `research_history` default similarity threshold raised from `0.5` to `0.60` — aligns server default with the `≥ 0.60` threshold documented in agent rules and prevents coarse low-score cache hits from being trusted as full-quality results.
+- Auth-wall `github_raw_url` hint in `scrape_url` extended to also cover repo root URLs (not just `/blob/` paths).
+- Agent rules (`.github/copilot-instructions.md`): cache-quality guard updated to document the machine-readable `skip_live_fetch` field — agents must check this field instead of manually evaluating the multi-condition guard.
 - Agent rules (`.github/copilot-instructions.md`): add `entry_type == "search"` check to the cache-quality guard — search-index cache entries carry no `word_count` metadata, so a high similarity score on a search entry must never cause agents to skip `scrape_url` on the top result URL.
 - Agent rules: cache-quality guard expanded with word_count < 50 guard and placeholder-warnings check (canonical example: `crates.io` JS-render pages); private/internal tools note added (skip `search_structured`, go directly to `scrape_url` on known URL).
 - README `🤖 Agent Optimal Setup` section fully refreshed: updated tool names (`research_history`, `search_structured`, `scrape_url`, `proxy_manager`, `non_robot_search`), full 7-rule block, new decision flow diagram with cache-quality guard and confidence-escalation path, removed stale `memory_search`/`hitl_web_fetch`/`extract_fields` references.

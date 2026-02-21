@@ -114,6 +114,7 @@ the same efficient, hallucination-resistant research process.
 - This rule applies to EVERY research cycle, including retries and follow-up fetches
 
 **Cache-quality guard (mandatory):**
+- **Shortcut — always check `skip_live_fetch` first**: the `research_history` response now includes a machine-readable `skip_live_fetch` boolean per result (alongside a `word_count` field). When `skip_live_fetch: true`, the full guard has already passed server-side and you may use the cached result directly. When `skip_live_fetch: false`, never skip a live fetch regardless of the similarity score.
 - If the cached entry indicates `word_count < 50` (or similarly sparse content), treat it as a **low-quality scrape** and DO NOT skip a live fetch.
 - If the cached entry contains warnings that imply placeholder/blocked/sparse content (e.g. `placeholder_page`, `short_content`, `content_restricted`, `low_extraction_score`), treat it as **low-quality** and DO NOT skip a live fetch.
 - If the cached entry has `entry_type == "search"` (a search-index summary, not a page scrape), **do NOT treat a similarity ≥ 0.60 hit as a reason to skip `scrape_url`**. Search entries carry no per-page `word_count` metadata — always follow up with a fresh `scrape_url` on the top result URL.

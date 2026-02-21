@@ -148,14 +148,29 @@ pub async fn handle(
                     .unwrap_or("Auth-Wall detected (login page returned HTTP 200)")
                     .to_string();
 
-                // Auto-compute GitHub raw URL hint for blob pages.
+                // Auto-compute GitHub raw URL hint for blob pages and repo root pages.
                 // NOTE: rewrite_url_for_clean_content in scrape.rs already rewrites
-                // /blob/ → raw before the scrape, so this is an informational hint only.
+                // /blob/ and repo root → raw before the scrape, so this is an informational hint.
                 let github_raw_url = if url.contains("github.com") && url.contains("/blob/") {
                     let raw = url
                         .replace("github.com/", "raw.githubusercontent.com/")
                         .replacen("/blob/", "/", 1);
                     Some(raw)
+                } else if url.contains("github.com") && !url.contains("raw.githubusercontent.com") {
+                    // Repo root: github.com/{owner}/{repo} — offer raw README hint
+                    url::Url::parse(url).ok().and_then(|parsed| {
+                        if parsed.host_str() == Some("github.com") {
+                            let segs: Vec<&str> =
+                                parsed.path().split('/').filter(|s| !s.is_empty()).collect();
+                            if segs.len() == 2 {
+                                return Some(format!(
+                                    "https://raw.githubusercontent.com/{}/{}/HEAD/README.md",
+                                    segs[0], segs[1]
+                                ));
+                            }
+                        }
+                        None
+                    })
                 } else {
                     None
                 };
