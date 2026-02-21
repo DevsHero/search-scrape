@@ -21,7 +21,7 @@
 | Save pre-change snapshot | `cortex_chronos` | `save_checkpoint` | `path` + `symbol_name` + `semantic_tag` | `namespace` |
 | List snapshots | `cortex_chronos` | `list_checkpoints` | *(none)* | `namespace` |
 | Compare snapshots (AST diff) | `cortex_chronos` | `compare_checkpoint` | `symbol_name` + `tag_a` + `tag_b` *(use `tag_b="__live__"` + `path` to diff against current state)* | `namespace`, `path` |
-| Delete old snapshots (housekeeping) | `cortex_chronos` | `delete_checkpoint` | `symbol_name` and/or `semantic_tag` *(optional: `path`, `namespace`)* — Automatically searches legacy flat `checkpoints/` if no matches in namespace. | |
+| Delete old snapshots (housekeeping) | `cortex_chronos` | `delete_checkpoint` | `symbol_name` and/or `semantic_tag` *(optional: `path`, `namespace`)* — Automatically searches legacy flat `checkpoints/` if no matches in namespace. | `namespace` |
 | Compile/lint diagnostics | `run_diagnostics` | *(none)* | `repoPath` | |
 
 ## The Ultimate CortexAST Refactoring SOP
@@ -76,7 +76,9 @@ Follow this sequence for any non-trivial refactor (especially renames, signature
 
 **`compare_checkpoint` identical behavior:**
 - If the two snapshots are identical, Chronos will return a compact “✅ NO STRUCTURAL DIFF” summary instead of printing the full symbol twice.
-
+**`delete_checkpoint` source label:**
+- When deletions come from a named namespace directory, the confirmation reads: `"Deleted N/M checkpoint(s) from namespace 'name' (path)"`.
+- When no matches exist in the namespace dir and the legacy flat `checkpoints/` directory is searched instead, the label switches to `"legacy flat store (path)"`. This distinction tells you whether the deleted checkpoints were created under the old pre-namespace layout.
 **`repoPath` best practice:**
 - Always pass `repoPath` explicitly on every tool call (e.g. `repoPath="/Users/me/project"`) when you know the path. Without it, the server uses the root established by the MCP `initialize` handshake.
 - **CRITICAL Safeguard:** For safety, if CortexAST resolves to a "dead root" (OS root or Home directory), it returns a **CRITICAL error** instead of proceeding. You MUST catch this and provide the correct `repoPath`.
