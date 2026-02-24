@@ -12,8 +12,28 @@ pub struct ToolCatalogEntry {
 
 pub const SHADOWCRAWL_ICON: &str = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgICA8ZGVmcz4KICAgICAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImNyYXdsZXJfZ3JhZCIgeDE9IjAlIiB5MT0iMjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICAgICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMWUxZTVhO3N0b3Atb3BhY2l0eToxIiAvPiA8c3RvcCBvZmZzZXQ9IjUwJSIgc3R5bGU9InN0b3AtY29sb3I6IzNhM2E5ZTtzdG9wLW9wYWNpdHk6MSIgLz4gPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMDBmMmZmO3N0b3Atb3BhY2l0eToxIiAvPiA8L2xpbmVhckdyYWRpZW50PgogICAgICAgIAogICAgICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZXllX2dsb3ciIGN4PSI1MCUiIGN5PSI1MCUiIHI9IjUwJSIgZng9IjUwJSIgZnk9IjUwJSI+CiAgICAgICAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZmZmZmY7c3RvcC1vcGFjaXR5OjEiIC8+CiAgICAgICAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3R5bGU9InN0b3AtY29sb3I6IzAwZjJmZjtzdG9wLW9wYWNpdHk6MSIgLz4KICAgICAgICA8L3JhZGlhbEdyYWRpZW50PgoKICAgICAgICA8ZmlsdGVyIGlkPSJzaGFkb3dCbHVyIiB4PSItNTAlIiB5PSItMjAlIiB3aWR0aD0iMjAwJSIgaGVpZ2h0PSIxNTAlIj4KICAgICAgICAgICAgPGZlR2F1c3NpYW5CbHVyIGluPSJTb3VyY2VHcmFwaGljIiBzdGREZXZpYXRpb249IjgiIC8+CiAgICAgICAgPC9maWx0ZXI+CiAgICA8L2RlZnM+CgogICAgPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjU2LCAyNTYpIj4KICAgICAgICA8cGF0aCBkPSJNLTEyMCA0MCBDIC0xNDAgODAsIC04MCAxNjAsIDAgMTgwIEMgODAgMTYwLCAxNDAgODAsIDEyMCA0MCBMIDAgODAgWiIgCiAgICAgICAgICAgICAgZmlsbD0idXJsKCNjcmF3bGVyX2dyYWQpIiAKICAgICAgICAgICAgICBvcGFjaXR5PSIwLjQiIAogICAgICAgICAgICAgIGZpbHRlcj0idXJsKCNzaGFkb3dCbHVyKSIKICAgICAgICAgICAgICB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwLCAtMjApIi8+CgogICAgICAgIDxwYXRoIGQ9Ik0wIC0xODAgTCAxNDAgLTYwIEwgMTAwIDYwIEwgMCAxMjAgTCAtMTAwIDYwIEwgLTE0MCAtNjAgWiIgCiAgICAgICAgICAgICAgZmlsbD0idXJsKCNjcmF3bGVyX2dyYWQpIgogICAgICAgICAgICAgIHN0cm9rZT0iIzAwZjJmZiIKICAgICAgICAgICAgICBzdHJva2Utd2lkdGg9IjQiCiAgICAgICAgICAgICAgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogICAgICAgICAgICAgIAogICAgICAgIDxwYXRoIGQ9Ik0wIC00MCBMIDQwIDAgTCAwIDQwIEwgLTQwIDAgWiIgCiAgICAgICAgICAgICAgZmlsbD0idXJsKCNleWVfZ2xvdykiCiAgICAgICAgICAgICAgZmlsdGVyPSJkcm9wLXNoYWRvdygwIDAgMTBweCAjMDBmMmZmKSIvPgogICAgICAgICAgICAgIAogICAgICAgIDxwYXRoIGQ9Ik0tMTAwIDYwIEwgLTEzMCAxNDAgTCAtOTAgMTIwIE0xMDAgNjAgTCAxMzAgMTQwIEwgOTAgMTIwIiAKICAgICAgICAgICAgICBzdHJva2U9InVybCgjY3Jhd2xlcl9ncmFkKSIgCiAgICAgICAgICAgICAgc3Ryb2tlLXdpZHRoPSIxMiIgCiAgICAgICAgICAgICAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogICAgICAgICAgICAgIGZpbGw9Im5vbmUiLz4KICAgIDwvZz4KICAgIAogICAgPC9zdmc+";
 
+/// Returns `true` when the `deep_research` tool should be registered at runtime.
+/// Both the `deep-research` Cargo feature AND the env-var gate must be satisfied.
+///
+/// Build-time opt-out:  `cargo build --no-default-features`  → feature is absent → always false.
+/// Runtime opt-out:     `DEEP_RESEARCH_ENABLED=0`             → feature present  → false.
+/// Runtime opt-in:      feature present + no env var (or `=1`) → true  (default).
+pub fn deep_research_enabled() -> bool {
+    if !cfg!(feature = "deep-research") {
+        return false;
+    }
+    // Any value other than "0" / "false" / "no" / "off" is treated as enabled.
+    match std::env::var("DEEP_RESEARCH_ENABLED") {
+        Ok(v) => {
+            let v = v.trim().to_lowercase();
+            !matches!(v.as_str(), "0" | "false" | "no" | "off")
+        }
+        Err(_) => true, // default: enabled
+    }
+}
+
 pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
-    let tools = vec![
+    let mut tools = vec![
         ToolCatalogEntry {
             name: "search_web",
             title: "Web Search (Multi-Engine)",
@@ -181,7 +201,16 @@ Expands your query into sub-queries, searches multiple engines, reranks results 
 batch-scrapes the top sources, applies semantic filtering to keep only relevant content, \
 then optionally follows links from those pages for deeper coverage. \
 Results are logged to research_history for later recall. \
-Use proxy: true to avoid IP rate-limiting during large research runs.",
+Use proxy: true to avoid IP rate-limiting during large research runs.\
+\n\
+🧠 LLM Synthesis: Automatically enabled when OPENAI_API_KEY is set. \
+For fully LOCAL / offline synthesis set OPENAI_BASE_URL to an OpenAI-compatible endpoint \
+(e.g. Ollama: http://localhost:11434/v1  |  LM Studio: http://localhost:1234/v1) \
+and set OPENAI_API_KEY=local (any non-empty value). \
+Set DEEP_RESEARCH_LLM_MODEL to choose the model (default: gpt-4o-mini). \
+\
+On/Off: set DEEP_RESEARCH_ENABLED=0 to hide this tool from the catalog at runtime. \
+Strip from binary entirely: cargo build --no-default-features.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -471,6 +500,14 @@ Send `instruction_message` to tell the user exactly what to log in to and why, e
             icons: vec![SHADOWCRAWL_ICON],
         }
     ];
+
+    // Build-time + runtime gate: remove deep_research from the catalog when disabled.
+    // This makes it invisible to agents (list_tools returns nothing) and unreachable
+    // (call_tool returns "Unknown tool") without touching any other codepath.
+    if !deep_research_enabled() {
+        tools.retain(|t| t.name != "deep_research");
+    }
+
     tools
 }
 

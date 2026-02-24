@@ -1,6 +1,7 @@
 use super::common::parse_quality_mode;
 use crate::deep_research::{deep_research, DeepResearchConfig};
 use crate::mcp::{McpCallResponse, McpContent};
+use crate::mcp::tooling::deep_research_enabled;
 use crate::types::ErrorResponse;
 use crate::AppState;
 use axum::http::StatusCode;
@@ -13,6 +14,20 @@ pub async fn handle(
     state: Arc<AppState>,
     arguments: &Value,
 ) -> Result<Json<McpCallResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Runtime gate (belt-and-suspenders: catalog already filters this entry when disabled,
+    // but direct HTTP calls bypass tool discovery).
+    if !deep_research_enabled() {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ErrorResponse {
+                error: "deep_research is disabled. \
+                    Set DEEP_RESEARCH_ENABLED=1 (or unset) to enable at runtime. \
+                    For a build without this tool: cargo build --no-default-features."
+                    .to_string(),
+            }),
+        ));
+    }
+
     // ── Required parameter ────────────────────────────────────────────────
     let query = arguments
         .get("query")

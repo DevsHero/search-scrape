@@ -111,7 +111,15 @@ openssl-sys = { version = "0.9", features = ["vendored"] }
 
 [features]
 # Keep default builds lean; enable HITL "nuclear option" explicitly.
-default = []
+# deep-research is ON by default — disable with DEEP_RESEARCH_ENABLED=0 (runtime)
+# or strip entirely at build time with: cargo build --no-default-features
+default = ["deep-research"]
+
+# Multi-hop research pipeline (search + scrape + semantic-filter + synthesis).
+# No extra Cargo deps — synthesis is via OpenAI-compatible API (set OPENAI_BASE_URL
+# to point at Ollama / LM Studio for fully local, zero-cost inference).
+deep-research = []
+
 non_robot_search = ["dep:rodio", "dep:notify-rust", "dep:crossterm", "dep:atty", "dep:rdev", "dep:sysinfo", "dep:rfd"]
 
 # Dev-only helper binaries (not shipped, not built by default).
