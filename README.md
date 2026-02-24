@@ -51,7 +51,7 @@ ShadowCrawl v3.0.0 ships a **100% Rust-native metasearch engine** that queries 4
 
 ---
 
-## � Deep Research Engine (v3.0.2)
+## � Deep Research Engine (v3.1.0)
 
 ShadowCrawl v3.1.0 ships a self-contained **multi-hop research pipeline** as a first-class MCP tool — no external infra, no key required for local LLMs.
 
