@@ -21,6 +21,10 @@ pub struct ShadowDeepResearchConfig {
     pub synthesis_max_chars_per_source: Option<usize>,
     /// Set to `false` to run search+scrape only, skipping LLM synthesis entirely.
     pub synthesis_enabled: Option<bool>,
+    /// Max tokens the LLM may generate in the synthesis response.
+    /// Tune this to fit your model's context window.
+    /// Default: 1024. For small models (4k ctx) try 512–1024; for large models try 2048–4096.
+    pub synthesis_max_tokens: Option<u32>,
 }
 
 impl ShadowDeepResearchConfig {
@@ -97,6 +101,17 @@ impl ShadowDeepResearchConfig {
         std::env::var("DEEP_RESEARCH_SYNTHESIS")
             .map(|v| v.trim() != "0")
             .unwrap_or(true)
+    }
+
+    /// Max output tokens: JSON field → `DEEP_RESEARCH_SYNTHESIS_MAX_TOKENS` env var → 1024.
+    pub fn resolve_max_tokens(&self) -> u32 {
+        if let Some(n) = self.synthesis_max_tokens {
+            return n;
+        }
+        std::env::var("DEEP_RESEARCH_SYNTHESIS_MAX_TOKENS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1024)
     }
 }
 

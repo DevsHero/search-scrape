@@ -84,7 +84,8 @@ Create `shadowcrawl.json` in the same directory as the binary (or repo root) to 
     "llm_model": "llama3",
     "synthesis_enabled": true,
     "synthesis_max_sources": 8,
-    "synthesis_max_chars_per_source": 2500
+    "synthesis_max_chars_per_source": 2500,
+    "synthesis_max_tokens": 1024
   }
 }
 ```
@@ -313,6 +314,7 @@ Use the same stdio setup as VS Code (run `shadowcrawl-mcp` locally and pass env 
 | `DEEP_RESEARCH_SYNTHESIS` | `1` (enabled) | Set `0` to run search + scrape only (skip LLM step). Config: `deep_research.synthesis_enabled` |
 | `DEEP_RESEARCH_SYNTHESIS_MAX_SOURCES` | `8` | Max source docs fed to LLM. Config: `deep_research.synthesis_max_sources` |
 | `DEEP_RESEARCH_SYNTHESIS_MAX_CHARS_PER_SOURCE` | `2500` | Max chars per source. Config: `deep_research.synthesis_max_chars_per_source` |
+| `DEEP_RESEARCH_SYNTHESIS_MAX_TOKENS` | `1024` | Max tokens in the LLM response. Tune per model: `512`–`1024` for small 4k-ctx models (e.g. `lfm2-2.6b`), `2048`+ for large models. Config: `deep_research.synthesis_max_tokens` |
 
 ---
 

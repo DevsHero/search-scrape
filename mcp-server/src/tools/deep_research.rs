@@ -251,6 +251,7 @@ async fn llm_synthesize_report_openai(
 
     let max_sources = dr_cfg.resolve_max_sources();
     let max_chars_per_source = dr_cfg.resolve_max_chars_per_source();
+    let max_tokens = dr_cfg.resolve_max_tokens();
 
     let mut packed_sources = String::new();
     for (i, f) in findings.iter().take(max_sources).enumerate() {
@@ -285,6 +286,7 @@ async fn llm_synthesize_report_openai(
     let body = serde_json::json!({
         "model": model,
         "temperature": 0.2,
+        "max_tokens": max_tokens,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
