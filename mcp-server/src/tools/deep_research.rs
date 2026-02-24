@@ -69,257 +69,120 @@ fn normalize_query_for_dedupe(value: &str) -> String {
 }
 
 fn build_multi_dimensional_queries(original_query: &str, base_query: &str) -> Vec<String> {
-    // Always produce at least 3 orthogonal angles:
-    //  (1) Core tech, (2) Implementation/Architecture, (3) Edge cases/limits.
-    // Keep queries short enough for search engines.
-
-    let core_tech = format!(
-        "{} core OCR models Thai English: PaddleOCR PP-OCRv5 TrOCR EasyOCR Tesseract ML Kit",
-        base_query
-    );
-
+    // Always produce exactly 3 orthogonal research angles derived from the query itself.
+    // (1) Core concepts / state-of-the-art
+    let core = format!("{} state of the art benchmarks architecture comparison", base_query);
+    // (2) Implementation / best practices / production
     let implementation = format!(
-        "{} implementation on-device mobile Flutter: ONNX Runtime TFLite text detection DBNet SVTR",
+        "{} implementation best practices production libraries frameworks",
         base_query
     );
-
+    // (3) Edge cases / limitations / performance tradeoffs
     let edge_cases = format!(
-        "{} edge cases low-end mobile: blur low light motion blur latency RAM CPU accuracy Thai English mixed",
+        "{} limitations edge cases performance tradeoffs benchmarks",
         base_query
     );
 
-    // Include original query first to preserve intent.
+    // Original query first to preserve intent.
     vec![
         original_query.trim().to_string(),
-        core_tech,
+        core,
         implementation,
         edge_cases,
     ]
 }
 
-fn build_gemini_prompt_queries(base_query: &str) -> Vec<String> {
-    // Mirrors the 6-point Gemini Deep Research prompt (Thai/EN parcel label OCR + Flutter).
-    vec![
-        // (1) Current OCR/Vision models for Thai+EN that can run on low-end mobile.
-        format!(
-            "{} on-device OCR Thai English low-end mobile PaddleOCR PP-OCRv5 Thai SVTR DBNet ONNX Runtime Mobile", 
-            base_query
-        ),
-        format!(
-            "{} site:paddleocr.ai PP-OCRv5 Thai recognition SVTR DBNet", 
-            base_query
-        ),
-        format!(
-            "{} site:github.com PaddleOCR Thai PP-OCRv5 ONNX", 
-            base_query
-        ),
-        format!(
-            "{} site:github.com ente mobile_ocr ONNX Flutter OCR", 
-            base_query
-        ),
-        format!(
-            "{} site:huggingface.co thai-trocr TrOCR Thai OCR", 
-            base_query
-        ),
-        format!(
-            "{} Thai OCR model comparison Tesseract EasyOCR TrOCR thai-trocr RapidOCR ONNX", 
-            base_query
-        ),
-        // (2) Auto-detect label/bounding box on smartphone.
-        format!(
-            "{} auto detect parcel label bounding box on-device YOLOv8n TFLite MediaPipe ROI crop", 
-            base_query
-        ),
-        // (3) Blur/shake/low-quality camera + enhancement.
-        format!(
-            "{} motion blur detection variance of laplacian low light noise reduction autocapture OCR", 
-            base_query
-        ),
-        format!(
-            "variance of laplacian blur detection mobile OCR autocapture best threshold", 
-        ),
-        // (4) Unified bilingual vs model swapping + resource tradeoffs.
-        format!(
-            "{} bilingual OCR unified model vs model swapping RAM CPU battery latency", 
-            base_query
-        ),
-        // (5) Flutter SDK/libs for OCR/Vision.
-        format!(
-            "{} Flutter on-device OCR plugin ONNX Runtime mobile_ocr ente PaddleOCR RapidOCR", 
-            base_query
-        ),
-        // (6) Summary recommendation.
-        format!(
-            "{} recommendation production architecture evaluation plan", 
-            base_query
-        ),
-    ]
-}
+
 
 fn is_spammy_source(title: &str, content: &str, url: &str) -> bool {
     let t = title.to_lowercase();
     let c = content.to_lowercase();
     let u = url.to_lowercase();
 
-    // Coarse spam/marketing indicators that frequently pollute OCR queries.
+    // Generic marketing / low-signal content indicators.
     let spam_markers = [
         "download brochure",
-        "whatsapp.com",
-        "message us",
+        "enroll now",
+        "whatsapp us",
         "course overview",
         "career support",
-        "enroll",
-        "training",
+        "get certified",
+        "join our bootcamp",
+        "limited seats",
+        "free demo",
+        "register now",
     ];
-    if spam_markers.iter().any(|m| c.contains(m) || t.contains(m) || u.contains(m)) {
-        return true;
-    }
-
-    // Specific recurring low-signal domains for this topic.
-    let domain_markers = ["justacademy.co"]; 
-    if domain_markers.iter().any(|m| u.contains(m)) {
-        return true;
-    }
-
-    false
+    spam_markers.iter().any(|m| c.contains(m) || t.contains(m) || u.contains(m))
 }
 
 fn domain_priority(url: &str) -> i32 {
     let u = url.to_lowercase();
-    // Higher = more preferred.
+    // Generic preference: authoritative docs/repos over social/marketing/course sites.
     let prefer = [
-        ("paddleocr.ai", 30),
         ("github.com", 25),
-        ("onnxruntime.ai", 22),
-        ("learn.microsoft.com", 20),
-        ("developers.google.com", 18),
-        ("docs", 12),
-        ("huggingface.co", 10),
-        ("arxiv.org", 10),
+        ("arxiv.org", 22),
+        ("huggingface.co", 20),
+        ("docs.", 18),
+        ("developer.", 15),
+        ("developers.", 15),
+        ("learn.microsoft.com", 14),
+        ("developers.google.com", 14),
+        ("pytorch.org", 12),
+        ("tensorflow.org", 12),
     ];
     for (needle, score) in prefer {
         if u.contains(needle) {
             return score;
         }
     }
-    // De-prioritize reddit unless we have nothing else.
-    if u.contains("reddit.com") {
+    if u.contains("reddit.com") || u.contains("quora.com") {
         return -5;
     }
     0
 }
 
-fn seed_urls_for_query(query: &str) -> Vec<String> {
-    let q = query.to_lowercase();
-    let mut seeds: Vec<String> = Vec::new();
 
-    let looks_like_ocr = q.contains("ocr") || q.contains("text recognition") || q.contains("parcel");
-    let looks_like_flutter = q.contains("flutter") || q.contains("dart");
-    let looks_like_thai = q.contains("thai") || q.contains("ภาษาไทย") || q.contains("th");
-
-    if looks_like_ocr {
-        seeds.push("https://github.com/PaddlePaddle/PaddleOCR".to_string());
-        seeds.push("https://www.paddleocr.ai/".to_string());
-        seeds.push("https://www.paddleocr.ai/main/en/update/update.html".to_string());
-    }
-
-    if looks_like_ocr && looks_like_flutter {
-        seeds.push("https://github.com/ente-io/mobile_ocr".to_string());
-        seeds.push("https://github.com/robert008/flutter_ocr_kit".to_string());
-    }
-
-    if looks_like_ocr && looks_like_thai {
-        seeds.push("https://huggingface.co/openthaigpt/thai-trocr".to_string());
-        seeds.push("https://dataloop.ai/library/model/openthaigpt_thai-trocr/".to_string());
-    }
-
-    // Dedupe.
-    {
-        let mut seen = HashSet::<String>::new();
-        seeds.retain(|u| seen.insert(u.clone()));
-    }
-
-    seeds
-}
 
 fn synthesize_technical_report(query: &str, findings: &[DeepResearchSource]) -> Option<String> {
     if findings.is_empty() {
         return None;
     }
 
-    // Helper: pick a few URLs that match keywords for a section.
-    let pick_urls = |needles: &[&str], limit: usize| -> Vec<String> {
-        let mut out = Vec::new();
-        for f in findings {
-            let hay = format!(
-                "{} {} {}",
-                f.title.to_lowercase(),
-                f.url.to_lowercase(),
-                f.relevant_content.to_lowercase()
-            );
-            if needles.iter().any(|n| hay.contains(n)) {
-                out.push(f.url.clone());
-            }
-            if out.len() >= limit {
-                break;
-            }
-        }
-        out
-    };
-
-    // Extract keyword hits as a lightweight "LLM-less" synthesis.
-    let keyword_buckets: Vec<(&str, &[&str])> = vec![
+    // Generic 3-axis keyword buckets — no domain-specific assumptions.
+    let keyword_buckets: &[(&str, &[&str])] = &[
         (
-            "On-device OCR candidates",
+            "Core concepts / state-of-the-art",
             &[
-                "paddleocr",
-                "pp-ocr",
-                "svtr",
-                "dbnet",
-                "onnx",
-                "tflite",
-                "ml kit",
-                "mlkit",
-                "tesseract",
-                "easyocr",
-                "trocr",
+                "architecture", "benchmark", "sota", "paper", "model",
+                "algorithm", "approach", "method", "framework", "library",
             ],
         ),
         (
-            "Mobile performance constraints",
+            "Implementation / production",
             &[
-                "low-end",
-                "latency",
-                "ram",
-                "cpu",
-                "battery",
-                "fps",
-                "delegate",
-                "nnapi",
+                "implementation", "sdk", "api", "code", "install", "config",
+                "deploy", "integrate", "plugin", "package",
             ],
         ),
         (
-            "Edge cases & image quality",
+            "Performance / tradeoffs",
             &[
-                "blur",
-                "motion blur",
-                "low light",
-                "noise",
-                "deskew",
-                "rotation",
-                "autocapture",
-                "laplacian",
+                "latency", "throughput", "memory", "cpu", "gpu", "accuracy",
+                "speed", "benchmark", "ms", "fps", "ram",
             ],
         ),
         (
-            "Thai/EN mixed text specifics",
-            &["thai", "english", "bilingual", "mixed", "code-switch"],
+            "Limitations / edge cases",
+            &[
+                "limitation", "drawback", "issue", "edge case", "failure",
+                "problem", "caveat", "workaround", "tradeoff",
+            ],
         ),
     ];
 
-    let mut counts: HashMap<&'static str, usize> = HashMap::new();
-    for (section, keywords) in &keyword_buckets {
-        let mut hit = 0usize;
+    let mut bucket_lines: Vec<(&str, Vec<String>)> = Vec::new();
+    for (section, keywords) in keyword_buckets {
+        let mut hits: Vec<String> = Vec::new();
         for f in findings {
             let hay = format!(
                 "{} {} {}",
@@ -327,66 +190,40 @@ fn synthesize_technical_report(query: &str, findings: &[DeepResearchSource]) -> 
                 f.url.to_lowercase(),
                 f.relevant_content.to_lowercase()
             );
-            for k in *keywords {
-                if hay.contains(k) {
-                    hit += 1;
-                }
+            if keywords.iter().any(|k| hay.contains(k)) && hits.len() < 3 {
+                hits.push(format!("- [{}]({})", f.title, f.url));
             }
         }
-        counts.insert(*section, hit);
+        bucket_lines.push((section, hits));
     }
 
     let top_sources = findings
         .iter()
-        .take(6)
-        .map(|f| format!("- {}\n  - {}\n  - depth={} words={}", f.title, f.url, f.depth, f.word_count))
+        .take(5)
+        .map(|f| format!("- [{}]({}) (depth={}, ~{} words)", f.title, f.url, f.depth, f.word_count))
         .collect::<Vec<_>>()
         .join("\n");
 
-    // Gemini prompt checklist anchors.
-    let anchors_models = pick_urls(&["paddleocr", "pp-ocr", "trocr", "easyocr", "tesseract", "ml kit", "mlkit"], 4);
-    let anchors_label_detect = pick_urls(&["yolo", "bounding box", "detect", "layout"], 3);
-    let anchors_blur = pick_urls(
-        &[
-            "variance of laplacian",
-            "laplacian variance",
-            "motion blur",
-            "low light",
-            "autocapture",
-            "image preprocessing",
-            "denoise",
-            "deskew",
-        ],
-        3,
-    );
-    let anchors_tradeoff = pick_urls(&["ram", "cpu", "latency", "battery", "low-end"], 3);
-    let anchors_flutter_sdk = pick_urls(&["flutter", "pub.dev", "plugin", "onnx", "tflite", "mobile_ocr"], 4);
+    let mut sections = String::new();
+    for (section, hits) in &bucket_lines {
+        sections.push_str(&format!("\n## {}\n", section));
+        if hits.is_empty() {
+            sections.push_str("- _(no relevant sources found)_\n");
+        } else {
+            for h in hits {
+                sections.push_str(h);
+                sections.push('\n');
+            }
+        }
+    }
 
-    let report = format!(
-        "Synthesized Technical Report (agent-dense)\n\nQuery:\n- {}\n\nGemini-style checklist coverage (with source anchors)\n(1) Current OCR/Vision models (Thai+EN, low-end mobile)\n- Anchors: {}\n\n(2) Auto-detect parcel label / bounding box\n- Anchors: {}\n\n(3) Blur/shake/low-quality camera handling + enhancement\n- Anchors: {}\n\n(4) Unified bilingual vs model swapping (RAM/CPU/Battery/Latency)\n- Anchors: {}\n\n(5) Flutter SDK / libraries\n- Anchors: {}\n\n(6) Recommendation summary\n- Recommendation: For low-end phones, prefer an on-device pipeline with ROI cropping + lightweight OCR; keep models memory-resident; add image-quality gating to avoid garbage frames.\n\nProduction-oriented takeaways\n- On-device stack: text detection → text recognition → post-processing (layout/regex/address parsing).\n- Image quality gating: blur / low-light / focus checks; retry capture rather than OCR on bad frames.\n- Mixed Thai+EN: prefer a single bilingual recognizer when possible to avoid model swap overhead; only swap if you can classify language cheaply and your RAM budget allows.\n\nSignals observed in findings (keyword hit counts)\n- On-device OCR candidates: {}\n- Mobile performance constraints: {}\n- Edge cases & image quality: {}\n- Thai/EN mixed text specifics: {}\n\nTop sources used\n{}\n\nNext steps (concrete)\n- Prototype: Flutter camera → ROI crop (optional) → OCR → address parsing → confidence UI.\n- Benchmark on your real parcel photos: latency (ms), peak RAM, Thai/EN accuracy, failure modes (blur/low-light/glare).\n",
+    Some(format!(
+        "# Fact-Sheet (heuristic_v1)\n\n**Query:** {}\n**Sources scraped:** {}\n{}\n## Top Sources\n{}\n",
         query,
-        if anchors_models.is_empty() { "(none)".to_string() } else { anchors_models.join(" | ") },
-        if anchors_label_detect.is_empty() { "(none)".to_string() } else { anchors_label_detect.join(" | ") },
-        if anchors_blur.is_empty() { "(none)".to_string() } else { anchors_blur.join(" | ") },
-        if anchors_tradeoff.is_empty() { "(none)".to_string() } else { anchors_tradeoff.join(" | ") },
-        if anchors_flutter_sdk.is_empty() { "(none)".to_string() } else { anchors_flutter_sdk.join(" | ") },
-        counts.get("On-device OCR candidates").copied().unwrap_or(0),
-        counts
-            .get("Mobile performance constraints")
-            .copied()
-            .unwrap_or(0),
-        counts
-            .get("Edge cases & image quality")
-            .copied()
-            .unwrap_or(0),
-        counts
-            .get("Thai/EN mixed text specifics")
-            .copied()
-            .unwrap_or(0),
+        findings.len(),
+        sections,
         top_sources
-    );
-
-    Some(report)
+    ))
 }
 
 async fn llm_synthesize_report_openai(
@@ -442,9 +279,9 @@ async fn llm_synthesize_report_openai(
         return Ok(None);
     }
 
-    let system_prompt = "You are a senior mobile CV/OCR engineer. Produce a production-grade technical report. Be precise, avoid hallucinating. If evidence is missing, say so.";
+    let system_prompt = "You are a data-synthesis core operating for an AI agent. Your goal is maximum information density. Extract concrete facts, metrics, architectures, and code/tool names. STRICT RULE: NO introductions, NO conclusions, NO conversational filler. Use strict Markdown formats (bullet points, tables, code blocks).";
     let user_prompt = format!(
-        "Task: Based ONLY on the provided sources, synthesize a technical report for on-device OCR of Thai+English parcel labels in a Flutter app on low-end phones.\n\nInclude sections:\n1) Best on-device model stack recommendation (with reasons)\n2) Architecture/pipeline (ROI detection, preprocessing, OCR, post-processing)\n3) Handling blur/low light/low-quality camera\n4) Tradeoffs: accuracy vs latency vs RAM\n5) Implementation plan in Flutter (ONNX/TFLite suggestions)\n6) Evaluation plan + metrics\n\nQuery: {}\n\nSources:\n{}",
+        "Synthesize a dense technical fact-sheet from these sources based on the query: {}.\nIgnore marketing fluff. Output only: key facts, metrics, architecture names, tool names, code references, known limitations.\n\nSources:\n{}",
         query, packed_sources
     );
 
@@ -556,9 +393,6 @@ pub async fn deep_research(
     // Multi-dimensional rewriting: always include 3 angles.
     let mut hop_queries: Vec<String> = build_multi_dimensional_queries(&query, &base_query);
 
-    // Gemini-style checklist queries to force coverage.
-    hop_queries.extend(build_gemini_prompt_queries(&base_query));
-
     // Also include any QueryRewriter suggestions (deduped, capped).
     for s in rewrite_result.suggestions.iter().take(4) {
         hop_queries.push(s.clone());
@@ -586,14 +420,6 @@ pub async fn deep_research(
         // ── Search phase ─────────────────────────────────────────────────
         let mut candidate_urls: Vec<String> = hop_urls.clone();
         let mut url_via_query: HashMap<String, String> = HashMap::new();
-
-        // Seed authoritative sources on hop 1 to avoid search-engine noise.
-        if current_depth == 1 {
-            for u in seed_urls_for_query(&query) {
-                url_via_query.entry(u.clone()).or_insert_with(|| "seed".to_string());
-                candidate_urls.push(u);
-            }
-        }
 
         for q in &hop_queries {
             let results = match search_web_with_params(&state, q, None).await {
@@ -826,12 +652,19 @@ pub async fn deep_research(
         }
     };
 
+    // When LLM synthesis succeeds, clear key_findings to avoid sending redundant
+    // token-heavy raw content back to the caller alongside the synthesized report.
+    let llm_succeeded = synthesis_method
+        .as_deref()
+        .is_some_and(|m| m == "openai_chat_completions");
+    let final_findings = if llm_succeeded { Vec::new() } else { all_findings };
+
     Ok(DeepResearchResult {
         query,
         depth_used: depth,
         sources_discovered,
         sources_scraped,
-        key_findings: all_findings,
+        key_findings: final_findings,
         synthesized_report,
         synthesis_method,
         all_urls,
