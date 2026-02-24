@@ -6,6 +6,18 @@ Policy:
 
 ## Unreleased
 
+### Added
+
+- **`deep_research` tool** — multi-hop research pipeline:
+  - `QueryRewriter` expands the query into focused sub-queries before searching.
+  - Multi-engine search → `Reranker` (BM25-style) selects top candidate URLs.
+  - Concurrent `scrape_batch` ingests selected sources (proxy-aware, configurable concurrency).
+  - Model2Vec semantic shave filters each page to only query-relevant chunks (requires LanceDB/memory; gracefully degrades when unavailable).
+  - Optional deeper hops (`depth 2-3`): links extracted from first-hop pages are scraped in subsequent rounds, capped to prevent runaway fetching.
+  - Results logged to `research_history` for `research_history` recall across sessions.
+  - Parameters: `query` (required), `depth` (1-3, default 1), `max_sources` (default 5), `max_chars_per_source` (default 8000), `max_concurrent` (default 3), `use_proxy`, `relevance_threshold`, `quality_mode`.
+  - Returns `DeepResearchResult`: `key_findings` (semantically filtered, sorted by content density), `all_urls`, `sub_queries`, `warnings`, `total_duration_ms`.
+
 
 ## v3.0.2 (2026-02-21)
 ### Added

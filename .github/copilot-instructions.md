@@ -268,6 +268,7 @@ non_robot_search  (LAST RESORT — persists session after login)
 | Tool (MCP name) | When to use | When NOT to use |
 |---|---|---|
 | `research_history` | **First step**, before every search/fetch | — |
+| `deep_research` | Multi-hop topic research — expands query, searches, scrapes, semantically filters; use for open-ended research questions | When you need a specific known URL (use `scrape_url`) or a single-hop search (use `search_structured`) |
 | `search_structured` | Initial research (search + content summaries, single call) | When only raw URLs needed |
 | `search_web` | Raw URL list only | As substitute for `search_structured` |
 | `scrape_url` | Fetching a specific known URL | As primary research step (use `search_structured` instead) |
