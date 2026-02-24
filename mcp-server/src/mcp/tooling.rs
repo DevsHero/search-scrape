@@ -174,6 +174,71 @@ Note: still call memory_search first to avoid redundant fetches.",
             icons: vec![SHADOWCRAWL_ICON],
         },
         ToolCatalogEntry {
+            name: "deep_research",
+            title: "Deep Research",
+            description: "Multi-hop search + scrape + semantic-filter research pipeline. \
+Expands your query into sub-queries, searches multiple engines, reranks results by relevance, \
+batch-scrapes the top sources, applies semantic filtering to keep only relevant content, \
+then optionally follows links from those pages for deeper coverage. \
+Results are logged to research_history for later recall. \
+Use proxy: true to avoid IP rate-limiting during large research runs.",
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The research question or topic to investigate."
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3,
+                        "default": 1,
+                        "description": "Number of search+scrape hops (1=single pass, 2=follow links from first-hop pages, 3=follow links two levels deep). Higher depth = more sources but slower."
+                    },
+                    "max_sources": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 20,
+                        "default": 5,
+                        "description": "Maximum sources to scrape per hop. Total sources = depth × max_sources (upper bound)."
+                    },
+                    "max_chars_per_source": {
+                        "type": "integer",
+                        "default": 8000,
+                        "description": "Maximum characters extracted from each source page."
+                    },
+                    "max_concurrent": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10,
+                        "default": 3,
+                        "description": "Maximum concurrent scrape connections. Keep low (2-3) for home use to avoid IP blocks."
+                    },
+                    "use_proxy": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Route scraping through proxy to avoid IP rate-limiting on large research runs."
+                    },
+                    "relevance_threshold": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                        "default": 0.35,
+                        "description": "Semantic similarity threshold for content filtering [0.0–1.0]. Lower = keep more content; higher = keep only highly relevant chunks. Requires memory/LanceDB enabled."
+                    },
+                    "quality_mode": {
+                        "type": "string",
+                        "enum": ["balanced", "aggressive"],
+                        "default": "balanced",
+                        "description": "Scraper quality. Use aggressive for JS-heavy sites (slower but more thorough)."
+                    }
+                },
+                "required": ["query"]
+            }),
+            icons: vec![SHADOWCRAWL_ICON],
+        },
+        ToolCatalogEntry {
             name: "crawl_website",
             title: "Crawl Website (Link Map)",
             description: "Bounded crawl to map a site's link structure before targeted fetching. \

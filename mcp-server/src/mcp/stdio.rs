@@ -235,6 +235,9 @@ impl rmcp::ServerHandler for McpService {
             "scrape_batch" => convert_http_handler_result(
                 handlers::scrape_batch::handle(Arc::clone(&self.state), &internal_args).await,
             ),
+            "deep_research" => convert_http_handler_result(
+                handlers::deep_research::handle(Arc::clone(&self.state), &internal_args).await,
+            ),
             "extract_structured" => convert_http_handler_result(
                 handlers::extract_structured::handle(Arc::clone(&self.state), &internal_args).await,
             ),

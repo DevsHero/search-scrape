@@ -1,5 +1,6 @@
 pub mod common;
 pub mod crawl_website;
+pub mod deep_research;
 pub mod extract_structured;
 pub mod fetch_then_extract;
 pub mod human_auth_session;

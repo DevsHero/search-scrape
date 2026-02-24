@@ -92,6 +92,7 @@ pub async fn call_tool(
         "scrape_url" => handlers::scrape_url::handle(state, &internal_args).await,
         "crawl_website" => handlers::crawl_website::handle(state, &internal_args).await,
         "scrape_batch" => handlers::scrape_batch::handle(state, &internal_args).await,
+        "deep_research" => handlers::deep_research::handle(state, &internal_args).await,
         "extract_structured" => handlers::extract_structured::handle(state, &internal_args).await,
         "fetch_then_extract" => handlers::fetch_then_extract::handle(state, &internal_args).await,
         "research_history" => handlers::research_history::handle(state, &internal_args).await,

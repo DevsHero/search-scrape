@@ -22,4 +22,4 @@ pub use mcp::tooling as mcp_tooling;
 pub use nlp::{query_rewriter, rerank};
 pub use scraping::rust_scraper;
 pub use setup as shadow_setup;
-pub use tools::{batch_scrape, crawl, extract, scrape, search};
+pub use tools::{batch_scrape, crawl, deep_research, extract, scrape, search};

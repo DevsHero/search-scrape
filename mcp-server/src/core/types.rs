@@ -393,3 +393,51 @@ pub struct SniperMetadata {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔬 Deep Research types
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A single relevant source discovered during deep research.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DeepResearchSource {
+    /// Source URL.
+    pub url: String,
+    /// Page title.
+    pub title: String,
+    /// Domain this source belongs to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+    /// Semantically-filtered relevant content from this page.
+    pub relevant_content: String,
+    /// Word count of `relevant_content`.
+    pub word_count: usize,
+    /// Research depth this source was discovered at (1 = first hop).
+    pub depth: u8,
+    /// The sub-query that led to this source, if applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub via_query: Option<String>,
+}
+
+/// Full output from the `deep_research` tool.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeepResearchResult {
+    /// The original research query.
+    pub query: String,
+    /// Maximum hop depth that was executed (may be < requested if capped).
+    pub depth_used: u8,
+    /// Number of unique URLs discovered across all search hops.
+    pub sources_discovered: usize,
+    /// Number of URLs actually scraped.
+    pub sources_scraped: usize,
+    /// Top relevant sources (semantically filtered), sorted by relevance.
+    pub key_findings: Vec<DeepResearchSource>,
+    /// All discovered URLs (deduplicated) for reference.
+    pub all_urls: Vec<String>,
+    /// All sub-queries used across all hops.
+    pub sub_queries: Vec<String>,
+    /// Non-fatal warnings accumulated during the research run.
+    pub warnings: Vec<String>,
+    /// Total wall-clock time for the full research pipeline.
+    pub total_duration_ms: u64,
+}
