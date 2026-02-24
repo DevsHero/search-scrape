@@ -47,13 +47,13 @@ pub async fn handle(
         .get("max_sources")
         .and_then(|v| v.as_u64())
         .map(|n| n.clamp(1, 20) as usize)
-        .unwrap_or(5);
+        .unwrap_or(10);
 
     let max_chars_per_source = arguments
         .get("max_chars_per_source")
         .and_then(|v| v.as_u64())
         .map(|n| n as usize)
-        .unwrap_or(8_000);
+        .unwrap_or(20_000);
 
     let max_concurrent = arguments
         .get("max_concurrent")

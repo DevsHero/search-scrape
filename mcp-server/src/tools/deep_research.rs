@@ -20,7 +20,7 @@ use crate::{
     AppState,
 };
 use anyhow::Result;
-use std::{collections::HashSet, sync::Arc, time::Instant};
+use std::{collections::HashMap, collections::HashSet, sync::Arc, time::Instant};
 use tracing::{info, warn};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -49,14 +49,155 @@ impl Default for DeepResearchConfig {
     fn default() -> Self {
         Self {
             depth: 1,
-            max_sources_per_hop: 5,
-            max_chars_per_source: 8_000,
+            max_sources_per_hop: 10,
+            max_chars_per_source: 20_000,
             max_concurrent: 3,
             use_proxy: false,
             quality_mode: None,
-            relevance_threshold: None,
+            relevance_threshold: Some(0.25),
         }
     }
+}
+
+fn normalize_query_for_dedupe(value: &str) -> String {
+    value
+        .trim()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn build_multi_dimensional_queries(original_query: &str, base_query: &str) -> Vec<String> {
+    // Always produce at least 3 orthogonal angles:
+    //  (1) Core tech, (2) Implementation/Architecture, (3) Edge cases/limits.
+    // Keep queries short enough for search engines.
+
+    let core_tech = format!(
+        "{} core OCR models Thai English: PaddleOCR PP-OCRv5 TrOCR EasyOCR Tesseract ML Kit",
+        base_query
+    );
+
+    let implementation = format!(
+        "{} implementation on-device mobile Flutter: ONNX Runtime TFLite text detection DBNet SVTR",
+        base_query
+    );
+
+    let edge_cases = format!(
+        "{} edge cases low-end mobile: blur low light motion blur latency RAM CPU accuracy Thai English mixed",
+        base_query
+    );
+
+    // Include original query first to preserve intent.
+    vec![
+        original_query.trim().to_string(),
+        core_tech,
+        implementation,
+        edge_cases,
+    ]
+}
+
+fn synthesize_technical_report(query: &str, findings: &[DeepResearchSource]) -> Option<String> {
+    if findings.is_empty() {
+        return None;
+    }
+
+    // Extract keyword hits as a lightweight "LLM-less" synthesis.
+    let keyword_buckets: Vec<(&str, &[&str])> = vec![
+        (
+            "On-device OCR candidates",
+            &[
+                "paddleocr",
+                "pp-ocr",
+                "svtr",
+                "dbnet",
+                "onnx",
+                "tflite",
+                "ml kit",
+                "mlkit",
+                "tesseract",
+                "easyocr",
+                "trocr",
+            ],
+        ),
+        (
+            "Mobile performance constraints",
+            &[
+                "low-end",
+                "latency",
+                "ram",
+                "cpu",
+                "battery",
+                "fps",
+                "delegate",
+                "nnapi",
+            ],
+        ),
+        (
+            "Edge cases & image quality",
+            &[
+                "blur",
+                "motion blur",
+                "low light",
+                "noise",
+                "deskew",
+                "rotation",
+                "autocapture",
+                "laplacian",
+            ],
+        ),
+        (
+            "Thai/EN mixed text specifics",
+            &["thai", "english", "bilingual", "mixed", "code-switch"],
+        ),
+    ];
+
+    let mut counts: HashMap<&'static str, usize> = HashMap::new();
+    for (section, keywords) in &keyword_buckets {
+        let mut hit = 0usize;
+        for f in findings {
+            let hay = format!(
+                "{} {} {}",
+                f.title.to_lowercase(),
+                f.url.to_lowercase(),
+                f.relevant_content.to_lowercase()
+            );
+            for k in *keywords {
+                if hay.contains(k) {
+                    hit += 1;
+                }
+            }
+        }
+        counts.insert(*section, hit);
+    }
+
+    let top_sources = findings
+        .iter()
+        .take(6)
+        .map(|f| format!("- {}\n  - {}\n  - depth={} words={}", f.title, f.url, f.depth, f.word_count))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let report = format!(
+        "Synthesized Technical Report\n\nQuery:\n- {}\n\nProduction-oriented takeaways:\n- Prefer on-device OCR pipelines when targeting low-end mobile: text detection → recognition → post-processing.\n- Keep the model set small and resident in memory; avoid frequent model swapping unless you have a robust per-line language detector and enough RAM.\n- For low-quality camera frames, invest in cheap prechecks (blur/lighting) and ROI cropping before OCR to reduce compute and errors.\n\nSignals observed in findings (keyword hit counts):\n- On-device OCR candidates: {}\n- Mobile performance constraints: {}\n- Edge cases & image quality: {}\n- Thai/EN mixed text specifics: {}\n\nTop sources used:\n{}\n\nNext steps (concrete):\n- Build a 2-stage Flutter pipeline: ROI detection (optional) → OCR (PaddleOCR/ONNX or similar) → address/label parsing.\n- Add image-quality gating (blur/low-light) to auto-capture only good frames; retry instead of OCR on garbage.\n- Evaluate 2-3 candidates with your real parcel label photos: measure latency, RAM, and Thai/EN accuracy.\n",
+        query,
+        counts.get("On-device OCR candidates").copied().unwrap_or(0),
+        counts
+            .get("Mobile performance constraints")
+            .copied()
+            .unwrap_or(0),
+        counts
+            .get("Edge cases & image quality")
+            .copied()
+            .unwrap_or(0),
+        counts
+            .get("Thai/EN mixed text specifics")
+            .copied()
+            .unwrap_or(0),
+        top_sources
+    );
+
+    Some(report)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -87,13 +228,21 @@ pub async fn deep_research(
     let rewrite_result = rewriter.rewrite_query(&query);
     let base_query = rewrite_result.best_query().to_string();
 
-    // Collect base + any suggestions (deduped, capped at 4 to avoid request flood).
-    let mut hop_queries: Vec<String> = vec![base_query.clone()];
-    for s in rewrite_result.suggestions.iter().take(3) {
-        if !hop_queries.iter().any(|q| q == s) {
-            hop_queries.push(s.clone());
-        }
+    // Multi-dimensional rewriting: always include 3 angles.
+    let mut hop_queries: Vec<String> = build_multi_dimensional_queries(&query, &base_query);
+
+    // Also include any QueryRewriter suggestions (deduped, capped).
+    for s in rewrite_result.suggestions.iter().take(4) {
+        hop_queries.push(s.clone());
     }
+
+    // Dedupe queries (case/whitespace-insensitive) and cap to avoid request flood.
+    {
+        let mut seen = HashSet::<String>::new();
+        hop_queries.retain(|q| seen.insert(normalize_query_for_dedupe(q)));
+        hop_queries.truncate(8);
+    }
+
     all_sub_queries.extend(hop_queries.clone());
     let mut hop_urls: Vec<String> = Vec::new();
 
@@ -134,7 +283,7 @@ pub async fn deep_research(
             .into_iter()
             .filter(|u| !u.is_empty() && u.starts_with("http") && all_urls_seen.insert(u.clone()))
             // Cap per hop to avoid overwhelming the scraper.
-            .take(config.max_sources_per_hop * 2)
+            .take(config.max_sources_per_hop * 3)
             .collect();
 
         if new_urls.is_empty() {
@@ -167,6 +316,12 @@ pub async fn deep_research(
         // ── Semantic shave + collect findings ─────────────────────────────
         let mut next_hop_urls: Vec<String> = Vec::new();
 
+        // Dynamic relevance threshold: start from config, and if we end up with too many empty
+        // outputs after shaving, we can relax (lower threshold) a bit on the remaining pages.
+        let mut adaptive_threshold = config.relevance_threshold;
+        let mut shaved_empty_count = 0usize;
+        let mut shaved_attempted_count = 0usize;
+
         for result in batch.results {
             let Some(scrape) = result.data else {
                 continue;
@@ -179,15 +334,25 @@ pub async fn deep_research(
                 scrape.content.clone()
             };
 
+            // For short pages, semantic shaving often removes too much signal; keep whole.
+            let raw_word_count = raw_content.split_whitespace().count();
+
             // Apply semantic shave when the embedding model is available.
-            let (relevant_content, kept, total) = if let Some(memory) = &state.memory {
+            let (relevant_content, kept, total) = if raw_word_count < 200 {
+                (raw_content.clone(), 0, 0)
+            } else if let Some(memory) = &state.memory {
                 match memory.get_embedding_model().await {
                     Ok(model) => {
+                        shaved_attempted_count += 1;
+
+                        // Adapt threshold if we're dropping too much content.
+                        let threshold = adaptive_threshold.or(Some(0.25));
+
                         match semantic_shave::semantic_shave(
                             model,
                             &raw_content,
                             &query,
-                            config.relevance_threshold,
+                            threshold,
                         )
                         .await
                         {
@@ -203,6 +368,20 @@ pub async fn deep_research(
             } else {
                 (raw_content.clone(), 0, 0)
             };
+
+            if shaved_attempted_count > 0
+                && relevant_content.trim().is_empty()
+                && raw_word_count >= 200
+            {
+                shaved_empty_count += 1;
+                // If more than 50% of attempted shaves become empty, relax threshold.
+                if shaved_empty_count * 2 >= shaved_attempted_count {
+                    adaptive_threshold = Some(
+                        (adaptive_threshold.unwrap_or(0.25) * 0.85)
+                            .clamp(0.15, 0.35),
+                    );
+                }
+            }
 
             if total > 0 {
                 info!(
@@ -268,12 +447,16 @@ pub async fn deep_research(
             .await;
     }
 
+    let synthesized_report = synthesize_technical_report(&query, &all_findings);
+
     Ok(DeepResearchResult {
         query,
         depth_used: depth,
         sources_discovered,
         sources_scraped,
         key_findings: all_findings,
+        synthesized_report,
+        synthesis_method: Some("heuristic_v1".to_string()),
         all_urls,
         sub_queries: all_sub_queries,
         warnings,

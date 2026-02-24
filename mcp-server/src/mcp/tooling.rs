@@ -200,12 +200,12 @@ Use proxy: true to avoid IP rate-limiting during large research runs.",
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 20,
-                        "default": 5,
+                        "default": 10,
                         "description": "Maximum sources to scrape per hop. Total sources = depth × max_sources (upper bound)."
                     },
                     "max_chars_per_source": {
                         "type": "integer",
-                        "default": 8000,
+                        "default": 20000,
                         "description": "Maximum characters extracted from each source page."
                     },
                     "max_concurrent": {
@@ -224,7 +224,7 @@ Use proxy: true to avoid IP rate-limiting during large research runs.",
                         "type": "number",
                         "minimum": 0.0,
                         "maximum": 1.0,
-                        "default": 0.35,
+                        "default": 0.25,
                         "description": "Semantic similarity threshold for content filtering [0.0–1.0]. Lower = keep more content; higher = keep only highly relevant chunks. Requires memory/LanceDB enabled."
                     },
                     "quality_mode": {

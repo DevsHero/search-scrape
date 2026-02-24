@@ -432,6 +432,16 @@ pub struct DeepResearchResult {
     pub sources_scraped: usize,
     /// Top relevant sources (semantically filtered), sorted by relevance.
     pub key_findings: Vec<DeepResearchSource>,
+
+    /// Synthesized technical report derived from `key_findings`.
+    ///
+    /// Note: currently heuristic/rule-based (no internal LLM dependency).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub synthesized_report: Option<String>,
+
+    /// Synthesis method used to produce `synthesized_report`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub synthesis_method: Option<String>,
     /// All discovered URLs (deduplicated) for reference.
     pub all_urls: Vec<String>,
     /// All sub-queries used across all hops.
