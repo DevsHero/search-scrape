@@ -1,0 +1,46 @@
+{
+  "_proof_meta": {
+    "label": "Anti-bot bypass Cloudflare + stealth",
+    "tool": "deep_research",
+    "shadowcrawl_version": "3.1.0",
+    "binary": "shadowcrawl-mcp v3.1.0 (release, all-features)",
+    "captured_at": "2026-02-24",
+    "synthesis_model": "lfm2-2.6b",
+    "synthesis_endpoint": "http://localhost:1234/v1 (LM Studio)",
+    "synthesis_method": "openai_chat_completions",
+    "sources_scraped": 8,
+    "total_duration_ms": 113903,
+    "warnings": []
+  },
+  "result": {
+    "query": "web scraping anti-bot bypass Cloudflare fingerprint stealth 2025",
+    "depth_used": 1,
+    "sources_discovered": 8,
+    "sources_scraped": 8,
+    "key_findings": [],
+    "synthesized_report": "### Key Technical Facts\n\n- **Cloudflare Bot Protection Mechanism**:  \n  - Cloudflare blocks Googlebot (Google Search Engine) when accessed via Cloudflare Workers due to edge URL rewriting using Cloudflare Image Optimization Service.  \n  - Blocking results in HTTP 403 response for Googlebot, while regular users receive unmodified content.  \n  - Origin of blocking: Custom Cloudflare Workers modifying outbound requests from Readme.com-hosted documentation.\n\n- **Anti-Bot Detection Techniques**:  \n  - Use of anti-fingerprinting browsers to reduce browser fingerprint leakage.  \n  - Chrome and Firefox are considered high-risk due to extensive DevTool Protocol exposure, enabling ML-based bot detection.  \n  - Webkit (Safari) exhibits lower fingerprint exposure but has limited adoption (~5% market share), reducing its utility for stealth scraping.\n\n- **Cloudflare Fingerprint Bypass Architecture**:  \n  - Cloudflare Workers execute edge-side logic, modifying outbound requests and responses.  \n  - Image optimization via Cloudflare’s own service alters URLs, triggering bot detection rules.  \n  - Readme.com integration used to host documentation; misconfiguration caused de-indexing by Google for 3 months due to blocked crawling.\n\n- **Tool Names & References**:  \n  - **Cloudflare Workers**: Edge computing platform used to modify traffic at the network edge.  \n  - **Readme.com**: Documentation hosting service previously integrated with Cloudflare, now subject to blocking due to Workers configuration.  \n  - **DevTool Protocol (Chrome/Firefox)**: Debugging interface exposing detailed browser state; considered a major fingerprint leak source.\n\n- **Code/Technical References**:  \n  - Cloudflare Workers scripting uses Wrangler CLI and JavaScript/TypeScript for edge logic execution.  \n  - Image optimization via `cloudfront-lambda.amazonaws.com` or custom Workers functions using Cloudflare’s image resizing APIs (e.g., `https://api.cloudfront.net/image-resize`).\n\n- **Known Limitations**:  \n  - Googlebot detection persists even without explicit bot scripts due to edge-level URL rewriting.  \n  - Anti-fingerprinting browsers may still leak subtle behavioral or timing patterns detectable via ML models trained on Chrome/Firefox fingerprints.  \n  - Limited adoption of Webkit-based browsers reduces effectiveness but does not eliminate risk entirely.",
+    "synthesis_method": "openai_chat_completions",
+    "synthesis_model": "lfm2-2.6b",
+    "synthesis_endpoint": "http://localhost:1234/v1",
+    "all_urls": [
+      "https://news.ycombinator.com/item?id=29060272",
+      "https://www.reddit.com/r/webscraping/comments/tkueb7/scraping_cloudflare_protected_website/",
+      "https://www.reddit.com/r/webscraping/comments/197w38j/any_way_to_bypass_cloudflare/",
+      "https://news.ycombinator.com/item?id=32886795",
+      "https://www.reddit.com/r/webscraping/comments/hc278t/is_possible_like_to_bypass_the_antibot_protection/",
+      "https://www.reddit.com/r/webscraping/comments/1bsfc6q/need_help_bypassing_cloudflare/",
+      "https://news.ycombinator.com/item?id=33654177",
+      "https://www.reddit.com/r/webscraping/comments/1cretnt/bypassing_cloudflare_for_api_endpoint/"
+    ],
+    "sub_queries": [
+      "web scraping anti-bot bypass Cloudflare fingerprint stealth 2025",
+      "web scraping anti-bot bypass Cloudflare fingerprint stealth 2025 state of the art benchmarks architecture comparison",
+      "web scraping anti-bot bypass Cloudflare fingerprint stealth 2025 implementation best practices production libraries frameworks",
+      "web scraping anti-bot bypass Cloudflare fingerprint stealth 2025 limitations edge cases performance tradeoffs benchmarks",
+      "web scraping anti-bot bypass Cloudflare fingerprint stealth 2025 documentation",
+      "web scraping anti-bot bypass Cloudflare fingerprint stealth 2025 tutorial"
+    ],
+    "warnings": [],
+    "total_duration_ms": 113903
+  }
+}

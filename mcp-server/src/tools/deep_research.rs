@@ -658,6 +658,15 @@ pub async fn deep_research(
         .is_some_and(|m| m == "openai_chat_completions");
     let final_findings = if llm_succeeded { Vec::new() } else { all_findings };
 
+    let (synthesis_model, synthesis_endpoint) = if llm_succeeded {
+        (
+            Some(state.shadow_config.deep_research.resolve_model()),
+            Some(state.shadow_config.deep_research.resolve_base_url()),
+        )
+    } else {
+        (None, None)
+    };
+
     Ok(DeepResearchResult {
         query,
         depth_used: depth,
@@ -666,6 +675,8 @@ pub async fn deep_research(
         key_findings: final_findings,
         synthesized_report,
         synthesis_method,
+        synthesis_model,
+        synthesis_endpoint,
         all_urls,
         sub_queries: all_sub_queries,
         warnings,

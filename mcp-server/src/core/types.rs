@@ -442,6 +442,13 @@ pub struct DeepResearchResult {
     /// Synthesis method used to produce `synthesized_report`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub synthesis_method: Option<String>,
+    /// LLM model identifier used for synthesis (e.g. `gpt-4o-mini`, `lfm2-2.6b`).
+    /// Populated when `synthesis_method` is `openai_chat_completions`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub synthesis_model: Option<String>,
+    /// LLM endpoint base URL used for synthesis (e.g. `http://localhost:1234/v1`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub synthesis_endpoint: Option<String>,
     /// All discovered URLs (deduplicated) for reference.
     pub all_urls: Vec<String>,
     /// All sub-queries used across all hops.

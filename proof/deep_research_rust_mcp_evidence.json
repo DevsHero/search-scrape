@@ -1,0 +1,55 @@
+{
+  "_proof_meta": {
+    "label": "Rust MCP server + scraping pipeline",
+    "tool": "deep_research",
+    "shadowcrawl_version": "3.1.0",
+    "binary": "shadowcrawl-mcp v3.1.0 (release, all-features)",
+    "captured_at": "2026-02-24",
+    "synthesis_model": "lfm2-2.6b",
+    "synthesis_endpoint": "http://localhost:1234/v1 (LM Studio)",
+    "synthesis_method": "openai_chat_completions",
+    "sources_scraped": 15,
+    "total_duration_ms": 82198,
+    "warnings": []
+  },
+  "result": {
+    "query": "Rust MCP Model Context Protocol server 2025 native binary scraping",
+    "depth_used": 1,
+    "sources_discovered": 15,
+    "sources_scraped": 15,
+    "key_findings": [],
+    "synthesized_report": "### Key Facts and Metrics\n\n- **Protocol Name**: Model Context Protocol (MCP)\n- **Language**: Rust\n- **Primary Use Case**: Standardizing context delivery to Large Language Models (LLMs)\n- **Protocol Type**: Open, standardized communication protocol for LLM context exchange\n- **Target Audience**: Developers building enterprise-grade MCP servers\n\n### Architecture and Implementation Details\n\n#### Server Components\n\n- **MCP Server Framework**:\n  - Built using Rust with focus on performance and safety.\n  - Utilizes `tokio` as the async runtime for handling concurrent connections efficiently.\n\n- **Core Modules**:\n  - `mcp_server::server`: Main server logic handling incoming context requests.\n  - `mcp_client::client`: Client-side MCP implementation for testing and integration.\n  - `serde_json`: Used for serializing/deserializing JSON payloads in MCP messages.\n\n#### Tooling and Dependencies\n\n- **Build System**: Cargo (Rust package manager)\n- **Cargo Commands**:\n  - `cargo install mcp-server` – Installs the MCP server binary.\n  - `cargo run --bin mcp-server` – Starts the development server for local testing.\n\n#### Code References\n\n```rust\n// Example: Basic MCP message structure (simplified)\n#[derive(Serialize, Deserialize)]\nstruct ContextMessage {\n    context_id: String,\n    data: Vec<u8>,\n}\n\nasync fn handle_context_request(mut conn: TcpStream) -> Result<(), Box<dyn Error>> {\n    let mut buffer = [0; 4096];\n    let n = conn.read(&mut buffer).await?;\n    \n    let msg: ContextMessage = serde_json::from_slice(&buffer[..n])?;\n    println!(\"Received context ID: {}\", msg.context_id);\n    \n    // Process and respond\n    let response = ContextResponse {\n        status: 200,\n        message: \"Context received\".to_string(),\n    };\n    conn.write_all(serde_json::to_vec(&response)?)?;\n    \n    Ok(())\n}\n\n#[derive(Serialize, Deserialize)]\nstruct Response {\n    status: u16,\n    message: String,\n}\n```\n\n#### Known Limitations\n\n- **Binary Scraping Constraints**:\n  - No official native binary scraping tool exists for MCP.\n  - Reverse engineering of MCP server binaries may violate software licensing terms.\n  - Limited support for non-Rust environments (e.g., C/C++, Python) without custom wrappers.\n\n- **Performance Considerations**:\n  - High throughput requires careful tuning of async runtime (`tokio`).\n  - Memory usage scales with context size; large contexts may impact performance.\n\n- **Security**:\n  - No built-in authentication or encryption in MCP protocol.\n  - Requires external security layers for production use (e.g., TLS, token-based auth).",
+    "synthesis_method": "openai_chat_completions",
+    "synthesis_model": "lfm2-2.6b",
+    "synthesis_endpoint": "http://localhost:1234/v1",
+    "all_urls": [
+      "https://doc.rust-lang.org/",
+      "https://rustsandbox.github.io/MCP-Development-with-Rust/tutorials/mcp_rust_tutorial.html",
+      "https://github.com/rust-mcp-stack/rust-mcp-sdk",
+      "https://doc.rust-lang.org/stable/reference/",
+      "https://github.com/rust-mcp-stack/rust-mcp-schema",
+      "https://lib.rs/crates/mcp-protocol-sdk",
+      "https://docs.rs/mcp-protocol-sdk",
+      "https://github.com/rust-mcp-stack/fork-servers",
+      "https://users.rust-lang.org/t/prism-mcp-rust-sdk-v0-1-0-production-grade-model-context-protocol-implementation/133318",
+      "https://docs.rs/mcp-sdk-rs/latest/mcp_sdk_rs/",
+      "https://doc.rust-lang.org/cargo/commands/cargo-install.html",
+      "https://doc.rust-lang.org/book/ch14-04-installing-binaries.html",
+      "https://github.com/RustSandbox/MCP-Development-with-Rust/blob/main/mcp_rust_tutorial.md",
+      "https://rust-mcp-stack.github.io/rust-mcp-filesystem/",
+      "https://doc.rust-lang.org/cargo/reference/cargo-targets.html"
+    ],
+    "sub_queries": [
+      "Rust MCP Model Context Protocol server 2025 native binary scraping",
+      "Rust MCP Model Context Protocol server 2025 native binary scraping state of the art benchmarks architecture comparison",
+      "Rust MCP Model Context Protocol server 2025 native binary scraping implementation best practices production libraries frameworks",
+      "Rust MCP Model Context Protocol server 2025 native binary scraping limitations edge cases performance tradeoffs benchmarks",
+      "Rust MCP Model Context Protocol server 2025 native binary scraping documentation",
+      "Rust MCP Model Context Protocol server 2025 native binary scraping tutorial",
+      "Rust MCP Model Context Protocol server 2025 native binary scraping site:doc.rust-lang.org",
+      "Rust MCP Model Context Protocol server 2025 native binary scraping site:docs.rs"
+    ],
+    "warnings": [],
+    "total_duration_ms": 82198
+  }
+}

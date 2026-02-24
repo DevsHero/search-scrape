@@ -18,6 +18,25 @@ This directory contains **verified evidence** that ShadowCrawl successfully bypa
 
 ---
 
+## 🔬 Deep Research Engine Evidence (v3.1.0)
+
+Verified outputs from the `deep_research` MCP tool running full end-to-end pipeline:
+**multi-engine search → parallel scrape → semantic filter → LM Studio LLM synthesis**.
+
+| File | Query | Sources Scraped | Synthesis Model | Endpoint | Warnings | Captured |
+|------|-------|-----------------|----------------|----------|----------|---------|
+| [deep_research_rust_mcp_evidence.json](deep_research_rust_mcp_evidence.json) | Rust MCP server + scraping pipeline | 15 | `lfm2-2.6b` | LM Studio `localhost:1234` | ✅ none | 2026-02-24 |
+| [deep_research_antibot_evidence.json](deep_research_antibot_evidence.json) | Anti-bot bypass Cloudflare + stealth | 8 | `lfm2-2.6b` | LM Studio `localhost:1234` | ✅ none | 2026-02-24 |
+
+**Key evidence fields in each file:**
+- `_proof_meta.synthesis_model` — exact model ID used for synthesis
+- `_proof_meta.synthesis_endpoint` — LLM endpoint (local or cloud)
+- `_proof_meta.synthesis_method` — `openai_chat_completions` = LLM ran successfully
+- `result.synthesized_report` — full LLM-generated technical fact-sheet
+- `result.all_urls` — all URLs discovered and scraped during the research run
+
+---
+
 ## 🆕 New Feature: Manual Return Button
 
 The **Manual Return Button** is a powerful user control feature that prevents browser hangs and gives explicit control over data capture timing.

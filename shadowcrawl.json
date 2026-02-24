@@ -15,7 +15,7 @@
     "llm_api_key": "",
     "llm_model": "lfm2-2.6b",
     "synthesis_enabled": true,
-    "synthesis_max_sources": 8,
-    "synthesis_max_chars_per_source": 2500
+    "synthesis_max_sources": 3,
+    "synthesis_max_chars_per_source": 800
   }
 }
