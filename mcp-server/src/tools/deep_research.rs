@@ -86,11 +86,15 @@ pub async fn deep_research(
     let rewriter = QueryRewriter::new();
     let rewrite_result = rewriter.rewrite_query(&query);
     let base_query = rewrite_result.best_query().to_string();
-    all_sub_queries.push(base_query.clone());
 
-    // `hop_queries` drives search on the current hop.
-    // `hop_urls`   holds extra URLs to scrape directly (from prior-hop links).
-    let mut hop_queries: Vec<String> = vec![base_query];
+    // Collect base + any suggestions (deduped, capped at 4 to avoid request flood).
+    let mut hop_queries: Vec<String> = vec![base_query.clone()];
+    for s in rewrite_result.suggestions.iter().take(3) {
+        if !hop_queries.iter().any(|q| q == s) {
+            hop_queries.push(s.clone());
+        }
+    }
+    all_sub_queries.extend(hop_queries.clone());
     let mut hop_urls: Vec<String> = Vec::new();
 
     for current_depth in 1..=depth {
