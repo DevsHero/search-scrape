@@ -6,9 +6,13 @@ Policy:
 
 ## Unreleased
 
+## v3.1.0 (2026-02-24)
 ### Added
 
-- **`deep_research` tool** — multi-hop research pipeline:
+- **`shadowcrawl.json` file-based config loader** — `ShadowConfig` struct loaded at startup from `shadowcrawl.json` (cwd → `../shadowcrawl.json` → `SHADOWCRAWL_CONFIG` env path). All fields optional with env-var + hardcoded fallbacks; missing file is silently ignored.
+- **`ShadowDeepResearchConfig` sub-struct** with typed resolver methods providing 3-tier priority: JSON value → env var → hardcoded default for all 6 deep-research tunables (`llm_base_url`, `llm_api_key`, `llm_model`, `synthesis_max_sources`, `synthesis_max_chars_per_source`, `synthesis_enabled`).
+- **Local LLM support via `shadowcrawl.json`** — configure Ollama, LM Studio, or any OpenAI-compatible endpoint without env vars. Example: `{"deep_research": {"llm_base_url": "http://localhost:1234/v1", "llm_model": "lfm2-2.6b", "llm_api_key": ""}}`.
+- **`deep_research` tool** — multi-hop research pipeline: — multi-hop research pipeline:
   - `QueryRewriter` expands the query into focused sub-queries before searching.
   - Multi-engine search → `Reranker` (BM25-style) selects top candidate URLs.
   - Concurrent `scrape_batch` ingests selected sources (proxy-aware, configurable concurrency).
@@ -19,7 +23,7 @@ Policy:
   - Returns `DeepResearchResult`: `key_findings` (semantically filtered, sorted by content density), `all_urls`, `sub_queries`, `warnings`, `total_duration_ms`.
 
 
-## v3.0.2 (2026-02-21)
+## v3.0.2 (2026-02-24)
 ### Added
 
 - **`skip_live_fetch` machine-readable boolean** in `research_history` response — each result entry now includes:

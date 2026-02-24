@@ -239,9 +239,10 @@ async fn llm_synthesize_report_openai(
     }
 
     // API key: shadowcrawl.json → OPENAI_API_KEY env var → skip synthesis.
+    // Empty string is valid for key-less local endpoints (Ollama / LM Studio).
     let api_key = match dr_cfg.resolve_api_key() {
         Some(k) => k,
-        None => return Ok(None),
+        None => return Ok(None), // no key configured anywhere — skip synthesis
     };
 
     // LLM endpoint + model: shadowcrawl.json → env vars → hardcoded defaults.
@@ -290,11 +291,15 @@ async fn llm_synthesize_report_openai(
         ]
     });
 
-    let response = state
-        .http_client
-        .post(url)
-        .bearer_auth(api_key.trim())
-        .json(&body)
+    let builder = state.http_client.post(url).json(&body);
+    // Only send Authorization header when a key is provided.
+    // Key-less local endpoints (Ollama / LM Studio) work without it.
+    let builder = if api_key.is_empty() {
+        builder
+    } else {
+        builder.bearer_auth(api_key.trim())
+    };
+    let response = builder
         .send()
         .await
         .context("openai chat.completions request failed")?;
@@ -629,8 +634,8 @@ pub async fn deep_research(
     {
         Ok(Some(report)) => (Some(report), Some("openai_chat_completions".to_string())),
         Ok(None) => {
-            if std::env::var("OPENAI_API_KEY").is_err() {
-                warnings.push("synthesis_disabled_no_openai_api_key".to_string());
+            if state.shadow_config.deep_research.resolve_api_key().is_none() {
+                warnings.push("synthesis_disabled_no_api_key".to_string());
             }
             (
                 synthesize_technical_report(&query, &all_findings),

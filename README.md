@@ -1,4 +1,4 @@
-# 🥷 ShadowCrawl MCP — v3.0.2
+# 🥷 ShadowCrawl MCP — v3.1.0
 
 <div align="center">
 <img src="media/logo.svg" alt="ShadowCrawl Logo" width="180">
@@ -53,7 +53,7 @@ ShadowCrawl v3.0.0 ships a **100% Rust-native metasearch engine** that queries 4
 
 ## � Deep Research Engine (v3.0.2)
 
-ShadowCrawl v3.0.2 ships a self-contained **multi-hop research pipeline** as a first-class MCP tool — no external infra, no key required for local LLMs.
+ShadowCrawl v3.1.0 ships a self-contained **multi-hop research pipeline** as a first-class MCP tool — no external infra, no key required for local LLMs.
 
 ### How it works
 
@@ -318,7 +318,7 @@ Use the same stdio setup as VS Code (run `shadowcrawl-mcp` locally and pass env 
 
 ## 🏆 Comparison
 
-| Feature | Firecrawl / Jina / Tavily | ShadowCrawl v3.0.2 |
+| Feature | Firecrawl / Jina / Tavily | ShadowCrawl v3.1.0 |
 |---------|--------------------------|-------------------|
 | **Deep Research** | None / paid add-on | **Native: multi-hop + LLM synthesis (local or cloud)** |
 | **Cost** | $49–$499/mo | **$0 — self-hosted** |

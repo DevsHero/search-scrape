@@ -25,12 +25,17 @@ pub struct ShadowDeepResearchConfig {
 
 impl ShadowDeepResearchConfig {
     /// API key: JSON field → `OPENAI_API_KEY` env var → `None`.
+    ///
+    /// When `llm_api_key` is explicitly set to `""` in the config file, returns `Some("")`.
+    /// This signals "no key required" (Ollama / LM Studio) — synthesis proceeds without auth.
+    /// Returns `None` only when the field is absent from config AND `OPENAI_API_KEY` is unset.
     pub fn resolve_api_key(&self) -> Option<String> {
+        // If the field is present in JSON (even as empty string), use it as-is.
+        // An explicit empty string means "no key required" (local endpoint).
         if let Some(k) = &self.llm_api_key {
-            if !k.trim().is_empty() {
-                return Some(k.clone());
-            }
+            return Some(k.trim().to_string());
         }
+        // Field absent from JSON — fall back to OPENAI_API_KEY env var.
         std::env::var("OPENAI_API_KEY").ok().filter(|v| !v.trim().is_empty())
     }
 
