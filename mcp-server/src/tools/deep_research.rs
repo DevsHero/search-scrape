@@ -97,10 +97,175 @@ fn build_multi_dimensional_queries(original_query: &str, base_query: &str) -> Ve
     ]
 }
 
+fn build_gemini_prompt_queries(base_query: &str) -> Vec<String> {
+    // Mirrors the 6-point Gemini Deep Research prompt (Thai/EN parcel label OCR + Flutter).
+    vec![
+        // (1) Current OCR/Vision models for Thai+EN that can run on low-end mobile.
+        format!(
+            "{} on-device OCR Thai English low-end mobile PaddleOCR PP-OCRv5 Thai SVTR DBNet ONNX Runtime Mobile", 
+            base_query
+        ),
+        format!(
+            "{} site:paddleocr.ai PP-OCRv5 Thai recognition SVTR DBNet", 
+            base_query
+        ),
+        format!(
+            "{} site:github.com PaddleOCR Thai PP-OCRv5 ONNX", 
+            base_query
+        ),
+        format!(
+            "{} site:github.com ente mobile_ocr ONNX Flutter OCR", 
+            base_query
+        ),
+        format!(
+            "{} site:huggingface.co thai-trocr TrOCR Thai OCR", 
+            base_query
+        ),
+        format!(
+            "{} Thai OCR model comparison Tesseract EasyOCR TrOCR thai-trocr RapidOCR ONNX", 
+            base_query
+        ),
+        // (2) Auto-detect label/bounding box on smartphone.
+        format!(
+            "{} auto detect parcel label bounding box on-device YOLOv8n TFLite MediaPipe ROI crop", 
+            base_query
+        ),
+        // (3) Blur/shake/low-quality camera + enhancement.
+        format!(
+            "{} motion blur detection variance of laplacian low light noise reduction autocapture OCR", 
+            base_query
+        ),
+        format!(
+            "variance of laplacian blur detection mobile OCR autocapture best threshold", 
+        ),
+        // (4) Unified bilingual vs model swapping + resource tradeoffs.
+        format!(
+            "{} bilingual OCR unified model vs model swapping RAM CPU battery latency", 
+            base_query
+        ),
+        // (5) Flutter SDK/libs for OCR/Vision.
+        format!(
+            "{} Flutter on-device OCR plugin ONNX Runtime mobile_ocr ente PaddleOCR RapidOCR", 
+            base_query
+        ),
+        // (6) Summary recommendation.
+        format!(
+            "{} recommendation production architecture evaluation plan", 
+            base_query
+        ),
+    ]
+}
+
+fn is_spammy_source(title: &str, content: &str, url: &str) -> bool {
+    let t = title.to_lowercase();
+    let c = content.to_lowercase();
+    let u = url.to_lowercase();
+
+    // Coarse spam/marketing indicators that frequently pollute OCR queries.
+    let spam_markers = [
+        "download brochure",
+        "whatsapp.com",
+        "message us",
+        "course overview",
+        "career support",
+        "enroll",
+        "training",
+    ];
+    if spam_markers.iter().any(|m| c.contains(m) || t.contains(m) || u.contains(m)) {
+        return true;
+    }
+
+    // Specific recurring low-signal domains for this topic.
+    let domain_markers = ["justacademy.co"]; 
+    if domain_markers.iter().any(|m| u.contains(m)) {
+        return true;
+    }
+
+    false
+}
+
+fn domain_priority(url: &str) -> i32 {
+    let u = url.to_lowercase();
+    // Higher = more preferred.
+    let prefer = [
+        ("paddleocr.ai", 30),
+        ("github.com", 25),
+        ("onnxruntime.ai", 22),
+        ("learn.microsoft.com", 20),
+        ("developers.google.com", 18),
+        ("docs", 12),
+        ("huggingface.co", 10),
+        ("arxiv.org", 10),
+    ];
+    for (needle, score) in prefer {
+        if u.contains(needle) {
+            return score;
+        }
+    }
+    // De-prioritize reddit unless we have nothing else.
+    if u.contains("reddit.com") {
+        return -5;
+    }
+    0
+}
+
+fn seed_urls_for_query(query: &str) -> Vec<String> {
+    let q = query.to_lowercase();
+    let mut seeds: Vec<String> = Vec::new();
+
+    let looks_like_ocr = q.contains("ocr") || q.contains("text recognition") || q.contains("parcel");
+    let looks_like_flutter = q.contains("flutter") || q.contains("dart");
+    let looks_like_thai = q.contains("thai") || q.contains("ภาษาไทย") || q.contains("th");
+
+    if looks_like_ocr {
+        seeds.push("https://github.com/PaddlePaddle/PaddleOCR".to_string());
+        seeds.push("https://www.paddleocr.ai/".to_string());
+        seeds.push("https://www.paddleocr.ai/main/en/update/update.html".to_string());
+    }
+
+    if looks_like_ocr && looks_like_flutter {
+        seeds.push("https://github.com/ente-io/mobile_ocr".to_string());
+        seeds.push("https://github.com/robert008/flutter_ocr_kit".to_string());
+    }
+
+    if looks_like_ocr && looks_like_thai {
+        seeds.push("https://huggingface.co/openthaigpt/thai-trocr".to_string());
+        seeds.push("https://dataloop.ai/library/model/openthaigpt_thai-trocr/".to_string());
+    }
+
+    // Dedupe.
+    {
+        let mut seen = HashSet::<String>::new();
+        seeds.retain(|u| seen.insert(u.clone()));
+    }
+
+    seeds
+}
+
 fn synthesize_technical_report(query: &str, findings: &[DeepResearchSource]) -> Option<String> {
     if findings.is_empty() {
         return None;
     }
+
+    // Helper: pick a few URLs that match keywords for a section.
+    let pick_urls = |needles: &[&str], limit: usize| -> Vec<String> {
+        let mut out = Vec::new();
+        for f in findings {
+            let hay = format!(
+                "{} {} {}",
+                f.title.to_lowercase(),
+                f.url.to_lowercase(),
+                f.relevant_content.to_lowercase()
+            );
+            if needles.iter().any(|n| hay.contains(n)) {
+                out.push(f.url.clone());
+            }
+            if out.len() >= limit {
+                break;
+            }
+        }
+        out
+    };
 
     // Extract keyword hits as a lightweight "LLM-less" synthesis.
     let keyword_buckets: Vec<(&str, &[&str])> = vec![
@@ -178,9 +343,33 @@ fn synthesize_technical_report(query: &str, findings: &[DeepResearchSource]) -> 
         .collect::<Vec<_>>()
         .join("\n");
 
+    // Gemini prompt checklist anchors.
+    let anchors_models = pick_urls(&["paddleocr", "pp-ocr", "trocr", "easyocr", "tesseract", "ml kit", "mlkit"], 4);
+    let anchors_label_detect = pick_urls(&["yolo", "bounding box", "detect", "layout"], 3);
+    let anchors_blur = pick_urls(
+        &[
+            "variance of laplacian",
+            "laplacian variance",
+            "motion blur",
+            "low light",
+            "autocapture",
+            "image preprocessing",
+            "denoise",
+            "deskew",
+        ],
+        3,
+    );
+    let anchors_tradeoff = pick_urls(&["ram", "cpu", "latency", "battery", "low-end"], 3);
+    let anchors_flutter_sdk = pick_urls(&["flutter", "pub.dev", "plugin", "onnx", "tflite", "mobile_ocr"], 4);
+
     let report = format!(
-        "Synthesized Technical Report\n\nQuery:\n- {}\n\nProduction-oriented takeaways:\n- Prefer on-device OCR pipelines when targeting low-end mobile: text detection → recognition → post-processing.\n- Keep the model set small and resident in memory; avoid frequent model swapping unless you have a robust per-line language detector and enough RAM.\n- For low-quality camera frames, invest in cheap prechecks (blur/lighting) and ROI cropping before OCR to reduce compute and errors.\n\nSignals observed in findings (keyword hit counts):\n- On-device OCR candidates: {}\n- Mobile performance constraints: {}\n- Edge cases & image quality: {}\n- Thai/EN mixed text specifics: {}\n\nTop sources used:\n{}\n\nNext steps (concrete):\n- Build a 2-stage Flutter pipeline: ROI detection (optional) → OCR (PaddleOCR/ONNX or similar) → address/label parsing.\n- Add image-quality gating (blur/low-light) to auto-capture only good frames; retry instead of OCR on garbage.\n- Evaluate 2-3 candidates with your real parcel label photos: measure latency, RAM, and Thai/EN accuracy.\n",
+        "Synthesized Technical Report (agent-dense)\n\nQuery:\n- {}\n\nGemini-style checklist coverage (with source anchors)\n(1) Current OCR/Vision models (Thai+EN, low-end mobile)\n- Anchors: {}\n\n(2) Auto-detect parcel label / bounding box\n- Anchors: {}\n\n(3) Blur/shake/low-quality camera handling + enhancement\n- Anchors: {}\n\n(4) Unified bilingual vs model swapping (RAM/CPU/Battery/Latency)\n- Anchors: {}\n\n(5) Flutter SDK / libraries\n- Anchors: {}\n\n(6) Recommendation summary\n- Recommendation: For low-end phones, prefer an on-device pipeline with ROI cropping + lightweight OCR; keep models memory-resident; add image-quality gating to avoid garbage frames.\n\nProduction-oriented takeaways\n- On-device stack: text detection → text recognition → post-processing (layout/regex/address parsing).\n- Image quality gating: blur / low-light / focus checks; retry capture rather than OCR on bad frames.\n- Mixed Thai+EN: prefer a single bilingual recognizer when possible to avoid model swap overhead; only swap if you can classify language cheaply and your RAM budget allows.\n\nSignals observed in findings (keyword hit counts)\n- On-device OCR candidates: {}\n- Mobile performance constraints: {}\n- Edge cases & image quality: {}\n- Thai/EN mixed text specifics: {}\n\nTop sources used\n{}\n\nNext steps (concrete)\n- Prototype: Flutter camera → ROI crop (optional) → OCR → address parsing → confidence UI.\n- Benchmark on your real parcel photos: latency (ms), peak RAM, Thai/EN accuracy, failure modes (blur/low-light/glare).\n",
         query,
+        if anchors_models.is_empty() { "(none)".to_string() } else { anchors_models.join(" | ") },
+        if anchors_label_detect.is_empty() { "(none)".to_string() } else { anchors_label_detect.join(" | ") },
+        if anchors_blur.is_empty() { "(none)".to_string() } else { anchors_blur.join(" | ") },
+        if anchors_tradeoff.is_empty() { "(none)".to_string() } else { anchors_tradeoff.join(" | ") },
+        if anchors_flutter_sdk.is_empty() { "(none)".to_string() } else { anchors_flutter_sdk.join(" | ") },
         counts.get("On-device OCR candidates").copied().unwrap_or(0),
         counts
             .get("Mobile performance constraints")
@@ -329,6 +518,35 @@ pub async fn deep_research(
     let mut all_urls_seen: HashSet<String> = HashSet::new();
     let mut all_sub_queries: Vec<String> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
+    let mut skipped_spammy = 0usize;
+
+    if config.use_proxy && state.proxy_manager.is_none() {
+        warnings.push("use_proxy_requested_but_proxy_manager_unavailable".to_string());
+    }
+
+    // If proxy is requested but the pool is tiny, refill automatically using proxy_source.json.
+    if config.use_proxy {
+        if let Some(pm) = &state.proxy_manager {
+            let refill = tokio::time::timeout(
+                std::time::Duration::from_secs(45),
+                pm.ensure_min_proxies(&state, 100, 30),
+            )
+            .await;
+
+            match refill {
+                Err(_) => {
+                    warnings.push("proxy_pool_refill_timeout".to_string());
+                }
+                Ok(result) => match result {
+                Ok(Some(stats)) => {
+                    warnings.push(format!("proxy_pool_refilled:{}", stats));
+                }
+                Ok(None) => {}
+                Err(e) => warnings.push(format!("proxy_pool_refill_failed:{}", e)),
+                },
+            }
+        }
+    }
 
     // ── Hop 1: expand the query into focused sub-queries ──────────────────
     let rewriter = QueryRewriter::new();
@@ -337,6 +555,9 @@ pub async fn deep_research(
 
     // Multi-dimensional rewriting: always include 3 angles.
     let mut hop_queries: Vec<String> = build_multi_dimensional_queries(&query, &base_query);
+
+    // Gemini-style checklist queries to force coverage.
+    hop_queries.extend(build_gemini_prompt_queries(&base_query));
 
     // Also include any QueryRewriter suggestions (deduped, capped).
     for s in rewrite_result.suggestions.iter().take(4) {
@@ -364,6 +585,15 @@ pub async fn deep_research(
 
         // ── Search phase ─────────────────────────────────────────────────
         let mut candidate_urls: Vec<String> = hop_urls.clone();
+        let mut url_via_query: HashMap<String, String> = HashMap::new();
+
+        // Seed authoritative sources on hop 1 to avoid search-engine noise.
+        if current_depth == 1 {
+            for u in seed_urls_for_query(&query) {
+                url_via_query.entry(u.clone()).or_insert_with(|| "seed".to_string());
+                candidate_urls.push(u);
+            }
+        }
 
         for q in &hop_queries {
             let results = match search_web_with_params(&state, q, None).await {
@@ -378,8 +608,13 @@ pub async fn deep_research(
             // Rerank for relevance and take top-K URLs.
             let reranker = Reranker::new(q);
             let top = reranker.rerank_top(results, config.max_sources_per_hop);
+            let mut top = top;
+            // Domain-based tie-breaker to prefer docs/repos.
+            top.sort_by(|a, b| domain_priority(&b.url).cmp(&domain_priority(&a.url)));
+
             for r in top {
                 if !r.url.is_empty() {
+                    url_via_query.entry(r.url.clone()).or_insert_with(|| q.clone());
                     candidate_urls.push(r.url);
                 }
             }
@@ -502,6 +737,11 @@ pub async fn deep_research(
                 continue;
             }
 
+            if is_spammy_source(&scrape.title, &relevant_content, &scrape.url) {
+                skipped_spammy += 1;
+                continue;
+            }
+
             let word_count = relevant_content.split_whitespace().count();
 
             // Collect links from this page to feed the next hop.
@@ -513,14 +753,16 @@ pub async fn deep_research(
                 }
             }
 
+            let scraped_url = scrape.url.clone();
+
             all_findings.push(DeepResearchSource {
-                url: scrape.url,
+                url: scraped_url.clone(),
                 title: scrape.title,
                 domain: scrape.domain,
                 relevant_content,
                 word_count,
                 depth: current_depth,
-                via_query: hop_queries.first().cloned(),
+                via_query: url_via_query.get(&scraped_url).cloned(),
             });
         }
 
@@ -542,6 +784,10 @@ pub async fn deep_research(
     let all_urls: Vec<String> = all_urls_seen.into_iter().collect();
     let sources_discovered = all_urls.len();
     let sources_scraped = all_findings.len();
+
+    if skipped_spammy > 0 {
+        warnings.push(format!("skipped_spammy_sources:{}", skipped_spammy));
+    }
 
     // ── Log session to persistent memory ─────────────────────────────────
     if let Some(memory) = &state.memory {

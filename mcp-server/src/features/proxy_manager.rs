@@ -68,6 +68,8 @@ pub struct ProxyManager {
     registry: Arc<RwLock<ProxyRegistry>>,
     current_proxy_url: Arc<RwLock<Option<String>>>,
     last_switch_time: Arc<RwLock<u64>>,
+
+    ip_list_path: String,
 }
 
 impl ProxyManager {
@@ -110,6 +112,7 @@ impl ProxyManager {
             registry: Arc::new(RwLock::new(registry)),
             current_proxy_url: Arc::new(RwLock::new(None)),
             last_switch_time: Arc::new(RwLock::new(0)),
+            ip_list_path: ip_list_path.to_string(),
         };
 
         // Auto-test proxies on startup if configured
@@ -125,6 +128,119 @@ impl ProxyManager {
         }
 
         Ok(manager)
+    }
+
+    pub async fn reload_from_ip_list(&self) -> Result<(usize, usize, usize)> {
+        let ip_list_default_scheme =
+            std::env::var("IP_LIST_DEFAULT_SCHEME").unwrap_or_else(|_| "http".to_string());
+
+        let ip_content = tokio::fs::read_to_string(&self.ip_list_path)
+            .await
+            .map_err(|e| anyhow!(
+                "Failed to read IP list file {}: {}",
+                self.ip_list_path,
+                e
+            ))?;
+
+        let (ip_proxies, skipped_invalid, skipped_unsupported) =
+            build_proxies_from_ip_list(&ip_content, &ip_list_default_scheme);
+
+        let mut registry = self.registry.write().await;
+
+        // Preserve metrics for existing proxies by URL.
+        let mut existing_by_url = std::collections::HashMap::<String, ProxyConfig>::new();
+        for p in registry.proxies.iter() {
+            existing_by_url.insert(p.url.clone(), p.clone());
+        }
+
+        let mut seen = HashSet::new();
+        let mut merged: Vec<ProxyConfig> = Vec::new();
+        let mut added = 0usize;
+
+        for mut p in ip_proxies {
+            if !seen.insert(p.url.clone()) {
+                continue;
+            }
+
+            if let Some(old) = existing_by_url.get(&p.url) {
+                // Keep learned metrics and enabled/disabled state.
+                p.latency_ms = old.latency_ms;
+                p.last_success_timestamp = old.last_success_timestamp;
+                p.last_test_timestamp = old.last_test_timestamp;
+                p.failure_count = old.failure_count;
+                p.enabled = old.enabled;
+                // Keep whichever provider/notes is richer.
+                if p.provider.is_empty() {
+                    p.provider = old.provider.clone();
+                }
+                if p.notes.is_empty() {
+                    p.notes = old.notes.clone();
+                }
+            } else {
+                added += 1;
+            }
+
+            merged.push(p);
+        }
+
+        registry.proxies = merged;
+
+        info!(
+            "Reloaded proxies from {} (added {}, skipped: {} invalid, {} unsupported)",
+            self.ip_list_path,
+            added,
+            skipped_invalid,
+            skipped_unsupported
+        );
+
+        Ok((added, skipped_invalid, skipped_unsupported))
+    }
+
+    pub async fn ensure_min_proxies(
+        &self,
+        state: &Arc<crate::AppState>,
+        min_total: usize,
+        min_enabled: usize,
+    ) -> Result<Option<serde_json::Value>> {
+        let status = self.get_status().await?;
+        if status.total_proxies >= min_total && status.enabled_proxies >= min_enabled {
+            return Ok(None);
+        }
+
+        // Pull in more proxies from proxy_source.json using the same logic as proxy_control(grab).
+        let limit = min_total.saturating_mul(3).max(200);
+        let grab = crate::features::proxy_grabber::grab_proxies(
+            state,
+            crate::features::proxy_grabber::GrabParams {
+                limit: Some(limit),
+                proxy_type: None,
+                random: false,
+                store_ip_txt: true,
+                clear_ip_txt: false,
+                append: true,
+            },
+        )
+        .await?;
+
+        let (added, skipped_invalid, skipped_unsupported) = self.reload_from_ip_list().await?;
+        let after = self.get_status().await?;
+
+        Ok(Some(serde_json::json!({
+            "action": "ensure_min_proxies",
+            "ip_list_path": self.ip_list_path,
+            "before": {
+                "total": status.total_proxies,
+                "enabled": status.enabled_proxies
+            },
+            "after": {
+                "total": after.total_proxies,
+                "enabled": after.enabled_proxies
+            },
+            "reload_added": added,
+            "skipped_invalid": skipped_invalid,
+            "skipped_unsupported": skipped_unsupported,
+            "grab": grab
+        })))
     }
 
     /// Get current proxy status and statistics

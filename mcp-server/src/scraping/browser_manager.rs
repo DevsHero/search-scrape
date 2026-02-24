@@ -27,7 +27,7 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 // ── Realistic User-Agent pool (Step 1: Stealth & Evasion) ────────────────────
 
@@ -265,7 +265,7 @@ impl BrowserPool {
             tokio::spawn(async move {
                 while let Some(event) = handler.next().await {
                     if let Err(e) = event {
-                        error!("Pool CDP handler error: {}", e);
+                        warn!("Pool CDP handler error: {}", e);
                     }
                 }
             });
@@ -495,7 +495,7 @@ pub async fn fetch_html_native(url: &str, wait_ms: Option<u32>) -> Result<(u16, 
     let _handle = tokio::spawn(async move {
         while let Some(event) = handler.next().await {
             if let Err(e) = event {
-                error!("CDP handler error: {}", e);
+                warn!("CDP handler error: {}", e);
             }
         }
     });
@@ -566,7 +566,7 @@ pub async fn fetch_html_native_mobile(url: &str, wait_ms: Option<u32>) -> Result
     let _handle = tokio::spawn(async move {
         while let Some(event) = handler.next().await {
             if let Err(e) = event {
-                error!("CDP mobile handler error: {}", e);
+                warn!("CDP mobile handler error: {}", e);
             }
         }
     });

@@ -34,6 +34,11 @@ name = "deep-research-test"
 path = "src/bin/deep-research-test.rs"
 required-features = ["dev-tools"]
 
+[[bin]]
+name = "proxy-refill-test"
+path = "src/bin/proxy-refill-test.rs"
+required-features = ["dev-tools"]
+
 [dependencies]
 # Core Async & Web
 tokio = { version = "1.49", features = ["full"] }         

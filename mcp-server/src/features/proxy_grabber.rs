@@ -38,8 +38,17 @@ pub struct ListParams {
 }
 
 pub async fn grab_proxies(state: &Arc<AppState>, params: GrabParams) -> Result<serde_json::Value> {
-    let source_path =
+    let mut source_path =
         env::var("PROXY_SOURCE_PATH").unwrap_or_else(|_| "proxy_source.json".to_string());
+
+    // Convenience: when running from `mcp-server/`, the repo-root file is `../proxy_source.json`.
+    if tokio::fs::metadata(&source_path).await.is_err() {
+        let fallback = "../proxy_source.json";
+        if tokio::fs::metadata(fallback).await.is_ok() {
+            source_path = fallback.to_string();
+        }
+    }
+
     let source_contents = tokio::fs::read_to_string(&source_path)
         .await
         .map_err(|e| anyhow!("Failed to read proxy source file {}: {}", source_path, e))?;
@@ -69,8 +78,15 @@ pub async fn grab_proxies(state: &Arc<AppState>, params: GrabParams) -> Result<s
     let mut warnings = Vec::new();
     let mut collected: Vec<ProxyItem> = Vec::new();
     let mut seen = HashSet::new();
+    let limit = params.limit;
 
     for source in sources.iter_mut() {
+        if let Some(max) = limit {
+            if collected.len() >= max {
+                break;
+            }
+        }
+
         let source_type = match normalize_proxy_type(&source.proxy_type) {
             Some(t) => t,
             None => {
@@ -83,12 +99,13 @@ pub async fn grab_proxies(state: &Arc<AppState>, params: GrabParams) -> Result<s
         };
 
         let fetch_url = to_raw_url(&source.url);
-        let response = state
-            .http_client
-            .get(&fetch_url)
-            .send()
-            .await
-            .map_err(|e| anyhow!("Failed to fetch proxy source {}: {}", fetch_url, e))?;
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            state.http_client.get(&fetch_url).send(),
+        )
+        .await
+        .map_err(|_| anyhow!("Timeout fetching proxy source: {}", fetch_url))?
+        .map_err(|e| anyhow!("Failed to fetch proxy source {}: {}", fetch_url, e))?;
 
         if !response.status().is_success() {
             warnings.push(format!(
@@ -99,9 +116,9 @@ pub async fn grab_proxies(state: &Arc<AppState>, params: GrabParams) -> Result<s
             continue;
         }
 
-        let body = response
-            .text()
+        let body = tokio::time::timeout(std::time::Duration::from_secs(20), response.text())
             .await
+            .map_err(|_| anyhow!("Timeout reading proxy source body: {}", fetch_url))?
             .map_err(|e| anyhow!("Failed to read proxy source body {}: {}", fetch_url, e))?;
 
         for line in parse_proxy_lines(&body) {
@@ -111,6 +128,18 @@ pub async fn grab_proxies(state: &Arc<AppState>, params: GrabParams) -> Result<s
                     proxy,
                     proxy_type: Some(inferred_type),
                 });
+
+                if let Some(max) = limit {
+                    if collected.len() >= max {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(max) = limit {
+            if collected.len() >= max {
+                break;
             }
         }
     }
@@ -121,11 +150,15 @@ pub async fn grab_proxies(state: &Arc<AppState>, params: GrabParams) -> Result<s
     }
 
     let total_fetched = collected.len();
-    if let Some(limit) = params.limit {
-        collected.truncate(limit);
-    }
 
-    let ip_list_path = env::var("IP_LIST_PATH").unwrap_or_else(|_| "ip.txt".to_string());
+    let mut ip_list_path = env::var("IP_LIST_PATH").unwrap_or_else(|_| "ip.txt".to_string());
+    // Convenience: when running from `mcp-server/`, prefer repo-root `../ip.txt`.
+    if ip_list_path == "ip.txt" {
+        let fallback = "../ip.txt";
+        if tokio::fs::metadata(fallback).await.is_ok() {
+            ip_list_path = fallback.to_string();
+        }
+    }
     let mut stored_count = 0usize;
     let mut cleared = false;
 
@@ -170,7 +203,13 @@ pub async fn grab_proxies(state: &Arc<AppState>, params: GrabParams) -> Result<s
 }
 
 pub async fn list_proxies(params: ListParams) -> Result<serde_json::Value> {
-    let ip_list_path = env::var("IP_LIST_PATH").unwrap_or_else(|_| "ip.txt".to_string());
+    let mut ip_list_path = env::var("IP_LIST_PATH").unwrap_or_else(|_| "ip.txt".to_string());
+    if ip_list_path == "ip.txt" {
+        let fallback = "../ip.txt";
+        if tokio::fs::metadata(fallback).await.is_ok() {
+            ip_list_path = fallback.to_string();
+        }
+    }
     let content = tokio::fs::read_to_string(&ip_list_path)
         .await
         .map_err(|e| anyhow!("Failed to read ip.txt {}: {}", ip_list_path, e))?;
