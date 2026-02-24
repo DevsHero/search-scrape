@@ -3,6 +3,20 @@ use scraper::{Html, Selector};
 use tracing::warn;
 
 impl RustScraper {
+    fn utf8_prefix_chars<'a>(value: &'a str, max_chars: usize) -> &'a str {
+        if value.len() <= max_chars {
+            return value;
+        }
+
+        let idx = value
+            .char_indices()
+            .nth(max_chars)
+            .map(|(i, _)| i)
+            .unwrap_or(value.len());
+
+        &value[..idx]
+    }
+
     /// Detect domain-specific scraping strategy.
     /// Returns `(wait_time_ms, needs_scroll)`.
     pub(super) fn detect_domain_strategy(&self, domain: &Option<String>) -> (u32, bool) {
@@ -464,7 +478,7 @@ impl RustScraper {
 
         // ── Signal 4: Content-to-nav ratio (+0.12) ──────────────────────────────
         {
-            let preview = &html[..html.len().min(30_000)];
+                let preview = Self::utf8_prefix_chars(html, 30_000);
             let preview_lc = preview.to_lowercase();
             let nav_count = preview_lc.matches("<nav").count()
                 + preview_lc.matches("role=\"navigation\"").count();

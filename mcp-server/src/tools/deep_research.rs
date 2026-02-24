@@ -19,7 +19,7 @@ use crate::{
     types::{DeepResearchResult, DeepResearchSource, ScrapeBatchResponse},
     AppState,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::{collections::HashMap, collections::HashSet, sync::Arc, time::Instant};
 use tracing::{info, warn};
 
@@ -198,6 +198,113 @@ fn synthesize_technical_report(query: &str, findings: &[DeepResearchSource]) -> 
     );
 
     Some(report)
+}
+
+async fn llm_synthesize_report_openai(
+    state: &Arc<AppState>,
+    query: &str,
+    findings: &[DeepResearchSource],
+) -> Result<Option<String>> {
+    // Guard: allow explicit opt-out even if OPENAI_API_KEY is set.
+    if std::env::var("DEEP_RESEARCH_SYNTHESIS")
+        .ok()
+        .is_some_and(|v| v.trim() == "0")
+    {
+        return Ok(None);
+    }
+
+    let api_key = match std::env::var("OPENAI_API_KEY") {
+        Ok(v) if !v.trim().is_empty() => v,
+        _ => return Ok(None),
+    };
+
+    // Optional: support self-hosted proxies / gateways.
+    let base_url = std::env::var("OPENAI_BASE_URL").unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
+    let model = std::env::var("DEEP_RESEARCH_LLM_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string());
+
+    let max_sources: usize = std::env::var("DEEP_RESEARCH_SYNTHESIS_MAX_SOURCES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(8);
+    let max_chars_per_source: usize = std::env::var("DEEP_RESEARCH_SYNTHESIS_MAX_CHARS_PER_SOURCE")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(2500);
+
+    let mut packed_sources = String::new();
+    for (i, f) in findings.iter().take(max_sources).enumerate() {
+        let mut snippet = f.relevant_content.clone();
+        if snippet.chars().count() > max_chars_per_source {
+            snippet = snippet.chars().take(max_chars_per_source).collect::<String>();
+            snippet.push_str("\n…[truncated]\n");
+        }
+
+        packed_sources.push_str(&format!(
+            "SOURCE {}\nurl: {}\ntitle: {}\ndepth: {}\ncontent:\n{}\n\n",
+            i + 1,
+            f.url,
+            f.title,
+            f.depth,
+            snippet
+        ));
+    }
+
+    if packed_sources.trim().is_empty() {
+        return Ok(None);
+    }
+
+    let system_prompt = "You are a senior mobile CV/OCR engineer. Produce a production-grade technical report. Be precise, avoid hallucinating. If evidence is missing, say so.";
+    let user_prompt = format!(
+        "Task: Based ONLY on the provided sources, synthesize a technical report for on-device OCR of Thai+English parcel labels in a Flutter app on low-end phones.\n\nInclude sections:\n1) Best on-device model stack recommendation (with reasons)\n2) Architecture/pipeline (ROI detection, preprocessing, OCR, post-processing)\n3) Handling blur/low light/low-quality camera\n4) Tradeoffs: accuracy vs latency vs RAM\n5) Implementation plan in Flutter (ONNX/TFLite suggestions)\n6) Evaluation plan + metrics\n\nQuery: {}\n\nSources:\n{}",
+        query, packed_sources
+    );
+
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+
+    let body = serde_json::json!({
+        "model": model,
+        "temperature": 0.2,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+    });
+
+    let response = state
+        .http_client
+        .post(url)
+        .bearer_auth(api_key.trim())
+        .json(&body)
+        .send()
+        .await
+        .context("openai chat.completions request failed")?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow::anyhow!(
+            "openai chat.completions failed: status={} body={}",
+            status,
+            text
+        ));
+    }
+
+    let value: serde_json::Value = response
+        .json()
+        .await
+        .context("openai response json parse failed")?;
+
+    let content = value
+        .get("choices")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    Ok(content)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -447,7 +554,31 @@ pub async fn deep_research(
             .await;
     }
 
-    let synthesized_report = synthesize_technical_report(&query, &all_findings);
+    let (synthesized_report, synthesis_method) = match llm_synthesize_report_openai(
+        &state,
+        &query,
+        &all_findings,
+    )
+    .await
+    {
+        Ok(Some(report)) => (Some(report), Some("openai_chat_completions".to_string())),
+        Ok(None) => {
+            if std::env::var("OPENAI_API_KEY").is_err() {
+                warnings.push("synthesis_disabled_no_openai_api_key".to_string());
+            }
+            (
+                synthesize_technical_report(&query, &all_findings),
+                Some("heuristic_v1".to_string()),
+            )
+        }
+        Err(e) => {
+            warnings.push(format!("synthesis_failed:{}", e));
+            (
+                synthesize_technical_report(&query, &all_findings),
+                Some("heuristic_v1_fallback".to_string()),
+            )
+        }
+    };
 
     Ok(DeepResearchResult {
         query,
@@ -456,7 +587,7 @@ pub async fn deep_research(
         sources_scraped,
         key_findings: all_findings,
         synthesized_report,
-        synthesis_method: Some("heuristic_v1".to_string()),
+        synthesis_method,
         all_urls,
         sub_queries: all_sub_queries,
         warnings,

@@ -29,6 +29,11 @@ name = "shadow-sandbox"
 path = "src/bin/shadow-sandbox.rs"
 required-features = ["dev-tools"]
 
+[[bin]]
+name = "deep-research-test"
+path = "src/bin/deep-research-test.rs"
+required-features = ["dev-tools"]
+
 [dependencies]
 # Core Async & Web
 tokio = { version = "1.49", features = ["full"] }         
