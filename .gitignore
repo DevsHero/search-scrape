@@ -28,6 +28,12 @@ mcp-server/.mcpregistry_registry_token
 *.token
 
 .neurosiphon
+
+# Generated proxy IP list (auto-refreshed at runtime)
+ip.txt
+
+# Release build artifacts (tarballs, zips)
+dist/
 advice.txt
 .smithery
 scripts/release.sh

@@ -231,31 +231,25 @@ async fn llm_synthesize_report_openai(
     query: &str,
     findings: &[DeepResearchSource],
 ) -> Result<Option<String>> {
-    // Guard: allow explicit opt-out even if OPENAI_API_KEY is set.
-    if std::env::var("DEEP_RESEARCH_SYNTHESIS")
-        .ok()
-        .is_some_and(|v| v.trim() == "0")
-    {
+    let dr_cfg = &state.shadow_config.deep_research;
+
+    // Guard: synthesis can be disabled via config or legacy env var.
+    if !dr_cfg.resolve_synthesis_enabled() {
         return Ok(None);
     }
 
-    let api_key = match std::env::var("OPENAI_API_KEY") {
-        Ok(v) if !v.trim().is_empty() => v,
-        _ => return Ok(None),
+    // API key: shadowcrawl.json → OPENAI_API_KEY env var → skip synthesis.
+    let api_key = match dr_cfg.resolve_api_key() {
+        Some(k) => k,
+        None => return Ok(None),
     };
 
-    // Optional: support self-hosted proxies / gateways.
-    let base_url = std::env::var("OPENAI_BASE_URL").unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
-    let model = std::env::var("DEEP_RESEARCH_LLM_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string());
+    // LLM endpoint + model: shadowcrawl.json → env vars → hardcoded defaults.
+    let base_url = dr_cfg.resolve_base_url();
+    let model = dr_cfg.resolve_model();
 
-    let max_sources: usize = std::env::var("DEEP_RESEARCH_SYNTHESIS_MAX_SOURCES")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(8);
-    let max_chars_per_source: usize = std::env::var("DEEP_RESEARCH_SYNTHESIS_MAX_CHARS_PER_SOURCE")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(2500);
+    let max_sources = dr_cfg.resolve_max_sources();
+    let max_chars_per_source = dr_cfg.resolve_max_chars_per_source();
 
     let mut packed_sources = String::new();
     for (i, f) in findings.iter().take(max_sources).enumerate() {

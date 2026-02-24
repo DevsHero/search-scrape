@@ -1,4 +1,4 @@
-# 🥷 ShadowCrawl MCP — v3.0.0
+# 🥷 ShadowCrawl MCP — v3.0.2
 
 <div align="center">
 <img src="media/logo.svg" alt="ShadowCrawl Logo" width="180">
@@ -51,11 +51,66 @@ ShadowCrawl v3.0.0 ships a **100% Rust-native metasearch engine** that queries 4
 
 ---
 
-## 🛠 Full Feature Roster
+## � Deep Research Engine (v3.0.2)
+
+ShadowCrawl v3.0.2 ships a self-contained **multi-hop research pipeline** as a first-class MCP tool — no external infra, no key required for local LLMs.
+
+### How it works
+
+1. **Query Expansion** — expands your question into multiple targeted sub-queries (3 axes: core concept, comparison/alternatives, implementation specifics)
+2. **Parallel Search + Scrape** — fires all sub-queries across 4 search engines; auto-scrapes top results (configurable depth 1–3, up to 20 sources)
+3. **Semantic Filtering** — Model2Vec-powered relevance scoring keeps only on-topic content chunks
+4. **LLM Synthesis** — condenses all findings into a zero-fluff Markdown fact-sheet via any OpenAI-compatible API
+
+### LLM Backend Options
+
+| Backend | `llm_base_url` | Key required |
+|---------|---------------|-------------|
+| **OpenAI** (default) | `https://api.openai.com/v1` | Yes — `OPENAI_API_KEY` |
+| **Ollama** (local) | `http://localhost:11434/v1` | No |
+| **LM Studio** (local) | `http://localhost:1234/v1` | No |
+| Any OpenAI-compatible proxy | custom URL | Optional |
+
+### Configuration (`shadowcrawl.json`)
+
+Create `shadowcrawl.json` in the same directory as the binary (or repo root) to configure the engine — no rebuild needed. All fields are optional; env vars are used as fallback.
+
+```json
+{
+  "deep_research": {
+    "enabled": true,
+    "llm_base_url": "http://localhost:11434/v1",
+    "llm_api_key": "",
+    "llm_model": "llama3",
+    "synthesis_enabled": true,
+    "synthesis_max_sources": 8,
+    "synthesis_max_chars_per_source": 2500
+  }
+}
+```
+
+**Priority:** `shadowcrawl.json` field → env var fallback → hardcoded default.
+
+### Build flags
+
+```bash
+# Full build (deep_research included by default)
+cargo build --release
+
+# Lean build — strip deep_research feature entirely
+cargo build --release --no-default-features --features non_robot_search
+```
+
+> The `deep-research` Cargo feature is **on by default**. Use `--no-default-features` for minimal deployments.
+
+---
+
+## �🛠 Full Feature Roster
 
 | Feature | Details |
 |---------|---------|
-| 🔍 **God-Tier Meta-Search** | Parallel Google / Bing / DDG / Brave · dedup · scoring · breadcrumbs · `published_at` |
+| � **Deep Research Engine** | Multi-hop search + scrape + semantic filter + LLM synthesis (OpenAI / Ollama / LM Studio) |
+| �🔍 **God-Tier Meta-Search** | Parallel Google / Bing / DDG / Brave · dedup · scoring · breadcrumbs · `published_at` |
 | 🕷 **Universal Scraper** | Rust-native + native Chromium CDP for JS-heavy and anti-bot sites |
 | 🛂 **Human Auth (HITL)** | `human_auth_session`: Real browser + persistent cookies + instruction overlay + Automatic Re-injection. Fetch any protected URL. |
 | 🧠 **Semantic Memory** | Embedded LanceDB + Model2Vec for long-term research recall (no DB container) |
@@ -251,13 +306,21 @@ Use the same stdio setup as VS Code (run `shadowcrawl-mcp` locally and pass env 
 | `MAX_CONTENT_CHARS` | `10000` | Max chars per scraped document |
 | `IP_LIST_PATH` | — | Path to proxy IP list |
 | `SCRAPE_DELAY_PRESET` | `polite` | `fast` / `polite` / `cautious` |
+| `DEEP_RESEARCH_ENABLED` | `1` (enabled) | Set `0` to disable the `deep_research` tool at runtime (without rebuild) |
+| `OPENAI_API_KEY` | — | API key for LLM synthesis. Leave unset for key-less local endpoints (Ollama / LM Studio) |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | LLM endpoint. Override for Ollama (`http://localhost:11434/v1`) or LM Studio (`http://localhost:1234/v1`). Config: `deep_research.llm_base_url` |
+| `DEEP_RESEARCH_LLM_MODEL` | `gpt-4o-mini` | Model name (e.g. `llama3`, `mistral`). Config: `deep_research.llm_model` |
+| `DEEP_RESEARCH_SYNTHESIS` | `1` (enabled) | Set `0` to run search + scrape only (skip LLM step). Config: `deep_research.synthesis_enabled` |
+| `DEEP_RESEARCH_SYNTHESIS_MAX_SOURCES` | `8` | Max source docs fed to LLM. Config: `deep_research.synthesis_max_sources` |
+| `DEEP_RESEARCH_SYNTHESIS_MAX_CHARS_PER_SOURCE` | `2500` | Max chars per source. Config: `deep_research.synthesis_max_chars_per_source` |
 
 ---
 
 ## 🏆 Comparison
 
-| Feature | Firecrawl / Jina / Tavily | ShadowCrawl v2.4.0 |
+| Feature | Firecrawl / Jina / Tavily | ShadowCrawl v3.0.2 |
 |---------|--------------------------|-------------------|
+| **Deep Research** | None / paid add-on | **Native: multi-hop + LLM synthesis (local or cloud)** |
 | **Cost** | $49–$499/mo | **$0 — self-hosted** |
 | **Privacy** | They see your queries | **100% private, local-only** |
 | **Search Engine** | Proprietary / 3rd-party API | **Native Rust (4 engines, parallel)** |

@@ -20,6 +20,9 @@ pub struct AppState {
 
     // Shared persistent browser instance (tab reuse — avoids launch overhead per request).
     pub browser_pool: Option<std::sync::Arc<crate::scraping::browser_manager::BrowserPool>>,
+
+    /// File-based config loaded from `shadowcrawl.json` (env-var fallback for all fields).
+    pub shadow_config: std::sync::Arc<crate::core::config::ShadowConfig>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -58,6 +61,7 @@ impl AppState {
             proxy_manager: None, // Will be initialized if IP_LIST_PATH exists
             non_robot_search_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             browser_pool: crate::scraping::browser_manager::BrowserPool::new_auto(),
+            shadow_config: std::sync::Arc::new(crate::core::config::load_shadow_config()),
         }
     }
 

@@ -1,0 +1,21 @@
+{
+  "_comment": "ShadowCrawl configuration. All fields are optional — env vars (and hardcoded defaults) are used as fallback for any missing key.",
+  "deep_research": {
+    "_doc": {
+      "enabled": "Set false to hide the deep_research tool entirely (same as DEEP_RESEARCH_ENABLED=0).",
+      "llm_base_url": "LLM endpoint. OpenAI default: https://api.openai.com/v1. Ollama: http://localhost:11434/v1. LM Studio: http://localhost:1234/v1.",
+      "llm_api_key": "API key. Leave blank ('') for key-less local endpoints (Ollama/LM Studio). Env fallback: OPENAI_API_KEY.",
+      "llm_model": "Model name. Env fallback: DEEP_RESEARCH_LLM_MODEL. Default: gpt-4o-mini.",
+      "synthesis_enabled": "Set false to run search+scrape only and skip LLM synthesis entirely. Env fallback: DEEP_RESEARCH_SYNTHESIS=0.",
+      "synthesis_max_sources": "Max source docs fed to the LLM. Env fallback: DEEP_RESEARCH_SYNTHESIS_MAX_SOURCES. Default: 8.",
+      "synthesis_max_chars_per_source": "Max chars per source document. Env fallback: DEEP_RESEARCH_SYNTHESIS_MAX_CHARS_PER_SOURCE. Default: 2500."
+    },
+    "enabled": true,
+    "llm_base_url": "https://api.openai.com/v1",
+    "llm_api_key": "",
+    "llm_model": "gpt-4o-mini",
+    "synthesis_enabled": true,
+    "synthesis_max_sources": 8,
+    "synthesis_max_chars_per_source": 2500
+  }
+}
