@@ -1,6 +1,6 @@
 //! Auth Registry — per-domain authentication metadata cache.
 //!
-//! Persisted as `~/.shadowcrawl/auth_map.json`.  Each entry records whether a
+//! Persisted as `~/.cortex-scout/auth_map.json`.  Each entry records whether a
 //! domain needs auth, when the last successful scrape happened, what kind of
 //! auth was used, and when the stored session expires.
 //!
@@ -89,9 +89,9 @@ impl DomainRecord {
 // Persistence helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Return the path to `~/.shadowcrawl/auth_map.json`.
+/// Return the path to `~/.cortex-scout/auth_map.json`.
 fn auth_map_path() -> Option<std::path::PathBuf> {
-    dirs::home_dir().map(|h| h.join(".shadowcrawl").join("auth_map.json"))
+    dirs::home_dir().map(|h| h.join(".cortex-scout").join("auth_map.json"))
 }
 
 /// Load the full auth registry from disk.

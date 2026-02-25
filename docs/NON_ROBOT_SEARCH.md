@@ -33,7 +33,7 @@ For login/session bootstrapping (GitHub, LinkedIn, etc.) prefer `human_auth_sess
 
 - It opens a real browser and waits for you to click **FINISH & RETURN**.
 - It does **not** auto-close based on navigation events (strict manual-only flow).
-- On success, cookies are persisted under `~/.shadowcrawl/sessions/{domain}.json` so later fetches can reuse the authenticated session.
+- On success, cookies are persisted under `~/.cortex-scout/sessions/{domain}.json` so later fetches can reuse the authenticated session.
 
 Recommended escalation order:
 
@@ -44,7 +44,7 @@ Recommended escalation order:
 
 ## Safety / Interactivity model (must read)
 
-- Consent is required unless `SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW=1` is set.
+- Consent is required unless `CORTEX_SCOUT_NON_ROBOT_AUTO_ALLOW=1` is set.
 - Emergency abort: **hold `Esc` for ~3 seconds**.
 - A global key listener is used for the kill-switch.
   - On macOS this may require **Accessibility permission**.
@@ -58,7 +58,7 @@ Build the binaries (native macOS):
 
 ```bash
 cd mcp-server
-cargo build --release --features non_robot_search --bin shadowcrawl --bin shadowcrawl-mcp
+cargo build --release --features non_robot_search --bin cortex-scout --bin cortex-scout-mcp
 ```
 
 ## Run recommendations (macOS)
@@ -71,7 +71,7 @@ Run the MCP stdio server locally (so it can open Brave/Chrome):
 cd mcp-server
 LANCEDB_URI=../lancedb \
 RUST_LOG=info \
-./target/release/shadowcrawl-mcp
+./target/release/cortex-scout-mcp
 ```
 
 Notes:
@@ -81,7 +81,7 @@ Notes:
 
 ```bash
 cd mcp-server
-RUST_LOG=info ./target/release/shadowcrawl
+RUST_LOG=info ./target/release/cortex-scout
 ```
 
 Then call `POST /mcp/call` with `tool=non_robot_search`.
@@ -111,7 +111,7 @@ To use your existing logged-in session (e.g. LinkedIn), you must use a real brow
 You can pass it either as:
 
 - tool argument: `user_profile_path`
-- env var: `SHADOWCRAWL_RENDER_PROFILE_DIR`
+- env var: `CORTEX_SCOUT_RENDER_PROFILE_DIR`
 
 Common macOS profile locations:
 
@@ -124,17 +124,17 @@ Common macOS profile locations:
   - Default profile: `~/Library/Application Support/Google/Chrome/Default`
 
 Important:
-- If you point at `.../Default` (or `.../Profile 1`), ShadowCrawl automatically maps it to:
+- If you point at `.../Default` (or `.../Profile 1`), Cortex Scout automatically maps it to:
   - `--user-data-dir=<parent>` and `--profile-directory=<basename>`
 - **Do not run two calls concurrently** with the same profile directory. (Profile locks like `SingletonLock` are a real thing.)
 
 ## Consent controls
 
-- `SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW=1` skips consent prompts (use carefully).
-- `SHADOWCRAWL_NON_ROBOT_CONSENT=tty` forces terminal Enter/Esc flow.
-- `SHADOWCRAWL_NON_ROBOT_CONSENT=dialog` forces GUI dialog.
+- `CORTEX_SCOUT_NON_ROBOT_AUTO_ALLOW=1` skips consent prompts (use carefully).
+- `CORTEX_SCOUT_NON_ROBOT_CONSENT=tty` forces terminal Enter/Esc flow.
+- `CORTEX_SCOUT_NON_ROBOT_CONSENT=dialog` forces GUI dialog.
 
-If your MCP client runs without a TTY, ShadowCrawl will use a dialog by default.
+If your MCP client runs without a TTY, Cortex Scout will use a dialog by default.
 
 ## Tool arguments (MCP)
 
@@ -185,12 +185,12 @@ Run the guided preflight:
 
 ```bash
 cd mcp-server
-./target/release/shadowcrawl --setup
+./target/release/cortex-scout --setup
 ```
 
 Then enable:
 - System Settings → Privacy & Security → Accessibility
-- Add/enable the app that launches ShadowCrawl (Terminal / VS Code)
+- Add/enable the app that launches Cortex Scout (Terminal / VS Code)
 
 ### Profile lock issues (SingletonLock)
 

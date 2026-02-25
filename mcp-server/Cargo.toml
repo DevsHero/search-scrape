@@ -1,21 +1,21 @@
 [package]
-name = "shadowcrawl"
+name = "cortex-scout"
 version = "3.1.0"
 edition = "2021"
 description = "God-Tier stealth intelligence engine for AI agents — zero-dependency parallel meta-search (Google/Bing/DDG/Brave), universal anti-bot bypass, native Chromium CDP (zero-Docker standalone), semantic research memory, and HITL nuclear option. Self-hosted, 100% private, MCP-native."
-repository = "https://github.com/DevsHero/ShadowCrawl"
+repository = "https://github.com/cortex-works/cortex-scout"
 license = "MIT"
 
 [lib]
-name = "shadowcrawl"
+name = "cortex_scout"
 path = "src/lib.rs"
 
 [[bin]]
-name = "shadowcrawl"
+name = "cortex-scout"
 path = "src/main.rs"
 
 [[bin]]
-name = "shadowcrawl-mcp"
+name = "cortex-scout-mcp"
 path = "src/bin/mcp-stdio.rs"
 
 # ── Dev / benchmark tools (auto-discovered by Cargo; not shipped in releases)

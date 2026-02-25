@@ -1,5 +1,5 @@
-use shadowcrawl::{deep_research, AppState};
-use shadowcrawl::deep_research::DeepResearchConfig;
+use cortex_scout::{deep_research, AppState};
+use cortex_scout::deep_research::DeepResearchConfig;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -40,11 +40,11 @@ async fn main() -> anyhow::Result<()> {
 
     let mut state = AppState::new(http_client);
 
-    if let Some(lancedb_uri) = shadowcrawl::core::config::lancedb_uri() {
+    if let Some(lancedb_uri) = cortex_scout::core::config::lancedb_uri() {
         if !lancedb_uri.contains("://") {
             let _ = tokio::fs::create_dir_all(&lancedb_uri).await;
         }
-        match shadowcrawl::history::MemoryManager::new(&lancedb_uri).await {
+        match cortex_scout::history::MemoryManager::new(&lancedb_uri).await {
             Ok(memory) => state = state.with_memory(Arc::new(memory)),
             Err(e) => eprintln!("WARN: failed to init memory: {e}"),
         }
@@ -52,13 +52,13 @@ async fn main() -> anyhow::Result<()> {
 
     // Prefer repo-root ip.txt when running from `mcp-server/`.
     let default_ip_list = {
-        let manifest_dir = env!("CARGO_MANIFEST_DIR"); // .../ShadowCrawl/mcp-server
+        let manifest_dir = env!("CARGO_MANIFEST_DIR"); // .../Cortex Scout/mcp-server
         let path = std::path::Path::new(manifest_dir).join("..").join("ip.txt");
         path.to_string_lossy().to_string()
     };
     let ip_list_path = std::env::var("IP_LIST_PATH").unwrap_or(default_ip_list);
     if tokio::fs::metadata(&ip_list_path).await.is_ok() {
-        match shadowcrawl::proxy_manager::ProxyManager::new(&ip_list_path).await {
+        match cortex_scout::proxy_manager::ProxyManager::new(&ip_list_path).await {
             Ok(pm) => state = state.with_proxy_manager(Arc::new(pm)),
             Err(e) => eprintln!("WARN: failed to init proxy manager: {e}"),
         }

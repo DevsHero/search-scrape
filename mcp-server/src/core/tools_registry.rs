@@ -45,7 +45,7 @@ impl ToolRegistry {
         );
 
         // Extra tool-name aliases to reduce agent confusion and steer calls toward
-        // ShadowCrawl's token-efficient tools instead of IDE-provided fetchers.
+        // Cortex Scout's token-efficient tools instead of IDE-provided fetchers.
         // These map *public* names to stable internal tool names.
         // Backwards compatibility: internal names are always accepted too.
         registry

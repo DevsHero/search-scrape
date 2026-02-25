@@ -11,7 +11,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::{error, info, warn};
 
-use shadowcrawl::{mcp, scrape, search, types::*, AppState};
+use cortex_scout::{mcp, scrape, search, types::*, AppState};
 
 fn parse_port_from_args() -> Option<u16> {
     let mut args = std::env::args().peekable();
@@ -32,7 +32,7 @@ fn parse_port_from_args() -> Option<u16> {
 }
 
 fn port_from_env() -> Option<u16> {
-    for k in ["SHADOWCRAWL_PORT", "PORT"] {
+    for k in ["CORTEX_SCOUT_PORT", "PORT"] {
         if let Ok(v) = std::env::var(k) {
             if let Ok(p) = v.trim().parse::<u16>() {
                 return Some(p);
@@ -52,11 +52,11 @@ async fn main() -> anyhow::Result<()> {
     // Handle setup-only mode
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--setup") {
-        let opts = shadowcrawl::setup::SetupOptions {
-            mode: shadowcrawl::setup::SetupRunMode::SetupFlag,
+        let opts = cortex_scout::setup::SetupOptions {
+            mode: cortex_scout::setup::SetupRunMode::SetupFlag,
             ..Default::default()
         };
-        let report = shadowcrawl::setup::check_all(opts).await;
+        let report = cortex_scout::setup::check_all(opts).await;
         println!("{}", report);
         report.print_action_required_blocks();
         if report.has_failures() {
@@ -68,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
     info!("Starting MCP Server");
 
     // Pre-flight checklist (non-interactive) at startup
-    let report = shadowcrawl::setup::check_all(shadowcrawl::setup::SetupOptions::default()).await;
+    let report = cortex_scout::setup::check_all(cortex_scout::setup::SetupOptions::default()).await;
     info!("{}", report.summarize_for_logs());
     if report.has_failures() {
         warn!("shadow-setup: startup checklist found failures; run with --setup for guided remediation");
@@ -92,14 +92,14 @@ async fn main() -> anyhow::Result<()> {
     // Create application state
     let mut state = AppState::new(http_client);
 
-    // Initialize semantic memory (persistent by default; disable via SHADOWCRAWL_MEMORY_DISABLED=1)
-    if let Some(lancedb_uri) = shadowcrawl::core::config::lancedb_uri() {
+    // Initialize semantic memory (persistent by default; disable via CORTEX_SCOUT_MEMORY_DISABLED=1)
+    if let Some(lancedb_uri) = cortex_scout::core::config::lancedb_uri() {
         if !lancedb_uri.contains("://") {
             // Best-effort create the directory for local-path URIs.
             let _ = tokio::fs::create_dir_all(&lancedb_uri).await;
         }
         info!("Initializing memory with LanceDB at: {}", lancedb_uri);
-        match shadowcrawl::history::MemoryManager::new(&lancedb_uri).await {
+        match cortex_scout::history::MemoryManager::new(&lancedb_uri).await {
             Ok(memory) => {
                 state = state.with_memory(Arc::new(memory));
                 info!("Memory initialized successfully");
@@ -110,7 +110,7 @@ async fn main() -> anyhow::Result<()> {
             ),
         }
     } else {
-        info!("Semantic memory disabled (SHADOWCRAWL_MEMORY_DISABLED=1)");
+        info!("Semantic memory disabled (CORTEX_SCOUT_MEMORY_DISABLED=1)");
     }
 
     // Initialize proxy manager if ip.txt exists
@@ -118,7 +118,7 @@ async fn main() -> anyhow::Result<()> {
 
     if tokio::fs::metadata(&ip_list_path).await.is_ok() {
         info!("Loading proxy manager from IP list: {}", ip_list_path);
-        match shadowcrawl::proxy_manager::ProxyManager::new(&ip_list_path).await {
+        match cortex_scout::proxy_manager::ProxyManager::new(&ip_list_path).await {
             Ok(proxy_manager) => {
                 let status = proxy_manager.get_status().await?;
                 state = state.with_proxy_manager(Arc::new(proxy_manager));
@@ -168,7 +168,7 @@ async fn main() -> anyhow::Result<()> {
         Ok(l) => l,
         Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
             anyhow::bail!(
-                "Address already in use: {}. Stop the existing process or run with --port {} (or set PORT/SHADOWCRAWL_PORT).",
+                "Address already in use: {}. Stop the existing process or run with --port {} (or set PORT/CORTEX_SCOUT_PORT).",
                 bind_addr,
                 port.saturating_add(1)
             )
@@ -223,7 +223,7 @@ async fn shutdown_signal(state: Arc<AppState>) {
 async fn health_check() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "status": "healthy",
-        "service": "shadowcrawl",
+        "service": "cortex-scout",
         "version": env!("CARGO_PKG_VERSION")
     }))
 }
@@ -243,7 +243,7 @@ async fn server_card(State(state): State<Arc<AppState>>) -> Json<serde_json::Val
 
     Json(serde_json::json!({
         "serverInfo": {
-            "name": "ShadowCrawl",
+            "name": "Cortex Scout",
             "version": env!("CARGO_PKG_VERSION")
         },
         "tools": tools,
@@ -275,7 +275,7 @@ async fn mcp_rpc_handler(
                     "tools": {}
                 },
                 "serverInfo": {
-                    "name": "ShadowCrawl",
+                    "name": "Cortex Scout",
                     "version": env!("CARGO_PKG_VERSION")
                 }
             }

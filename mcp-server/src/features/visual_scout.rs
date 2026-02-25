@@ -26,7 +26,7 @@ pub struct VisualScoutResult {
     pub page_title: String,
     /// Absolute path to the saved PNG file on disk.
     /// Pass this path to your Vision model or open it in an image viewer.
-    /// Located under `{TMPDIR}/.shadowcrawl_screenshots/`.
+    /// Located under `{TMPDIR}/.cortex-scout-screenshots/`.
     pub screenshot_path: String,
     /// Screenshot size in bytes (before base64 encoding).
     pub screenshot_bytes: usize,
@@ -130,7 +130,7 @@ pub async fn take_screenshot(
     // Save screenshot to a local temp file instead of returning a large base64
     // blob.  This keeps context windows lean — the agent reads the file only
     // when it needs to perform visual analysis.
-    let cache_dir = std::env::temp_dir().join(".shadowcrawl_screenshots");
+    let cache_dir = std::env::temp_dir().join(".cortex-scout-screenshots");
     std::fs::create_dir_all(&cache_dir)
         .map_err(|e| anyhow!("visual_scout: failed to create screenshot cache dir: {}", e))?;
     let host_slug = url::Url::parse(url)

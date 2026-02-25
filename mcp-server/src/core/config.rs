@@ -1,10 +1,10 @@
 use std::path::Path;
 
 // ---------------------------------------------------------------------------
-// ShadowConfig — file-based config loader (shadowcrawl.json) with env-var fallback
+// ShadowConfig — file-based config loader (cortex-scout.json) with env-var fallback
 // ---------------------------------------------------------------------------
 
-/// Deep-research sub-config (mirrors the `deep_research` key in shadowcrawl.json).
+/// Deep-research sub-config (mirrors the `deep_research` key in cortex-scout.json).
 #[derive(serde::Deserialize, Default, Clone, Debug)]
 pub struct ShadowDeepResearchConfig {
     /// Whether the deep_research tool is exposed at all. Defaults to `true`.
@@ -115,28 +115,28 @@ impl ShadowDeepResearchConfig {
     }
 }
 
-/// Top-level config loaded from `shadowcrawl.json`.
+/// Top-level config loaded from `cortex-scout.json`.
 #[derive(serde::Deserialize, Default, Clone, Debug)]
 pub struct ShadowConfig {
     pub deep_research: ShadowDeepResearchConfig,
 }
 
-/// Load `shadowcrawl.json` from standard locations.
+/// Load `cortex-scout.json` from standard locations.
 ///
 /// Search order (first found wins):
-/// 1. `./shadowcrawl.json`  (process cwd — inside the mcp-server dir during `cargo run`)
-/// 2. `../shadowcrawl.json` (one level up — repo root when running from `mcp-server/`)
-/// 3. `SHADOWCRAWL_CONFIG` env var path
+/// 1. `./cortex-scout.json`  (process cwd — inside the mcp-server dir during `cargo run`)
+/// 2. `../cortex-scout.json` (one level up — repo root when running from `mcp-server/`)
+/// 3. `CORTEX_SCOUT_CONFIG` env var path
 ///
 /// Missing file → `ShadowConfig::default()` (silent, all env-var fallbacks apply).
 /// Parse error → log a warning, return `ShadowConfig::default()`.
 pub fn load_shadow_config() -> ShadowConfig {
     let candidates: Vec<std::path::PathBuf> = {
         let mut v = vec![
-            std::path::PathBuf::from("shadowcrawl.json"),
-            std::path::PathBuf::from("../shadowcrawl.json"),
+            std::path::PathBuf::from("cortex-scout.json"),
+            std::path::PathBuf::from("../cortex-scout.json"),
         ];
-        if let Ok(env_path) = std::env::var("SHADOWCRAWL_CONFIG") {
+        if let Ok(env_path) = std::env::var("CORTEX_SCOUT_CONFIG") {
             v.insert(0, std::path::PathBuf::from(env_path));
         }
         v
@@ -148,14 +148,14 @@ pub fn load_shadow_config() -> ShadowConfig {
                 match serde_json::from_str::<ShadowConfig>(&contents) {
                     Ok(cfg) => {
                         tracing::info!(
-                            "shadowcrawl.json loaded from {}",
+                            "cortex-scout.json loaded from {}",
                             path.display()
                         );
                         return cfg;
                     }
                     Err(e) => {
                         tracing::warn!(
-                            "shadowcrawl.json parse error at {}: {} — using defaults",
+                            "cortex-scout.json parse error at {}: {} — using defaults",
                             path.display(),
                             e
                         );
@@ -175,8 +175,8 @@ pub fn load_shadow_config() -> ShadowConfig {
 
 pub const ENV_CHROME_EXECUTABLE: &str = "CHROME_EXECUTABLE";
 pub const ENV_LANCEDB_URI: &str = "LANCEDB_URI";
-pub const ENV_NEUROSIPHON_ENABLED: &str = "SHADOWCRAWL_NEUROSIPHON";
-pub const ENV_MEMORY_DISABLED: &str = "SHADOWCRAWL_MEMORY_DISABLED";
+pub const ENV_NEUROSIPHON_ENABLED: &str = "CORTEX_SCOUT_NEUROSIPHON";
+pub const ENV_MEMORY_DISABLED: &str = "CORTEX_SCOUT_MEMORY_DISABLED";
 
 /// Optional override for the Chromium-family browser executable.
 ///
@@ -198,9 +198,9 @@ pub fn chrome_executable_override() -> Option<String> {
 /// LanceDB directory/URI for semantic research memory.
 ///
 /// Default behavior is **enabled** with a persistent on-disk store under
-/// `~/.shadowcrawl/lancedb` so `research_history` survives VS Code restarts.
+/// `~/.cortex-scout/lancedb` so `research_history` survives VS Code restarts.
 ///
-/// Set `SHADOWCRAWL_MEMORY_DISABLED=1` to disable semantic memory.
+/// Set `CORTEX_SCOUT_MEMORY_DISABLED=1` to disable semantic memory.
 pub fn lancedb_uri() -> Option<String> {
     if let Ok(v) = std::env::var(ENV_MEMORY_DISABLED) {
         let v = v.trim().to_ascii_lowercase();
@@ -222,7 +222,7 @@ pub fn lancedb_uri() -> Option<String> {
             // Stable default path when unset.
             let home = dirs::home_dir()?;
             Some(
-                home.join(".shadowcrawl")
+                home.join(".cortex-scout")
                     .join("lancedb")
                     .to_string_lossy()
                     .to_string(),
@@ -234,7 +234,7 @@ pub fn lancedb_uri() -> Option<String> {
 /// Global toggle for NeuroSiphon-derived optimizations (content router, noise filter,
 /// semantic shaving, import nuking, search rewrite/rerank, etc.).
 ///
-/// Default: enabled. Set `SHADOWCRAWL_NEUROSIPHON=0` (or `false`/`no`) to disable.
+/// Default: enabled. Set `CORTEX_SCOUT_NEUROSIPHON=0` (or `false`/`no`) to disable.
 pub fn neurosiphon_enabled() -> bool {
     let Ok(v) = std::env::var(ENV_NEUROSIPHON_ENABLED) else {
         return true;

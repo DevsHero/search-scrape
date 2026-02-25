@@ -1,9 +1,9 @@
-# [DEPRECATED] ShadowCrawl Windows Installation Guide (Legacy)
+# [DEPRECATED] Cortex Scout Windows Installation Guide (Legacy)
 
 > This guide predates the v2.3.x migration to native Chromium/CDP (no Browserless sidecar).
 > Use it as a starting point for Windows build prerequisites, but follow the current README + docs/VSCODE_SETUP.md for runtime setup.
 
-This guide provides a comprehensive, step-by-step procedure to set up **ShadowCrawl** on Windows 10/11, enabling full **Human-in-the-Loop (HITL)** capabilities.
+This guide provides a comprehensive, step-by-step procedure to set up **Cortex Scout** on Windows 10/11, enabling full **Human-in-the-Loop (HITL)** capabilities.
 
 ---
 
@@ -13,7 +13,7 @@ This guide provides a comprehensive, step-by-step procedure to set up **ShadowCr
     Download and install `rustup-init.exe` from [rust-lang.org](https://www.rust-lang.org/tools/install). Select the default installation (Microsoft C++ build tools).
 
 2.  **Install Build Tools & Windows SDK:**
-    ShadowCrawl uses modern AI libraries (ONNX Runtime) that require specific DirectX libraries.
+    Cortex Scout uses modern AI libraries (ONNX Runtime) that require specific DirectX libraries.
     - Install **Visual Studio Build Tools 2022**.
     - Ensure **"Desktop development with C++"** workload is checked.
     - **CRITICAL:** Ensure a recent Windows 10/11 SDK is installed (version **10.0.19041.0** or higher is REQUIRED for `DXCORE.lib`).
@@ -35,20 +35,20 @@ Open PowerShell (Run as Administrator recommended for best experience with globa
 
 ```powershell
 # 1. Clone the repository
-git clone https://github.com/DevsHero/ShadowCrawl.git
-cd ShadowCrawl
+git clone https://github.com/cortex-works/cortex-scout.git
+cd Cortex Scout
 
 # 2. Enter the server directory
 cd mcp-server
 
 # 3. Build with Windows HITL support
 # This may take 5-10 minutes initially to compile dependencies like `ort` and `sysinfo`.
-cargo build --release --bin shadowcrawl-mcp --features non_robot_search
+cargo build --release --bin cortex-scout-mcp --features non_robot_search
 ```
 
 **Verify the build:**
 ```powershell
-.\target\release\shadowcrawl-mcp.exe --version
+.\target\release\cortex-scout-mcp.exe --version
 # Should output: 2.0.0-rc (or similar)
 ```
 
@@ -56,11 +56,11 @@ cargo build --release --bin shadowcrawl-mcp --features non_robot_search
 
 ## 🐳 3. Start Services
 
-ShadowCrawl is Zero-Docker; run the binary directly.
+Cortex Scout is Zero-Docker; run the binary directly.
 
 ## ⚙️ 4. Configure MCP in VS Code (The "Windows Set")
 
-This configuration connects VS Code to your local ShadowCrawl binary.
+This configuration connects VS Code to your local Cortex Scout binary.
 
 1.  Open VS Code.
 2.  Open your MCP settings file:
@@ -71,37 +71,37 @@ This configuration connects VS Code to your local ShadowCrawl binary.
 ```json
 {
   "servers": {
-    "shadowcrawl": {
+    "cortex-scout": {
       "type": "stdio",
-      "command": "c:\\Users\\YOUR_USER\\Downloads\\ShadowCrawl\\mcp-server\\target\\release\\shadowcrawl-mcp.exe",
+      "command": "c:\\Users\\YOUR_USER\\Downloads\\Cortex Scout\\mcp-server\\target\\release\\cortex-scout-mcp.exe",
       "args": [],
       "env": {
         "RUST_LOG": "info",
-        "LANCEDB_URI": "c:\\Users\\YOUR_USER\\Downloads\\ShadowCrawl\\lancedb",
+        "LANCEDB_URI": "c:\\Users\\YOUR_USER\\Downloads\\Cortex Scout\\lancedb",
         "HTTP_TIMEOUT_SECS": "30",
         "HTTP_CONNECT_TIMEOUT_SECS": "10",
         "OUTBOUND_LIMIT": "32",
         "MAX_CONTENT_CHARS": "10000",
         "MAX_LINKS": "100",
-        "SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW": "1",
-        "IP_LIST_PATH": "c:\\Users\\YOUR_USER\\Downloads\\ShadowCrawl\\ip.txt",
-        "PROXY_SOURCE_PATH": "c:\\Users\\YOUR_USER\\Downloads\\ShadowCrawl\\proxy_source.json"
+        "CORTEX_SCOUT_NON_ROBOT_AUTO_ALLOW": "1",
+        "IP_LIST_PATH": "c:\\Users\\YOUR_USER\\Downloads\\Cortex Scout\\ip.txt",
+        "PROXY_SOURCE_PATH": "c:\\Users\\YOUR_USER\\Downloads\\Cortex Scout\\proxy_source.json"
       }
     }
   }
 }
 ```
 
-> **Note:** `SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW="1"` enables "Agent Mode" where the browser opens automatically without a confirmation popup for every action. Set to `0` if you want manual approval for every browser launch.
+> **Note:** `CORTEX_SCOUT_NON_ROBOT_AUTO_ALLOW="1"` enables "Agent Mode" where the browser opens automatically without a confirmation popup for every action. Set to `0` if you want manual approval for every browser launch.
 
 ---
 
 ## 🧪 5. Verification
 
 1.  **Restart VS Code** to reload the MCP configuration.
-2.  Open the MCP servers view (icon in sidebar) to confirm `shadowcrawl` is connected (green dot).
+2.  Open the MCP servers view (icon in sidebar) to confirm `cortex-scout` is connected (green dot).
 3.  Open a Chat in VS Code (e.g., using GitHub Copilot or an MCP-enabled chat agent).
-4.  Ask: *"Search the web for 'Rust programming 2026' using ShadowCrawl"*
+4.  Ask: *"Search the web for 'Rust programming 2026' using Cortex Scout"*
   - **Result:** Should return search results from the built-in Rust metasearch.
 5.  Ask: *"Go to https://example.com using non_robot_search and extract the content"*
     - **Result:** 
@@ -120,7 +120,7 @@ This configuration connects VS Code to your local ShadowCrawl binary.
 - **Browser path not found**:
   - Add `"CHROME_EXECUTABLE": "C:\\Path\\To\\Your\\Browser.exe"` to the `env` section in `mcp.json`.
 - **Proxy errors**:
-  - Create an empty `ip.txt` and `proxy_source.json` in your ShadowCrawl root folder if you are not using proxies.
+  - Create an empty `ip.txt` and `proxy_source.json` in your Cortex Scout root folder if you are not using proxies.
 - **"Access Denied" on kill switch**:
   - VS Code or the terminal launching the process needs to be run as **Administrator** to use global input hooks required for the safety kill switch.
 

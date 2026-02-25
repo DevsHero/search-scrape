@@ -10,7 +10,7 @@ pub struct ToolCatalogEntry {
     pub icons: Vec<&'static str>,
 }
 
-pub const SHADOWCRAWL_ICON: &str = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgICA8ZGVmcz4KICAgICAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImNyYXdsZXJfZ3JhZCIgeDE9IjAlIiB5MT0iMjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICAgICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMWUxZTVhO3N0b3Atb3BhY2l0eToxIiAvPiA8c3RvcCBvZmZzZXQ9IjUwJSIgc3R5bGU9InN0b3AtY29sb3I6IzNhM2E5ZTtzdG9wLW9wYWNpdHk6MSIgLz4gPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMDBmMmZmO3N0b3Atb3BhY2l0eToxIiAvPiA8L2xpbmVhckdyYWRpZW50PgogICAgICAgIAogICAgICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZXllX2dsb3ciIGN4PSI1MCUiIGN5PSI1MCUiIHI9IjUwJSIgZng9IjUwJSIgZnk9IjUwJSI+CiAgICAgICAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZmZmZmY7c3RvcC1vcGFjaXR5OjEiIC8+CiAgICAgICAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3R5bGU9InN0b3AtY29sb3I6IzAwZjJmZjtzdG9wLW9wYWNpdHk6MSIgLz4KICAgICAgICA8L3JhZGlhbEdyYWRpZW50PgoKICAgICAgICA8ZmlsdGVyIGlkPSJzaGFkb3dCbHVyIiB4PSItNTAlIiB5PSItMjAlIiB3aWR0aD0iMjAwJSIgaGVpZ2h0PSIxNTAlIj4KICAgICAgICAgICAgPGZlR2F1c3NpYW5CbHVyIGluPSJTb3VyY2VHcmFwaGljIiBzdGREZXZpYXRpb249IjgiIC8+CiAgICAgICAgPC9maWx0ZXI+CiAgICA8L2RlZnM+CgogICAgPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjU2LCAyNTYpIj4KICAgICAgICA8cGF0aCBkPSJNLTEyMCA0MCBDIC0xNDAgODAsIC04MCAxNjAsIDAgMTgwIEMgODAgMTYwLCAxNDAgODAsIDEyMCA0MCBMIDAgODAgWiIgCiAgICAgICAgICAgICAgZmlsbD0idXJsKCNjcmF3bGVyX2dyYWQpIiAKICAgICAgICAgICAgICBvcGFjaXR5PSIwLjQiIAogICAgICAgICAgICAgIGZpbHRlcj0idXJsKCNzaGFkb3dCbHVyKSIKICAgICAgICAgICAgICB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwLCAtMjApIi8+CgogICAgICAgIDxwYXRoIGQ9Ik0wIC0xODAgTCAxNDAgLTYwIEwgMTAwIDYwIEwgMCAxMjAgTCAtMTAwIDYwIEwgLTE0MCAtNjAgWiIgCiAgICAgICAgICAgICAgZmlsbD0idXJsKCNjcmF3bGVyX2dyYWQpIgogICAgICAgICAgICAgIHN0cm9rZT0iIzAwZjJmZiIKICAgICAgICAgICAgICBzdHJva2Utd2lkdGg9IjQiCiAgICAgICAgICAgICAgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogICAgICAgICAgICAgIAogICAgICAgIDxwYXRoIGQ9Ik0wIC00MCBMIDQwIDAgTCAwIDQwIEwgLTQwIDAgWiIgCiAgICAgICAgICAgICAgZmlsbD0idXJsKCNleWVfZ2xvdykiCiAgICAgICAgICAgICAgZmlsdGVyPSJkcm9wLXNoYWRvdygwIDAgMTBweCAjMDBmMmZmKSIvPgogICAgICAgICAgICAgIAogICAgICAgIDxwYXRoIGQ9Ik0tMTAwIDYwIEwgLTEzMCAxNDAgTCAtOTAgMTIwIE0xMDAgNjAgTCAxMzAgMTQwIEwgOTAgMTIwIiAKICAgICAgICAgICAgICBzdHJva2U9InVybCgjY3Jhd2xlcl9ncmFkKSIgCiAgICAgICAgICAgICAgc3Ryb2tlLXdpZHRoPSIxMiIgCiAgICAgICAgICAgICAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogICAgICAgICAgICAgIGZpbGw9Im5vbmUiLz4KICAgIDwvZz4KICAgIAogICAgPC9zdmc+";
+pub const CORTEX_SCOUT_ICON: &str = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgICA8ZGVmcz4KICAgICAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImNyYXdsZXJfZ3JhZCIgeDE9IjAlIiB5MT0iMjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICAgICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMWUxZTVhO3N0b3Atb3BhY2l0eToxIiAvPiA8c3RvcCBvZmZzZXQ9IjUwJSIgc3R5bGU9InN0b3AtY29sb3I6IzNhM2E5ZTtzdG9wLW9wYWNpdHk6MSIgLz4gPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMDBmMmZmO3N0b3Atb3BhY2l0eToxIiAvPiA8L2xpbmVhckdyYWRpZW50PgogICAgICAgIAogICAgICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZXllX2dsb3ciIGN4PSI1MCUiIGN5PSI1MCUiIHI9IjUwJSIgZng9IjUwJSIgZnk9IjUwJSI+CiAgICAgICAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZmZmZmY7c3RvcC1vcGFjaXR5OjEiIC8+CiAgICAgICAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3R5bGU9InN0b3AtY29sb3I6IzAwZjJmZjtzdG9wLW9wYWNpdHk6MSIgLz4KICAgICAgICA8L3JhZGlhbEdyYWRpZW50PgoKICAgICAgICA8ZmlsdGVyIGlkPSJzaGFkb3dCbHVyIiB4PSItNTAlIiB5PSItMjAlIiB3aWR0aD0iMjAwJSIgaGVpZ2h0PSIxNTAlIj4KICAgICAgICAgICAgPGZlR2F1c3NpYW5CbHVyIGluPSJTb3VyY2VHcmFwaGljIiBzdGREZXZpYXRpb249IjgiIC8+CiAgICAgICAgPC9maWx0ZXI+CiAgICA8L2RlZnM+CgogICAgPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjU2LCAyNTYpIj4KICAgICAgICA8cGF0aCBkPSJNLTEyMCA0MCBDIC0xNDAgODAsIC04MCAxNjAsIDAgMTgwIEMgODAgMTYwLCAxNDAgODAsIDEyMCA0MCBMIDAgODAgWiIgCiAgICAgICAgICAgICAgZmlsbD0idXJsKCNjcmF3bGVyX2dyYWQpIiAKICAgICAgICAgICAgICBvcGFjaXR5PSIwLjQiIAogICAgICAgICAgICAgIGZpbHRlcj0idXJsKCNzaGFkb3dCbHVyKSIKICAgICAgICAgICAgICB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwLCAtMjApIi8+CgogICAgICAgIDxwYXRoIGQ9Ik0wIC0xODAgTCAxNDAgLTYwIEwgMTAwIDYwIEwgMCAxMjAgTCAtMTAwIDYwIEwgLTE0MCAtNjAgWiIgCiAgICAgICAgICAgICAgZmlsbD0idXJsKCNjcmF3bGVyX2dyYWQpIgogICAgICAgICAgICAgIHN0cm9rZT0iIzAwZjJmZiIKICAgICAgICAgICAgICBzdHJva2Utd2lkdGg9IjQiCiAgICAgICAgICAgICAgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogICAgICAgICAgICAgIAogICAgICAgIDxwYXRoIGQ9Ik0wIC00MCBMIDQwIDAgTCAwIDQwIEwgLTQwIDAgWiIgCiAgICAgICAgICAgICAgZmlsbD0idXJsKCNleWVfZ2xvdykiCiAgICAgICAgICAgICAgZmlsdGVyPSJkcm9wLXNoYWRvdygwIDAgMTBweCAjMDBmMmZmKSIvPgogICAgICAgICAgICAgIAogICAgICAgIDxwYXRoIGQ9Ik0tMTAwIDYwIEwgLTEzMCAxNDAgTCAtOTAgMTIwIE0xMDAgNjAgTCAxMzAgMTQwIEwgOTAgMTIwIiAKICAgICAgICAgICAgICBzdHJva2U9InVybCgjY3Jhd2xlcl9ncmFkKSIgCiAgICAgICAgICAgICAgc3Ryb2tlLXdpZHRoPSIxMiIgCiAgICAgICAgICAgICAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogICAgICAgICAgICAgIGZpbGw9Im5vbmUiLz4KICAgIDwvZz4KICAgIAogICAgPC9zdmc+";
 
 /// Returns `true` when the `deep_research` tool should be registered at runtime.
 /// Both the `deep-research` Cargo feature AND the env-var gate must be satisfied.
@@ -60,7 +60,7 @@ For initial research where you will also fetch content, strongly prefer web_sear
                 },
                 "required": ["query"]
             }),
-            icons: vec![SHADOWCRAWL_ICON],
+            icons: vec![CORTEX_SCOUT_ICON],
         },
         ToolCatalogEntry {
             name: "search_structured",
@@ -78,7 +78,7 @@ Note: still call memory_search first to avoid redundant fetches.",
                 },
                 "required": ["query"]
             }),
-            icons: vec![SHADOWCRAWL_ICON],
+            icons: vec![CORTEX_SCOUT_ICON],
         },
         ToolCatalogEntry {
             name: "scrape_url",
@@ -173,7 +173,7 @@ Note: still call memory_search first to avoid redundant fetches.",
                 },
                 "required": ["url"]
             }),
-            icons: vec![SHADOWCRAWL_ICON],
+            icons: vec![CORTEX_SCOUT_ICON],
         },
         ToolCatalogEntry {
             name: "scrape_batch",
@@ -191,7 +191,7 @@ Note: still call memory_search first to avoid redundant fetches.",
                 },
                 "required": ["urls"]
             }),
-            icons: vec![SHADOWCRAWL_ICON],
+            icons: vec![CORTEX_SCOUT_ICON],
         },
         ToolCatalogEntry {
             name: "deep_research",
@@ -265,7 +265,7 @@ Strip from binary entirely: cargo build --no-default-features.",
                 },
                 "required": ["query"]
             }),
-            icons: vec![SHADOWCRAWL_ICON],
+            icons: vec![CORTEX_SCOUT_ICON],
         },
         ToolCatalogEntry {
             name: "crawl_website",
@@ -293,7 +293,7 @@ If the start URL returns NEED_HITL, the crawl aborts early with a structured err
                 },
                 "required": ["url"]
             }),
-            icons: vec![SHADOWCRAWL_ICON],
+            icons: vec![CORTEX_SCOUT_ICON],
         },
         ToolCatalogEntry {
             name: "extract_structured",
@@ -328,7 +328,7 @@ For raw Markdown sources, use web_fetch with output_format: clean_json instead. 
                 },
                 "required": ["url"]
             }),
-            icons: vec![SHADOWCRAWL_ICON],
+            icons: vec![CORTEX_SCOUT_ICON],
         },
 
         ToolCatalogEntry {
@@ -359,7 +359,7 @@ When `strict=true`, output matches requested schema exactly (no schema drift).",
                 },
                 "required": ["url"]
             }),
-            icons: vec![SHADOWCRAWL_ICON],
+            icons: vec![CORTEX_SCOUT_ICON],
         },
        ToolCatalogEntry {
         name: "research_history",
@@ -393,7 +393,7 @@ When `strict=true`, output matches requested schema exactly (no schema drift).",
             },
             "required": ["query"]
             }),
-            icons: vec![SHADOWCRAWL_ICON],
+            icons: vec![CORTEX_SCOUT_ICON],
             },
         ToolCatalogEntry {
             name: "proxy_manager",
@@ -419,7 +419,7 @@ Do NOT wait for further failures — rotate on first block signal.",
                 },
                 "required": ["action"]
             }),
-            icons: vec![SHADOWCRAWL_ICON],
+            icons: vec![CORTEX_SCOUT_ICON],
         },
         ToolCatalogEntry {
             name: "non_robot_search",
@@ -443,7 +443,7 @@ Do NOT wait for further failures — rotate on first block signal.",
         },
         "required": ["url"]
         }),
-        icons: vec![SHADOWCRAWL_ICON],
+        icons: vec![CORTEX_SCOUT_ICON],
     },
         ToolCatalogEntry {
             name: "visual_scout",
@@ -463,13 +463,13 @@ Inspect the screenshot to confirm whether a login modal/gate is present before e
                 },
                 "required": ["url"]
             }),
-            icons: vec![SHADOWCRAWL_ICON],
+            icons: vec![CORTEX_SCOUT_ICON],
         },
         ToolCatalogEntry {
             name: "human_auth_session",
             title: "Auth Session (HITL Login + Session Save)",
             description: "🔐 The Auth-Gatekeeper's escalation tool. Opens a real visible browser, shows the user a clear instruction card, waits for them to complete login, then scrapes the authenticated content. \
-After a successful auth flow, cookies are automatically persisted to `~/.shadowcrawl/sessions/{domain}.json` so future requests to the same domain skip the HITL step entirely. \
+After a successful auth flow, cookies are automatically persisted to `~/.cortex-scout/sessions/{domain}.json` so future requests to the same domain skip the HITL step entirely. \
 Use ONLY after `visual_scout` has confirmed AUTH_REQUIRED — never as a first attempt. \
 Send `instruction_message` to tell the user exactly what to log in to and why, e.g. *'Please log in to GitHub so I can read the private Discussions.'*",
             input_schema: serde_json::json!({
@@ -497,7 +497,7 @@ Send `instruction_message` to tell the user exactly what to log in to and why, e
                 },
                 "required": ["url"]
             }),
-            icons: vec![SHADOWCRAWL_ICON],
+            icons: vec![CORTEX_SCOUT_ICON],
         }
     ];
 

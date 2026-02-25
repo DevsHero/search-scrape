@@ -1,4 +1,4 @@
-use shadowcrawl::stdio_service;
+use cortex_scout::stdio_service;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -16,16 +16,16 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("shadowcrawl-mcp (MCP stdio server); usage: shadowcrawl-mcp [--version|--help|--setup [--json]]");
+        println!("cortex-scout-mcp (MCP stdio server); usage: cortex-scout-mcp [--version|--help|--setup [--json]]");
         return Ok(());
     }
 
     if args.iter().any(|a| a == "--setup") {
-        let opts = shadowcrawl::setup::SetupOptions {
-            mode: shadowcrawl::setup::SetupRunMode::SetupFlag,
+        let opts = cortex_scout::setup::SetupOptions {
+            mode: cortex_scout::setup::SetupRunMode::SetupFlag,
             ..Default::default()
         };
-        let report = shadowcrawl::setup::check_all(opts).await;
+        let report = cortex_scout::setup::check_all(opts).await;
         let is_json = args.iter().any(|a| a == "--json");
         if is_json {
             println!(

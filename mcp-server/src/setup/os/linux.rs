@@ -62,7 +62,7 @@ fn check_dialog_helper(options: &SetupOptions) -> SetupCheck {
         "X11 minimal alternative: `sudo apt-get install -y x11-utils` (for xmessage)".to_string(),
     ];
     if matches!(options.mode, SetupRunMode::SetupFlag) {
-        steps.push("Re-run `shadowcrawl-mcp --setup` to confirm.".to_string());
+        steps.push("Re-run `cortex-scout-mcp --setup` to confirm.".to_string());
     }
 
     SetupCheck {
@@ -160,7 +160,7 @@ fn check_input_devices_access(options: &SetupOptions) -> SetupCheck {
     ];
 
     if matches!(options.mode, SetupRunMode::SetupFlag) {
-        steps.push("Re-run `shadowcrawl --setup` to confirm.".to_string());
+        steps.push("Re-run `cortex-scout --setup` to confirm.".to_string());
     }
 
     SetupCheck {

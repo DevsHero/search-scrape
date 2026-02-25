@@ -2,7 +2,7 @@
 
 ## Overview
 
-ShadowCrawl's Research History feature provides **100% open-source semantic memory** for the MCP server. It automatically logs searches and scrapes so agents can:
+Cortex Scout's Research History feature provides **100% open-source semantic memory** for the MCP server. It automatically logs searches and scrapes so agents can:
 
 - 🔍 Semantic search past work with natural language
 - 🔄 Keep context across sessions
@@ -18,7 +18,7 @@ This feature is **optional** and enabled only when you set `LANCEDB_URI`.
 ### Technology Stack
 
 1. **LanceDB** (embedded, in-process)
-   - Vector DB runs inside the ShadowCrawl process (no separate DB container)
+   - Vector DB runs inside the Cortex Scout process (no separate DB container)
    - Persists data on disk at `LANCEDB_URI`
 
 2. **Model2Vec** (Rust inference via `model2vec-rs` / `model2vec_rs`)
@@ -55,7 +55,7 @@ export LANCEDB_URI=./lancedb
 # Optional: HF model id or local path to a Model2Vec model directory
 # export MODEL2VEC_MODEL=minishlab/potion-base-8M
 
-./mcp-server/target/release/shadowcrawl-mcp
+./mcp-server/target/release/cortex-scout-mcp
 ```
 
 ### 3) Verify
@@ -74,7 +74,7 @@ Memory initialized successfully
 
 ### Auto-Logging (Automatic)
 
-When enabled, ShadowCrawl automatically logs:
+When enabled, Cortex Scout automatically logs:
 - Searches (query + summary + full JSON result)
 - Scrapes (URL + preview/summary + full JSON result)
 

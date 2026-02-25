@@ -77,7 +77,7 @@ startCommand:
         if (config.proxySourcePath) env.PROXY_SOURCE_PATH = String(config.proxySourcePath);
 
         return {
-          command: "shadowcrawl-mcp",
+          command: "cortex-scout-mcp",
           args: [],
           env,
         };

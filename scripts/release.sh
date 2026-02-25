@@ -2,7 +2,7 @@
 # =============================================================================
 # scripts/release.sh — Sovereign Local Release (macOS Apple Silicon)
 #
-# Builds ShadowCrawl for all platforms from your Mac and uploads to GitHub.
+# Builds Cortex Scout for all platforms from your Mac and uploads to GitHub.
 #
 # Prerequisites (run once):
 #   brew install gh zig
@@ -77,7 +77,7 @@ repo_slug_from_origin() {
   return 1
 }
 
-banner "ShadowCrawl $TAG — Local Release"
+banner "Cortex Scout $TAG — Local Release"
 info "Repo: $REPO_ROOT"
 info "MCP:  $MCP"
 $DRY_RUN && warn "DRY-RUN mode — skipping GitHub upload"
@@ -169,11 +169,11 @@ for target in "${TARGETS[@]}"; do
   case "$target" in
     aarch64-apple-darwin)
       # Native macOS build — no zigbuild needed
-      cargo build --release --locked --target "$target" --bin shadowcrawl --bin shadowcrawl-mcp
+      cargo build --release --locked --target "$target" --bin cortex-scout --bin cortex-scout-mcp
       ;;
     *)
       # Everything else via zigbuild (linux-arm64, windows-x64, windows-arm64)
-      cargo zigbuild --release --locked --target "$target" --bin shadowcrawl --bin shadowcrawl-mcp
+      cargo zigbuild --release --locked --target "$target" --bin cortex-scout --bin cortex-scout-mcp
       ;;
   esac
   pass "Built $target"
@@ -187,13 +187,13 @@ rm -rf "$DIST" && mkdir -p "$DIST"
 package_tar() {
   local target="$1" platform="$2"
   local src="$MCP/target/$target/release"
-  local dir="$DIST/shadowcrawl-$VERSION-$platform"
+  local dir="$DIST/cortex-scout-$VERSION-$platform"
   mkdir -p "$dir"
-  cp "$src/shadowcrawl"     "$dir/"
-  cp "$src/shadowcrawl-mcp" "$dir/"
+  cp "$src/cortex-scout"     "$dir/"
+  cp "$src/cortex-scout-mcp" "$dir/"
   cp "$REPO_ROOT/LICENSE" "$REPO_ROOT/README.md" "$REPO_ROOT/server.json" "$dir/"
   echo "$VERSION" > "$dir/VERSION"
-  tar -C "$dir" -czf "$DIST/shadowcrawl-$VERSION-$platform.tar.gz" .
+  tar -C "$dir" -czf "$DIST/cortex-scout-$VERSION-$platform.tar.gz" .
   rm -rf "$dir"
   pass "Packaged $platform.tar.gz"
 }
@@ -201,13 +201,13 @@ package_tar() {
 package_zip() {
   local target="$1" platform="$2"
   local src="$MCP/target/$target/release"
-  local dir="$DIST/shadowcrawl-$VERSION-$platform"
+  local dir="$DIST/cortex-scout-$VERSION-$platform"
   mkdir -p "$dir"
-  cp "$src/shadowcrawl.exe"     "$dir/"
-  cp "$src/shadowcrawl-mcp.exe" "$dir/"
+  cp "$src/cortex-scout.exe"     "$dir/"
+  cp "$src/cortex-scout-mcp.exe" "$dir/"
   cp "$REPO_ROOT/LICENSE" "$REPO_ROOT/README.md" "$REPO_ROOT/server.json" "$dir/"
   echo "$VERSION" > "$dir/VERSION"
-  (cd "$dir" && zip -qr "$DIST/shadowcrawl-$VERSION-$platform.zip" .)
+  (cd "$dir" && zip -qr "$DIST/cortex-scout-$VERSION-$platform.zip" .)
   rm -rf "$dir"
   pass "Packaged $platform.zip"
 }
@@ -234,10 +234,10 @@ printf "%s\n" "$RELEASE_NOTES" > "$NOTES_FILE"
 gh release create "$TAG" \
   "$DIST"/*.tar.gz \
   "$DIST"/*.zip \
-  --title "ShadowCrawl $TAG" \
+  --title "Cortex Scout $TAG" \
   --notes-file "$NOTES_FILE" \
   --repo "$REPO_SLUG"
 
 rm -f "$NOTES_FILE" || true
 
-pass "ALL DONE — ShadowCrawl $TAG is live on GitHub Releases"
+pass "ALL DONE — Cortex Scout $TAG is live on GitHub Releases"

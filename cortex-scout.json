@@ -1,5 +1,5 @@
 {
-  "_comment": "ShadowCrawl configuration. All fields are optional — env vars (and hardcoded defaults) are used as fallback for any missing key.",
+  "_comment": "Cortex Scout configuration. All fields are optional — env vars (and hardcoded defaults) are used as fallback for any missing key.",
   "deep_research": {
     "_doc": {
       "enabled": "Set false to hide the deep_research tool entirely (same as DEEP_RESEARCH_ENABLED=0).",

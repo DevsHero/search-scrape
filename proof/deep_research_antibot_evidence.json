@@ -2,8 +2,8 @@
   "_proof_meta": {
     "label": "Anti-bot bypass Cloudflare + stealth",
     "tool": "deep_research",
-    "shadowcrawl_version": "3.1.0",
-    "binary": "shadowcrawl-mcp v3.1.0 (release, all-features)",
+    "cortex-scout_version": "3.1.0",
+    "binary": "cortex-scout-mcp v3.1.0 (release, all-features)",
     "captured_at": "2026-02-24",
     "synthesis_model": "lfm2-2.6b",
     "synthesis_endpoint": "http://localhost:1234/v1 (LM Studio)",

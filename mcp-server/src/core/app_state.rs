@@ -21,7 +21,7 @@ pub struct AppState {
     // Shared persistent browser instance (tab reuse — avoids launch overhead per request).
     pub browser_pool: Option<std::sync::Arc<crate::scraping::browser_manager::BrowserPool>>,
 
-    /// File-based config loaded from `shadowcrawl.json` (env-var fallback for all fields).
+    /// File-based config loaded from `cortex-scout.json` (env-var fallback for all fields).
     pub shadow_config: std::sync::Arc<crate::core::config::ShadowConfig>,
 }
 

@@ -33,12 +33,12 @@ Note: the script also uses `CHANGELOG.md` → `Unreleased` as the GitHub Release
 
 ```bash
 cd mcp-server
-cargo build --release --bin shadowcrawl --bin shadowcrawl-mcp
+cargo build --release --bin cortex-scout --bin cortex-scout-mcp
 ```
 
 Optional (HITL / visible browser):
 
 ```bash
 cd mcp-server
-cargo build --release --features non_robot_search --bin shadowcrawl --bin shadowcrawl-mcp
+cargo build --release --features non_robot_search --bin cortex-scout --bin cortex-scout-mcp
 ```

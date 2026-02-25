@@ -1,14 +1,14 @@
 //! Session cookie persistence — shared load/inject helpers.
 //!
 //! After a successful `human_auth_session` / `non_robot_search` HITL flow the
-//! browser cookies are saved to `~/.shadowcrawl/sessions/{domain_key}.json`.
+//! browser cookies are saved to `~/.cortex-scout/sessions/{domain_key}.json`.
 //! This module provides companion helpers to *load* those cookies and *inject*
 //! them into any CDP page so future scrapes of the same domain are
 //! automatically authenticated — without any user interaction.
 //!
 //! Session metadata (expiry, needs_auth flag, last_success) is tracked by the
 //! companion [`super::auth_registry`] module which maintains
-//! `~/.shadowcrawl/auth_map.json`.
+//! `~/.cortex-scout/auth_map.json`.
 
 use tracing::{info, warn};
 
@@ -52,7 +52,7 @@ pub fn parent_domain_key(host: &str) -> Option<String> {
 fn session_path_by_key(key: &str) -> Option<std::path::PathBuf> {
     let home = dirs::home_dir()?;
     Some(
-        home.join(".shadowcrawl")
+        home.join(".cortex-scout")
             .join("sessions")
             .join(format!("{}.json", key)),
     )

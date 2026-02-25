@@ -1,7 +1,7 @@
-# 🥷 ShadowCrawl MCP — v3.1.0
+# 🥷 Cortex Scout MCP — v3.1.0
 
 <div align="center">
-<img src="media/logo.svg" alt="ShadowCrawl Logo" width="180">
+<img src="media/logo.svg" alt="Cortex Scout Logo" width="180">
 <h3><b>Search Smarter. Scrape Anything. Block Nothing.</b></h3>
 <p><b>The God-Tier Intelligence Engine for AI Agents</b></p>
 <p><i>The Sovereign, Self-Hosted Alternative to Firecrawl, Jina, and Tavily.</i></p>
@@ -9,20 +9,20 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 [![MCP](https://img.shields.io/badge/Protocol-MCP-blue.svg)](https://modelcontextprotocol.io/)
-[![CI](https://github.com/DevsHero/ShadowCrawl/actions/workflows/ci.yml/badge.svg)](https://github.com/DevsHero/ShadowCrawl/actions/workflows/ci.yml)
+[![CI](https://github.com/cortex-works/cortex-scout/actions/workflows/ci.yml/badge.svg)](https://github.com/cortex-works/cortex-scout/actions/workflows/ci.yml)
 </div>
 
 ---
 
-**ShadowCrawl** is not just a scraper or a search wrapper — it is a **complete intelligence layer** purpose-built for AI Agents. ShadowCrawl ships a **native Rust meta-search engine** running inside the same binary. Zero extra containers. Parallel engines. LLM-grade clean output.
+**Cortex Scout** is not just a scraper or a search wrapper — it is a **complete intelligence layer** purpose-built for AI Agents. Cortex Scout ships a **native Rust meta-search engine** running inside the same binary. Zero extra containers. Parallel engines. LLM-grade clean output.
 
-When every other tool gets blocked, ShadowCrawl doesn't retreat — it **escalates**: native engines → native Chromium CDP headless → Human-In-The-Loop (HITL) nuclear option. You always get results.
+When every other tool gets blocked, Cortex Scout doesn't retreat — it **escalates**: native engines → native Chromium CDP headless → Human-In-The-Loop (HITL) nuclear option. You always get results.
 
 ---
 
 ## ⚡ God-Tier Internal Meta-Search (v3.0.0)
 
-ShadowCrawl v3.0.0 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
+Cortex Scout v3.0.0 ships a **100% Rust-native metasearch engine** that queries 4 engines in parallel and fuses results intelligently:
 
 | Engine | Coverage | Notes |
 |--------|----------|-------|
@@ -53,7 +53,7 @@ ShadowCrawl v3.0.0 ships a **100% Rust-native metasearch engine** that queries 4
 
 ## � Deep Research Engine (v3.1.0)
 
-ShadowCrawl v3.1.0 ships a self-contained **multi-hop research pipeline** as a first-class MCP tool — no external infra, no key required for local LLMs.
+Cortex Scout v3.1.0 ships a self-contained **multi-hop research pipeline** as a first-class MCP tool — no external infra, no key required for local LLMs.
 
 ### How it works
 
@@ -71,9 +71,9 @@ ShadowCrawl v3.1.0 ships a self-contained **multi-hop research pipeline** as a f
 | **LM Studio** (local) | `http://localhost:1234/v1` | No |
 | Any OpenAI-compatible proxy | custom URL | Optional |
 
-### Configuration (`shadowcrawl.json`)
+### Configuration (`cortex-scout.json`)
 
-Create `shadowcrawl.json` in the same directory as the binary (or repo root) to configure the engine — no rebuild needed. All fields are optional; env vars are used as fallback.
+Create `cortex-scout.json` in the same directory as the binary (or repo root) to configure the engine — no rebuild needed. All fields are optional; env vars are used as fallback.
 
 ```json
 {
@@ -90,7 +90,7 @@ Create `shadowcrawl.json` in the same directory as the binary (or repo root) to 
 }
 ```
 
-**Priority:** `shadowcrawl.json` field → env var fallback → hardcoded default.
+**Priority:** `cortex-scout.json` field → env var fallback → hardcoded default.
 
 ### Build flags
 
@@ -128,18 +128,18 @@ cargo build --release --no-default-features --features non_robot_search
 
 ## 🏗 Zero-Bloat Architecture
 
-ShadowCrawl is **pure binary**: a single Rust executable exposes MCP tools (stdio) and an optional HTTP server — no Docker, no sidecars.
+Cortex Scout is **pure binary**: a single Rust executable exposes MCP tools (stdio) and an optional HTTP server — no Docker, no sidecars.
 
 ---
 
 ## 💎 The Nuclear Option: Human Auth Session (v3.0.0)
 
-When standard automation fails (Cloudflare, CAPTCHA, complex logins), ShadowCrawl **activates the human element.**
+When standard automation fails (Cloudflare, CAPTCHA, complex logins), Cortex Scout **activates the human element.**
 
 ### 🛂 `human_auth_session` — The "Unblocker"
 This is our signature tool that surpasses all competitors. While most scrapers fail on login-walled content, `human_auth_session` opens a **real, visible browser window** for you to solve the challenge. 
 
-Once you click **FINISH & RETURN**, all authentication cookies are transparently captured and persisted in `~/.shadowcrawl/sessions/`. Subsequent requests to the same domain automatically inject these cookies — making future fetches **fully automated** and **effortless.**
+Once you click **FINISH & RETURN**, all authentication cookies are transparently captured and persisted in `~/.cortex-scout/sessions/`. Subsequent requests to the same domain automatically inject these cookies — making future fetches **fully automated** and **effortless.**
 
 - 🟢 **Instruction Overlay** — A native green banner guides the user on what to solve.
 - 🍪 **Persistent Sessions** — Solve once, scrape forever. No need to log in manually again for weeks.
@@ -173,12 +173,12 @@ Download the latest release assets from GitHub Releases and run one of:
 
 Prebuilt assets are published for: `windows-x64`, `windows-arm64`, `linux-x64`, `linux-arm64`.
 
-- `shadowcrawl-mcp` — MCP stdio server (recommended for VS Code / Cursor / Claude Desktop)
-- `shadowcrawl` — HTTP server (default port `5000`; override via `--port`, `PORT`, or `SHADOWCRAWL_PORT`)
+- `cortex-scout-mcp` — MCP stdio server (recommended for VS Code / Cursor / Claude Desktop)
+- `cortex-scout` — HTTP server (default port `5000`; override via `--port`, `PORT`, or `CORTEX_SCOUT_PORT`)
 
 Confirm the HTTP server is alive:
 ```bash
-./shadowcrawl --port 5000
+./cortex-scout --port 5000
 curl http://localhost:5000/health
 ```
 
@@ -197,14 +197,14 @@ cargo build --release --all-features
 ### Option B — Build / Install from Source
 
 ```bash
-git clone https://github.com/DevsHero/shadowcrawl.git
-cd shadowcrawl
+git clone https://github.com/DevsHero/cortex-scout.git
+cd cortex-scout
 ```
 
 Build:
 ```bash
 cd mcp-server
-cargo build --release --features non_robot_search --bin shadowcrawl --bin shadowcrawl-mcp
+cargo build --release --features non_robot_search --bin cortex-scout --bin cortex-scout-mcp
 ```
 
 Or install (puts binaries into your Cargo bin directory):
@@ -213,8 +213,8 @@ cargo install --path mcp-server --locked
 ```
 
 Binaries land at:
-- `target/release/shadowcrawl` — HTTP server (default port `5000`; override via `--port`, `PORT`, or `SHADOWCRAWL_PORT`)
-- `target/release/shadowcrawl-mcp` — MCP stdio server
+- `target/release/cortex-scout` — HTTP server (default port `5000`; override via `--port`, `PORT`, or `CORTEX_SCOUT_PORT`)
+- `target/release/cortex-scout-mcp` — MCP stdio server
 
 Prerequisites for HITL:
 - **Brave Browser** ([brave.com/download](https://brave.com/download/))
@@ -227,7 +227,7 @@ Platform guides: [docs/window_setup.md](docs/window_setup.md) · [docs/ubuntu_se
 
 ---
 
-## ✅ Agent Best Practices (ShadowCrawl Rules)
+## ✅ Agent Best Practices (Cortex Scout Rules)
 
 Use this exact decision flow to get the highest-quality results with minimal tokens:
 
@@ -256,7 +256,7 @@ Structured extraction (schema-first):
 
 ## 🧩 MCP Integration
 
-ShadowCrawl exposes all tools via the **Model Context Protocol** (stdio transport).
+Cortex Scout exposes all tools via the **Model Context Protocol** (stdio transport).
 
 ### VS Code / Copilot Chat 
 
@@ -265,18 +265,18 @@ Add to your MCP config (`~/.config/Code/User/mcp.json`):
 ```jsonc
 {
   "servers": {
-    "shadowcrawl": {
+    "cortex-scout": {
       "type": "stdio",
       "command": "env",
       "args": [
         "RUST_LOG=info",
         "SEARCH_ENGINES=google,bing,duckduckgo,brave",
-        "LANCEDB_URI=/YOUR_PATH/shadowcrawl/lancedb",
+        "LANCEDB_URI=/YOUR_PATH/cortex-scout/lancedb",
         "HTTP_TIMEOUT_SECS=30",
         "MAX_CONTENT_CHARS=10000",
-        "IP_LIST_PATH=/YOUR_PATH/shadowcrawl/ip.txt",
-        "PROXY_SOURCE_PATH=/YOUR_PATH/shadowcrawl/proxy_source.json",
-        "/YOUR_PATH/shadowcrawl/mcp-server/target/release/shadowcrawl-mcp"
+        "IP_LIST_PATH=/YOUR_PATH/cortex-scout/ip.txt",
+        "PROXY_SOURCE_PATH=/YOUR_PATH/cortex-scout/proxy_source.json",
+        "/YOUR_PATH/cortex-scout/mcp-server/target/release/cortex-scout-mcp"
       ]
     }
   }
@@ -285,7 +285,7 @@ Add to your MCP config (`~/.config/Code/User/mcp.json`):
 
 ### Cursor / Claude Desktop
 
-Use the same stdio setup as VS Code (run `shadowcrawl-mcp` locally and pass env vars via `env` or your client’s `env` field).
+Use the same stdio setup as VS Code (run `cortex-scout-mcp` locally and pass env vars via `env` or your client’s `env` field).
 
 📖 Full multi-IDE guide: [docs/IDE_SETUP.md](docs/IDE_SETUP.md)
 
@@ -301,7 +301,7 @@ Use the same stdio setup as VS Code (run `shadowcrawl-mcp` locally and pass env 
 | `SEARCH_CDP_FALLBACK` | `true` if browser found | Auto-retry blocked engines via native Chromium CDP (alias: `SEARCH_BROWSERLESS_FALLBACK`) |
 | `SEARCH_SIMULATE_BLOCK` | — | Force blocked path for testing: `duckduckgo,bing` or `all` |
 | `LANCEDB_URI` | — | Path for semantic research memory (optional) |
-| `SHADOWCRAWL_NEUROSIPHON` | `1` (enabled) | Set to `0` / `false` / `off` to disable all NeuroSiphon techniques (import nuking, SPA extraction, semantic shaving, search reranking) |
+| `CORTEX_SCOUT_NEUROSIPHON` | `1` (enabled) | Set to `0` / `false` / `off` to disable all NeuroSiphon techniques (import nuking, SPA extraction, semantic shaving, search reranking) |
 | `HTTP_TIMEOUT_SECS` | `30` | Per-request timeout |
 | `OUTBOUND_LIMIT` | `32` | Max concurrent outbound connections |
 | `MAX_CONTENT_CHARS` | `10000` | Max chars per scraped document |
@@ -320,7 +320,7 @@ Use the same stdio setup as VS Code (run `shadowcrawl-mcp` locally and pass env 
 
 ## 🏆 Comparison
 
-| Feature | Firecrawl / Jina / Tavily | ShadowCrawl v3.1.0 |
+| Feature | Firecrawl / Jina / Tavily | Cortex Scout v3.1.0 |
 |---------|--------------------------|-------------------|
 | **Deep Research** | None / paid add-on | **Native: multi-hop + LLM synthesis (local or cloud)** |
 | **Cost** | $49–$499/mo | **$0 — self-hosted** |
@@ -339,7 +339,7 @@ Use the same stdio setup as VS Code (run `shadowcrawl-mcp` locally and pass env 
 
 ## 🤖 Agent Optimal Setup: IDE Copilot Instructions
 
-ShadowCrawl works best when your AI agent **knows the operational rules** before it starts — which tool to call first, when to rotate proxies, and when *not* to use `extract_structured`. Without these rules, agents waste tokens re-fetching cached data and can misuse tools on incompatible sources.
+Cortex Scout works best when your AI agent **knows the operational rules** before it starts — which tool to call first, when to rotate proxies, and when *not* to use `extract_structured`. Without these rules, agents waste tokens re-fetching cached data and can misuse tools on incompatible sources.
 
 The complete rules file lives at [`.github/copilot-instructions.md`](.github/copilot-instructions.md) (VS Code / GitHub Copilot) and is also available as [`.clinerules`](.clinerules) for Cline. Copy the block below into the IDE-specific file for your editor.
 
@@ -350,7 +350,7 @@ The complete rules file lives at [`.github/copilot-instructions.md`](.github/cop
 Create (or append to) `.github/copilot-instructions.md` in your workspace root:
 
 ```markdown
-## MCP Usage Guidelines — ShadowCrawl
+## MCP Usage Guidelines — Cortex Scout
 
 ### Shadowcrawl Priority Rules
 
@@ -447,8 +447,8 @@ scrape_url (clean_json + strict_relevance + query)
 
 ### Added
 
-- **`human_auth_session` (The Nuclear Option)**: Launches a visible browser for human login/CAPTCHA solving. Captures and persists full authentication cookies to `~/.shadowcrawl/sessions/{domain}.json`. Enables full automation for protected URLs after a single manual session.
-- **Instruction Overlay**: `human_auth_session` now displays a custom green "ShadowCrawl" instruction banner on top of the browser window to guide users through complex auth walls.
+- **`human_auth_session` (The Nuclear Option)**: Launches a visible browser for human login/CAPTCHA solving. Captures and persists full authentication cookies to `~/.cortex-scout/sessions/{domain}.json`. Enables full automation for protected URLs after a single manual session.
+- **Instruction Overlay**: `human_auth_session` now displays a custom green "Cortex Scout" instruction banner on top of the browser window to guide users through complex auth walls.
 - **Persistent Session Auto-Injection**: `web_fetch`, `web_crawl`, and `visual_scout` now automatically check for and inject matching cookies from the local session store.
 - **`extract_structured` / `fetch_then_extract`**: new optional params `placeholder_word_threshold` (int, default 10) and `placeholder_empty_ratio` (float 0–1, default 0.9) allow agents to tune placeholder detection sensitivity per-call.
 - **`web_crawl`**: new optional `max_chars` param (default 10 000) caps total JSON output size to prevent workspace storage spill.
@@ -477,11 +477,11 @@ scrape_url (clean_json + strict_relevance + query)
 
 ### ☕ Acknowledgments & Support
 
-ShadowCrawl is built with ❤️ by a **solo developer** for the open-source AI community.
+Cortex Scout is built with ❤️ by a **solo developer** for the open-source AI community.
 If this tool saved you from a $500/mo scraping API bill:
 
 - ⭐ **Star the repo** — it helps others discover this
-- 🐛 **Found a bug?** [Open an issue](https://github.com/DevsHero/shadowcrawl/issues)
+- 🐛 **Found a bug?** [Open an issue](https://github.com/DevsHero/cortex-scout/issues)
 - 💡 **Feature request?** Start a discussion
 - ☕ **Fuel more updates:**
 

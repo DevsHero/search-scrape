@@ -8,7 +8,7 @@
 /// * `keep_open` — leaves the browser window open after content is extracted so
 ///   the user can keep browsing if needed.
 /// * Automatic session-cookie persistence: after the user completes auth, cookies
-///   are saved to `~/.shadowcrawl/sessions/{domain}.json` so future requests to
+///   are saved to `~/.cortex-scout/sessions/{domain}.json` so future requests to
 ///   the same domain can reuse the session without another HITL interruption.
 ///
 /// In the **Autonomous Auth-Handling Protocol** this tool is invoked in Step 3
@@ -160,7 +160,7 @@ pub async fn handle(
         Ok(Json(McpCallResponse {
             content: vec![McpContent {
                 content_type: "text".to_string(),
-                text: "human_auth_session is not enabled in this running binary (feature flag: `non_robot_search`). Rebuild and restart using a build with the `non_robot_search` feature, for example: `cd mcp-server && cargo build --release --features non_robot_search --bin shadowcrawl --bin shadowcrawl-mcp`. If you're using VS Code MCP stdio, restart the MCP server after rebuilding.".to_string(),
+                text: "human_auth_session is not enabled in this running binary (feature flag: `non_robot_search`). Rebuild and restart using a build with the `non_robot_search` feature, for example: `cd mcp-server && cargo build --release --features non_robot_search --bin cortex-scout --bin cortex-scout-mcp`. If you're using VS Code MCP stdio, restart the MCP server after rebuilding.".to_string(),
             }],
             is_error: true,
         }))

@@ -1,4 +1,4 @@
-use shadowcrawl::AppState;
+use cortex_scout::AppState;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -31,9 +31,9 @@ async fn main() -> anyhow::Result<()> {
     let state = Arc::new(AppState::new(http_client));
 
     // This uses the same logic as the MCP tool `proxy_control` action=grab.
-    let result = shadowcrawl::features::proxy_grabber::grab_proxies(
+    let result = cortex_scout::features::proxy_grabber::grab_proxies(
         &state,
-        shadowcrawl::features::proxy_grabber::GrabParams {
+        cortex_scout::features::proxy_grabber::GrabParams {
             limit: Some(target_min),
             proxy_type: Some("http".to_string()),
             random: false,

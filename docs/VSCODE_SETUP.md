@@ -1,17 +1,17 @@
 # VS Code MCP Setup (Zero-Docker)
 
-ShadowCrawl is **pure binary** and exposes an MCP server over **stdio** via the `shadowcrawl-mcp` executable.
+Cortex Scout is **pure binary** and exposes an MCP server over **stdio** via the `cortex-scout-mcp` executable.
 
 ## 1) Get the binary
 
 Choose one:
 
-- Download `shadowcrawl-mcp` from GitHub Releases
+- Download `cortex-scout-mcp` from GitHub Releases
 - Or build it locally:
 
 ```bash
 cd mcp-server
-cargo build --release --features non_robot_search --bin shadowcrawl-mcp
+cargo build --release --features non_robot_search --bin cortex-scout-mcp
 ```
 
 ## 2) Configure VS Code MCP
@@ -21,7 +21,7 @@ In VS Code settings (workspace `settings.json`), add an MCP server pointing at y
 ```json
 {
   "mcp.servers": {
-    "shadowcrawl": {
+    "cortex-scout": {
       "type": "stdio",
       "command": "env",
       "args": [
@@ -37,7 +37,7 @@ In VS Code settings (workspace `settings.json`), add an MCP server pointing at y
         "MAX_LINKS=100",
         "IP_LIST_PATH=/absolute/path/to/search-scrape/ip.txt",
         "PROXY_SOURCE_PATH=/absolute/path/to/search-scrape/proxy_source.json",
-        "/absolute/path/to/search-scrape/mcp-server/target/release/shadowcrawl-mcp"
+        "/absolute/path/to/search-scrape/mcp-server/target/release/cortex-scout-mcp"
       ]
     }
   }
@@ -80,4 +80,4 @@ Full guide (Brave/profile/consent/kill-switch):
 ## Troubleshooting
 
 - If tools don’t appear: restart VS Code (Cmd+Q).
-- macOS preflight (especially for HITL): run `shadowcrawl-mcp --setup` (or `shadowcrawl --setup`).
+- macOS preflight (especially for HITL): run `cortex-scout-mcp --setup` (or `cortex-scout --setup`).

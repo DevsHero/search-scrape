@@ -238,14 +238,14 @@ async fn llm_synthesize_report_openai(
         return Ok(None);
     }
 
-    // API key: shadowcrawl.json → OPENAI_API_KEY env var → skip synthesis.
+    // API key: cortex-scout.json → OPENAI_API_KEY env var → skip synthesis.
     // Empty string is valid for key-less local endpoints (Ollama / LM Studio).
     let api_key = match dr_cfg.resolve_api_key() {
         Some(k) => k,
         None => return Ok(None), // no key configured anywhere — skip synthesis
     };
 
-    // LLM endpoint + model: shadowcrawl.json → env vars → hardcoded defaults.
+    // LLM endpoint + model: cortex-scout.json → env vars → hardcoded defaults.
     let base_url = dr_cfg.resolve_base_url();
     let model = dr_cfg.resolve_model();
 

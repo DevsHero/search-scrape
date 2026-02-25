@@ -64,7 +64,7 @@ impl McpService {
         let report = crate::setup::check_all(crate::setup::SetupOptions::default()).await;
         info!("{}", report.summarize_for_logs());
         if report.has_failures() {
-            warn!("shadow-setup: startup checklist found failures; run shadowcrawl-mcp --setup for guided remediation");
+            warn!("shadow-setup: startup checklist found failures; run cortex-scout-mcp --setup for guided remediation");
             report.print_action_required_blocks();
         }
 
@@ -102,7 +102,7 @@ impl McpService {
                 ),
             }
         } else {
-            info!("Semantic memory disabled (SHADOWCRAWL_MEMORY_DISABLED=1)");
+            info!("Semantic memory disabled (CORTEX_SCOUT_MEMORY_DISABLED=1)");
         }
 
         let ip_list_path = env::var("IP_LIST_PATH").unwrap_or_else(|_| "ip.txt".to_string());

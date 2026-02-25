@@ -104,9 +104,9 @@ Follow this sequence for any non-trivial refactor (especially renames, signature
 - `propagation_checklist` automatically matches common casing variants of `symbol_name` (PascalCase / camelCase / snake_case).
 - When a symbol is renamed across boundaries (e.g. Rust `TrainingEngineCapabilities` → TS `trainingCaps`), pass `aliases: ["trainingCaps"]` to catch cross-language usage without heavy import tracing.
 
-# MCP Usage Guidelines — ShadowCrawl
+# MCP Usage Guidelines — Cortex Scout
 
-These rules encode the optimal agent workflow for ShadowCrawl tools.
+These rules encode the optimal agent workflow for Cortex Scout tools.
 They are hardcoded here so every AI agent working in this repository follows
 the same efficient, hallucination-resistant research process.
 
@@ -221,7 +221,7 @@ Input constraint:
 - Use ONLY when both direct fetch AND proxy rotation have failed
 - Intended for: heavy Cloudflare challenges, CAPTCHA, login walls
 - Do NOT use as a first attempt for any site — always try automated methods first
-- After a successful HITL session, cookies are saved to `~/.shadowcrawl/sessions/{domain}.json` — future `web_fetch` calls to that domain are automatically authenticated
+- After a successful HITL session, cookies are saved to `~/.cortex-scout/sessions/{domain}.json` — future `web_fetch` calls to that domain are automatically authenticated
 
 ---
 

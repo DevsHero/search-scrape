@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use shadowcrawl::types::{SearchRequest, SearchResponse, SearchResult};
+use cortex_scout::types::{SearchRequest, SearchResponse, SearchResult};
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
         .timeout(Duration::from_secs(20))
         .build()?;
 
-    println!("\n=== ShadowCrawl Side-by-Side Search Compare ===");
+    println!("\n=== Cortex Scout Side-by-Side Search Compare ===");
     println!("native: {}", targets[0].base_url);
     println!("legacy: {}", targets[1].base_url);
 

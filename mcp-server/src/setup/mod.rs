@@ -124,7 +124,7 @@ impl SetupReport {
 
 impl fmt::Display for SetupReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "ShadowCrawl Pre-flight Checklist")?;
+        writeln!(f, "Cortex Scout Pre-flight Checklist")?;
         writeln!(f, "{}", "=".repeat(32))?;
         for c in &self.checks {
             writeln!(
@@ -255,7 +255,7 @@ fn check_storage_dirs() -> SetupCheck {
     let Some(home) = dirs::home_dir() else {
         return SetupCheck {
             id: "storage_dirs".to_string(),
-            title: "Storage access (~/.shadowcrawl/*)".to_string(),
+            title: "Storage access (~/.cortex-scout/*)".to_string(),
             status: CheckStatus::Fail,
             details: "Unable to resolve home directory.".to_string(),
             actions: vec![ActionRequired {
@@ -266,7 +266,7 @@ fn check_storage_dirs() -> SetupCheck {
         };
     };
 
-    let base = home.join(".shadowcrawl");
+    let base = home.join(".cortex-scout");
     let data = base.join("data");
     let logs = base.join("logs");
 
@@ -278,14 +278,14 @@ fn check_storage_dirs() -> SetupCheck {
         if let Err(e) = std::fs::create_dir_all(dir) {
             return SetupCheck {
                 id: "storage_dirs".to_string(),
-                title: "Storage access (~/.shadowcrawl/*)".to_string(),
+                title: "Storage access (~/.cortex-scout/*)".to_string(),
                 status: CheckStatus::Fail,
                 details: format!("Failed to create {}: {}", dir.display(), e),
                 actions: vec![ActionRequired {
                     title: "Fix permissions".to_string(),
                     steps: vec![
                         format!("Create directories manually: {}", dir.display()),
-                        "Ensure the user running ShadowCrawl has write permission.".to_string(),
+                        "Ensure the user running Cortex Scout has write permission.".to_string(),
                     ],
                     open_url: None,
                 }],
@@ -299,14 +299,14 @@ fn check_storage_dirs() -> SetupCheck {
     if let Err(e) = std::fs::write(&probe, b"ok") {
         return SetupCheck {
             id: "storage_dirs".to_string(),
-            title: "Storage access (~/.shadowcrawl/*)".to_string(),
+            title: "Storage access (~/.cortex-scout/*)".to_string(),
             status: CheckStatus::Fail,
             details: format!("Directory not writable: {} ({})", data.display(), e),
             actions: vec![ActionRequired {
                 title: "Fix directory permissions".to_string(),
                 steps: vec![
                     format!("Ensure writable: {}", data.display()),
-                    "Try: `chmod -R u+rwX ~/.shadowcrawl`".to_string(),
+                    "Try: `chmod -R u+rwX ~/.cortex-scout`".to_string(),
                 ],
                 open_url: None,
             }],
@@ -316,7 +316,7 @@ fn check_storage_dirs() -> SetupCheck {
 
     SetupCheck {
         id: "storage_dirs".to_string(),
-        title: "Storage access (~/.shadowcrawl/*)".to_string(),
+        title: "Storage access (~/.cortex-scout/*)".to_string(),
         status: CheckStatus::Pass,
         details: if created.is_empty() {
             format!("Writable: {} and {}", data.display(), logs.display())
@@ -483,7 +483,7 @@ fn check_port_available(port: u16) -> SetupCheck {
                 title: "Free the port or change deployment".to_string(),
                 steps: vec![
                     format!("Stop the service using port {}.", port),
-                    "Or run ShadowCrawl on a different port (if supported by your deployment)."
+                    "Or run Cortex Scout on a different port (if supported by your deployment)."
                         .to_string(),
                 ],
                 open_url: None,

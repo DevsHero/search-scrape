@@ -420,7 +420,7 @@ impl RustScraper {
     // ─────────────────────────────────────────────────────────────────────────
     fn visual_noise_filter_script() -> &'static str {
         r#"
-(function shadowcrawlNoiseFilter() {
+(function cortex-scoutNoiseFilter() {
     'use strict';
 
     var viewportW = window.innerWidth  || 1920;
@@ -495,7 +495,7 @@ impl RustScraper {
     }
 
     // Report how many nodes were pruned (visible in DevTools console)
-    console.debug('[ShadowCrawl] Visual noise filter removed ' + removed + ' elements');
+    console.debug('[Cortex Scout] Visual noise filter removed ' + removed + ' elements');
     return removed;
 })();
 "#

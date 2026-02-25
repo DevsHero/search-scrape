@@ -41,7 +41,7 @@ fn check_accessibility(options: &SetupOptions) -> SetupCheck {
     let trusted_before = unsafe { AXIsProcessTrusted() };
 
     let details = format!(
-        "Global input hooks (kill switch / input locking) require macOS Accessibility permission. {}\n\nNotes:\n- macOS only shows apps in the Accessibility list AFTER they request permission.\n- If ShadowCrawl is launched by VS Code, you may need to enable Accessibility for VS Code as well.",
+        "Global input hooks (kill switch / input locking) require macOS Accessibility permission. {}\n\nNotes:\n- macOS only shows apps in the Accessibility list AFTER they request permission.\n- If Cortex Scout is launched by VS Code, you may need to enable Accessibility for VS Code as well.",
         interactive_hint(options)
     );
 
@@ -60,9 +60,9 @@ fn check_accessibility(options: &SetupOptions) -> SetupCheck {
     if matches!(options.mode, SetupRunMode::SetupFlag) {
         let result = MessageDialog::new()
             .set_level(MessageLevel::Info)
-            .set_title("ShadowCrawl Setup (macOS)")
+            .set_title("Cortex Scout Setup (macOS)")
             .set_description(
-                "ShadowCrawl uses global input hooks for the emergency kill switch and (optional) input locking.\n\nOpen Accessibility Settings now?",
+                "Cortex Scout uses global input hooks for the emergency kill switch and (optional) input locking.\n\nOpen Accessibility Settings now?",
             )
             .set_buttons(MessageButtons::OkCancel)
             .show();

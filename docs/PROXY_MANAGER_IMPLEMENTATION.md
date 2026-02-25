@@ -29,7 +29,7 @@ Example:
 ```bash
 IP_LIST_PATH="$PWD/ip.txt" \
 PROXY_SOURCE_PATH="$PWD/proxy_source.json" \
-./mcp-server/target/release/shadowcrawl-mcp
+./mcp-server/target/release/cortex-scout-mcp
 ```
 
 ## MCP tool

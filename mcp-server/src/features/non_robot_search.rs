@@ -247,7 +247,7 @@ async fn execute_manual_auth_flow_inner(
                 const b = document.createElement('div');
                 b.id = id;
                 b.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647;padding:10px 16px;border-radius:10px;background:rgba(20,20,24,0.92);color:#a0ffc0;font-family:system-ui,sans-serif;font-size:13px;font-weight:700;border:1px solid rgba(80,255,160,0.25);box-shadow:0 4px 16px rgba(0,0,0,0.4)';
-                b.textContent = '✅ ShadowCrawl: manual auth flow complete — browser left open as requested';
+                b.textContent = '✅ Cortex Scout: manual auth flow complete — browser left open as requested';
                 document.body.appendChild(b);
                 setTimeout(() => b.remove(), 15000);
             })()"#
@@ -329,7 +329,7 @@ async fn save_session_cookies_checked(
         .ok_or_else(|| {
             NonRobotSearchError::AutomationFailed("cannot locate home directory".to_string())
         })?
-        .join(".shadowcrawl")
+        .join(".cortex-scout")
         .join("sessions");
 
     std::fs::create_dir_all(&sessions_dir).map_err(|e| {
@@ -503,7 +503,7 @@ async fn execute_non_robot_search_inner(
                 const b = document.createElement('div');
                 b.id = id;
                 b.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647;padding:10px 16px;border-radius:10px;background:rgba(20,20,24,0.92);color:#a0ffc0;font-family:system-ui,sans-serif;font-size:13px;font-weight:700;border:1px solid rgba(80,255,160,0.25);box-shadow:0 4px 16px rgba(0,0,0,0.4)';
-                b.textContent = '✅ ShadowCrawl: content extracted — browser left open as requested';
+                b.textContent = '✅ Cortex Scout: content extracted — browser left open as requested';
                 document.body.appendChild(b);
                 setTimeout(() => b.remove(), 15000);
             })()"#
@@ -668,7 +668,7 @@ async fn run_pre_scrape_janitor_v2(page: &chromiumoxide::Page) {
 
                 const all = Array.from(document.querySelectorAll('body *'));
                 for (const el of all) {
-                    if (!el || el.id === '__shadowcrawl_hitl_overlay__') continue;
+                    if (!el || el.id === '__cortex_scout_hitl_overlay__') continue;
                     const style = window.getComputedStyle(el);
                     if (!style) continue;
 
@@ -1225,7 +1225,7 @@ async fn wait_for_manual_finish_only(
             info!("non_robot_search: 🚀 Manual return button clicked (strict manual mode)");
             play_tone(Tone::Success);
             let _ = session.page.evaluate(
-                r#"(() => { const el = document.getElementById('__shadowcrawl_hitl_overlay__'); if (el) el.remove(); })()"#,
+                r#"(() => { const el = document.getElementById('__cortex_scout_hitl_overlay__'); if (el) el.remove(); })()"#,
             ).await;
             return Ok(true);
         }
@@ -1506,17 +1506,17 @@ async fn get_html_snapshot(page: &chromiumoxide::Page, closed: bool) -> anyhow::
 
 #[cfg(feature = "non_robot_search")]
 fn notify_and_prompt_user(cfg: &NonRobotSearchConfig) -> Result<(), NonRobotSearchError> {
-    let auto_allow = std::env::var("SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW")
+    let auto_allow = std::env::var("CORTEX_SCOUT_NON_ROBOT_AUTO_ALLOW")
         .ok()
         .as_deref()
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
         .unwrap_or(false);
 
     // Consent mode override:
-    // - SHADOWCRAWL_NON_ROBOT_CONSENT=dialog => always dialog (blocking)
-    // - SHADOWCRAWL_NON_ROBOT_CONSENT=tty    => always tty prompt
+    // - CORTEX_SCOUT_NON_ROBOT_CONSENT=dialog => always dialog (blocking)
+    // - CORTEX_SCOUT_NON_ROBOT_CONSENT=tty    => always tty prompt
     // - default/auto => dialog by default (server-safe)
-    let consent_mode = std::env::var("SHADOWCRAWL_NON_ROBOT_CONSENT")
+    let consent_mode = std::env::var("CORTEX_SCOUT_NON_ROBOT_CONSENT")
         .ok()
         .unwrap_or_else(|| "auto".to_string())
         .to_lowercase();
@@ -1535,12 +1535,12 @@ fn notify_and_prompt_user(cfg: &NonRobotSearchConfig) -> Result<(), NonRobotSear
 
     let notification_body = if auto_allow && !force_dialog {
         format!(
-            "ShadowCrawl will open a visible browser for HITL rendering.\n\n{}{}\n\nTip: If a site blocks automation, solve it in the browser and click FINISH & RETURN.\nEmergency stop: hold ESC for ~3 seconds.",
+            "Cortex Scout will open a visible browser for HITL rendering.\n\n{}{}\n\nTip: If a site blocks automation, solve it in the browser and click FINISH & RETURN.\nEmergency stop: hold ESC for ~3 seconds.",
             target_line, instruction_line
         )
     } else {
         format!(
-            "ShadowCrawl is requesting permission to open a visible browser and navigate to the target page.\n\n{}{}\n\nClick OK to continue or Cancel to abort.\nEmergency stop: hold ESC for ~3 seconds.",
+            "Cortex Scout is requesting permission to open a visible browser and navigate to the target page.\n\n{}{}\n\nClick OK to continue or Cancel to abort.\nEmergency stop: hold ESC for ~3 seconds.",
             target_line, instruction_line
         )
     };
@@ -1551,7 +1551,7 @@ fn notify_and_prompt_user(cfg: &NonRobotSearchConfig) -> Result<(), NonRobotSear
     let body = notification_body.clone();
     std::thread::spawn(move || {
         let _ = Notification::new()
-            .summary("ShadowCrawl: HITL browser control")
+            .summary("Cortex Scout: HITL browser control")
             .body(&body)
             .show();
     });
@@ -1560,7 +1560,7 @@ fn notify_and_prompt_user(cfg: &NonRobotSearchConfig) -> Result<(), NonRobotSear
 
     // AUTO_ALLOW bypasses the blocking consent dialog *unless* the operator forces dialog mode.
     if auto_allow && !force_dialog {
-        info!("non_robot_search: auto-allow enabled via SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW");
+        info!("non_robot_search: auto-allow enabled via CORTEX_SCOUT_NON_ROBOT_AUTO_ALLOW");
         return Ok(());
     }
 
@@ -1573,7 +1573,7 @@ fn notify_and_prompt_user(cfg: &NonRobotSearchConfig) -> Result<(), NonRobotSear
     // If we have an interactive TTY and consent mode allows it, use strict Enter/Esc flow.
     if use_tty_prompt {
         println!(
-            "ShadowCrawl needs screen access for high-fidelity rendering. Press [Enter] to allow or [Esc] to cancel."
+            "Cortex Scout needs screen access for high-fidelity rendering. Press [Enter] to allow or [Esc] to cancel."
         );
 
         loop {
@@ -1602,9 +1602,9 @@ fn notify_and_prompt_user(cfg: &NonRobotSearchConfig) -> Result<(), NonRobotSear
         }
     }
 
-    let title = "ShadowCrawl — Screen Access";
+    let title = "Cortex Scout — Screen Access";
     let message = format!(
-        "ShadowCrawl will open a visible browser window and navigate to:\n\n{}\n\nYou may need to complete CAPTCHA/login manually in the browser.\n\nClick OK to continue or Cancel to abort.\n\nEmergency stop: hold ESC for ~3 seconds.",
+        "Cortex Scout will open a visible browser window and navigate to:\n\n{}\n\nYou may need to complete CAPTCHA/login manually in the browser.\n\nClick OK to continue or Cancel to abort.\n\nEmergency stop: hold ESC for ~3 seconds.",
         cfg.url
     );
 
@@ -1638,7 +1638,7 @@ fn notify_and_prompt_user(cfg: &NonRobotSearchConfig) -> Result<(), NonRobotSear
 #[cfg(feature = "non_robot_search")]
 fn notify_and_prompt_user_tty() -> Result<(), NonRobotSearchError> {
     println!(
-        "ShadowCrawl needs screen access for high-fidelity rendering. Press [Enter] to allow or [Esc] to cancel."
+        "Cortex Scout needs screen access for high-fidelity rendering. Press [Enter] to allow or [Esc] to cancel."
     );
 
     loop {
@@ -1777,7 +1777,7 @@ fn windows_powershell_ok_cancel(title: &str, message: &str) -> Result<(), NonRob
 fn linux_gui_ok_cancel(title: &str, message: &str) -> Result<(), NonRobotSearchError> {
     // Best-effort desktop prompts. Prefer zenity/yad (GNOME-ish), then kdialog (KDE), then xmessage.
     // Add a timeout so a broken portal/GUI stack cannot freeze the MCP call indefinitely.
-    let timeout_secs: u64 = std::env::var("SHADOWCRAWL_NON_ROBOT_CONSENT_TIMEOUT_SECS")
+    let timeout_secs: u64 = std::env::var("CORTEX_SCOUT_NON_ROBOT_CONSENT_TIMEOUT_SECS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(120);
@@ -1912,7 +1912,7 @@ fn get_prelaunch_overlay_script(target_url: &str, instruction_message: Option<&s
     format!(
         r#"(() => {{
     try {{
-        const id = '__shadowcrawl_prelaunch_overlay__';
+        const id = '__cortex_scout_prelaunch_overlay__';
         if (document.getElementById(id)) return;
 
         const targetUrl = {url_json};
@@ -1943,7 +1943,7 @@ fn get_prelaunch_overlay_script(target_url: &str, instruction_message: Option<&s
         card.style.padding = '20px 20px 16px 20px';
 
         const h = document.createElement('div');
-        h.textContent = 'ShadowCrawl — HITL Rendering';
+        h.textContent = 'Cortex Scout — HITL Rendering';
         h.style.fontSize = '20px';
         h.style.fontWeight = '800';
         h.style.letterSpacing = '0.2px';
@@ -2056,7 +2056,7 @@ fn get_persistent_instruction_banner_script(instruction_message: &str) -> String
         icon.textContent = '\u26a1';
         icon.style.cssText = 'font-size:17px;flex-shrink:0;';
         var lbl = document.createElement('span');
-        lbl.textContent = 'ShadowCrawl:';
+        lbl.textContent = 'Cortex Scout:';
         lbl.style.cssText = 'font-weight:800;color:#3dffa0;flex-shrink:0;letter-spacing:0.2px;';
         var txt = document.createElement('span');
         txt.textContent = _sc_msg;
@@ -2093,7 +2093,7 @@ fn get_persistent_instruction_banner_script(instruction_message: &str) -> String
 }
 
 /// Extract all browser cookies after a successful auth flow and persist them to
-/// `~/.shadowcrawl/sessions/{sanitised_domain}.json`.
+/// `~/.cortex-scout/sessions/{sanitised_domain}.json`.
 ///
 /// Also computes the minimum cookie `expires` timestamp and registers the
 /// session with [`super::auth_registry`] so future scrapes can pre-emptively
@@ -2160,7 +2160,7 @@ async fn request_human_help(
     // Compact banner overlay inside the page.
     let _ = session.page.evaluate(
         r#"(() => {
-            const id = '__shadowcrawl_hitl_overlay__';
+            const id = '__cortex_scout_hitl_overlay__';
             if (document.getElementById(id)) return;
             const div = document.createElement('div');
             div.id = id;
@@ -2180,7 +2180,7 @@ async fn request_human_help(
             div.style.borderBottom = '2px solid rgba(255,50,50,0.8)';
             div.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
             div.style.fontFamily = 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
-            div.textContent = '🚨 SHADOWCRAWL NEEDS HELP: Complete verification to continue';
+            div.textContent = '🚨 CORTEX SCOUT NEEDS HELP: Complete verification to continue';
             document.documentElement.appendChild(div);
         })()"#,
     ).await;
@@ -2212,7 +2212,7 @@ async fn wait_for_human_resolution(
             play_tone(Tone::Success);
             // Remove overlay
             let _ = session.page.evaluate(
-                r#"(() => { const el = document.getElementById('__shadowcrawl_hitl_overlay__'); if (el) el.remove(); })()"#,
+                r#"(() => { const el = document.getElementById('__cortex_scout_hitl_overlay__'); if (el) el.remove(); })()"#,
             ).await;
             return Ok(());
         }
@@ -2236,10 +2236,10 @@ async fn wait_for_human_resolution(
             play_tone(Tone::Success);
             let _ = session.page.evaluate(
                 r#"(() => {
-                    const id = '__shadowcrawl_hitl_overlay__';
+                    const id = '__cortex_scout_hitl_overlay__';
                     const el = document.getElementById(id);
                     if (!el) return;
-                    el.textContent = '✅ SHADOWCRAWL: Verification looks complete — click FINISH & RETURN when ready';
+                    el.textContent = '✅ CORTEX SCOUT: Verification looks complete — click FINISH & RETURN when ready';
                     el.style.background = 'linear-gradient(90deg, rgba(30,170,90,0.95) 0%, rgba(40,200,120,0.95) 100%)';
                     el.style.borderBottom = '2px solid rgba(40,220,120,0.85)';
                 })()"#,
@@ -2571,11 +2571,11 @@ impl BrowserSession {
         // Create our single working tab with a recognizable title so we can close any extra tabs
         // (Brave often opens a default New Tab on startup, which users see as a second tab).
         let page = browser
-            .new_page("data:text/html,<title>ShadowCrawl</title>")
+            .new_page("data:text/html,<title>Cortex Scout</title>")
             .await?;
 
-        // Best-effort: close every other page tab, keeping only our ShadowCrawl tab.
-        let _ = close_extra_tabs_via_json(debugging_port, "ShadowCrawl").await;
+        // Best-effort: close every other page tab, keeping only our Cortex Scout tab.
+        let _ = close_extra_tabs_via_json(debugging_port, "Cortex Scout").await;
 
         // 🚨 INJECT CDP STEALTH SCRIPT BEFORE ANY NAVIGATION
         info!("non_robot_search: injecting CDP stealth script to bypass navigator.webdriver detection");
@@ -2782,11 +2782,11 @@ impl BrowserSession {
 
         let handler_task = spawn_handler_task(handler, Arc::clone(&self.closed));
         let page = browser
-            .new_page("data:text/html,<title>ShadowCrawl</title>")
+            .new_page("data:text/html,<title>Cortex Scout</title>")
             .await?;
 
         // Best-effort: close every other page tab.
-        let _ = close_extra_tabs_via_json(debugging_port, "ShadowCrawl").await;
+        let _ = close_extra_tabs_via_json(debugging_port, "Cortex Scout").await;
 
         // 🚨 INJECT CDP STEALTH SCRIPT BEFORE ANY NAVIGATION (RELAUNCH)
         info!("non_robot_search: injecting CDP stealth script on relaunch");
@@ -3036,7 +3036,7 @@ fn resolve_profile_dir(
 ) -> anyhow::Result<(Option<std::path::PathBuf>, Option<String>, bool)> {
     // Priority:
     // 1) Explicit tool argument user_profile_path
-    // 2) Env var SHADOWCRAWL_RENDER_PROFILE_DIR
+    // 2) Env var CORTEX_SCOUT_RENDER_PROFILE_DIR
     // 3) Auto-created temp directory (per-run)
 
     let explicit = user_profile_path
@@ -3044,7 +3044,7 @@ fn resolve_profile_dir(
         .filter(|s| !s.is_empty())
         .map(expand_tilde);
 
-    let env_dir = std::env::var("SHADOWCRAWL_RENDER_PROFILE_DIR")
+    let env_dir = std::env::var("CORTEX_SCOUT_RENDER_PROFILE_DIR")
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -3080,7 +3080,7 @@ fn resolve_profile_dir(
     let mut rng = rand::rng();
     let suffix: u64 = Uniform::new(1u64, u64::MAX).unwrap().sample(&mut rng);
     let dir = std::env::temp_dir().join(format!(
-        "shadowcrawl-render-profile-{}-{}",
+        "cortex-scout-render-profile-{}-{}",
         std::process::id(),
         suffix
     ));
@@ -3101,21 +3101,21 @@ fn expand_tilde(raw: &str) -> String {
 #[cfg(feature = "non_robot_search")]
 fn get_manual_return_button_script() -> String {
     r#"
-// ====== SHADOWCRAWL MANUAL RETURN BUTTON ======
+// ====== CORTEX SCOUT MANUAL RETURN BUTTON ======
 // Gives user explicit control over when to finish scraping
 
 (function() {
     // Prevent multiple injections
-    if (window.__shadowcrawl_button_injected) return;
-    window.__shadowcrawl_button_injected = true;
+    if (window.__cortex_scout_button_injected) return;
+    window.__cortex_scout_button_injected = true;
     
     // Signal flag for Rust to detect
-    window.__shadowcrawl_manual_finish = false;
+    window.__cortex_scout_manual_finish = false;
     
     // Create floating button
     const btn = document.createElement('button');
-    btn.id = 'shadowcrawl-finish-btn';
-    btn.innerHTML = '🚀 SHADOWCRAWL: FINISH & RETURN';
+    btn.id = 'cortex-scout-finish-btn';
+    btn.innerHTML = '🚀 CORTEX SCOUT: FINISH & RETURN';
     btn.style.cssText = `
         position: fixed;
         top: auto;
@@ -3149,7 +3149,7 @@ fn get_manual_return_button_script() -> String {
     // Click handler
     btn.addEventListener('click', () => {
         // Set signal flag
-        window.__shadowcrawl_manual_finish = true;
+        window.__cortex_scout_manual_finish = true;
         
         // Visual feedback
         btn.innerHTML = '✅ CAPTURING DATA...';
@@ -3158,14 +3158,14 @@ fn get_manual_return_button_script() -> String {
         btn.disabled = true;
         
         // Notify user
-        console.log('🚀 ShadowCrawl: Manual return triggered, extracting data now...');
+        console.log('🚀 Cortex Scout: Manual return triggered, extracting data now...');
     });
     
     // Inject into page
     function injectButton() {
         if (document.body) {
             document.body.appendChild(btn);
-            console.log('🚀 ShadowCrawl: Manual return button ready (bottom-right corner)');
+            console.log('🚀 Cortex Scout: Manual return button ready (bottom-right corner)');
         } else {
             // Retry if body not ready
             setTimeout(injectButton, 100);
@@ -3186,7 +3186,7 @@ fn get_manual_return_button_script() -> String {
 #[cfg(feature = "non_robot_search")]
 async fn check_manual_return_triggered(page: &chromiumoxide::Page) -> bool {
     // Check if user clicked the manual return button
-    let check_script = "window.__shadowcrawl_manual_finish === true";
+    let check_script = "window.__cortex_scout_manual_finish === true";
 
     match page.evaluate(check_script).await {
         Ok(result) => result.into_value::<bool>().unwrap_or(false),

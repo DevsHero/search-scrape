@@ -239,7 +239,7 @@ Releases are cut by pushing a `v*` git tag (GitHub Actions builds and uploads cr
 ## ✨ Impact
 
 **Before**: Users had to manually kill browser processes after scrapes  
-**After**: ShadowCrawl handles all cleanup automatically and reliably
+**After**: Cortex Scout handles all cleanup automatically and reliably
 
 **Reliability Improvement**: 100% (from "always hangs" to "never hangs")  
 **User Intervention**: 100% eliminated (from "required" to "none")

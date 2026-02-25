@@ -1,10 +1,10 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.DevsHero/ShadowCrawl",
-  "title": "ShadowCrawl",
+  "name": "io.github.cortex-works/cortex-scout",
+  "title": "Cortex Scout",
   "description": "Rust MCP stealth scraper: anti-bot search/scrape with CDP fallback + HITL non-robot.",
   "repository": {
-    "url": "https://github.com/DevsHero/ShadowCrawl",
+    "url": "https://github.com/cortex-works/cortex-scout",
     "source": "github"
   },
   "version": "3.1.0"

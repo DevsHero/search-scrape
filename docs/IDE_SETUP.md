@@ -1,17 +1,17 @@
 # MCP Client Setup (IDE / Apps) — Zero-Docker
 
-ShadowCrawl is **pure binary**. Use the `shadowcrawl-mcp` executable (stdio MCP server).
+Cortex Scout is **pure binary**. Use the `cortex-scout-mcp` executable (stdio MCP server).
 
 ## Prereq
 
-Get a `shadowcrawl-mcp` binary:
+Get a `cortex-scout-mcp` binary:
 
 - Download from GitHub Releases, or
 - Build locally:
 
 ```bash
 cd mcp-server
-cargo build --release --features non_robot_search --bin shadowcrawl-mcp
+cargo build --release --features non_robot_search --bin cortex-scout-mcp
 ```
 
 ## Claude Desktop (macOS)
@@ -26,7 +26,7 @@ Example:
 ```json
 {
   "mcpServers": {
-    "shadowcrawl": {
+    "cortex-scout": {
       "command": "env",
       "args": [
         "RUST_LOG=info",
@@ -41,7 +41,7 @@ Example:
         "MAX_LINKS=100",
         "IP_LIST_PATH=/absolute/path/to/search-scrape/ip.txt",
         "PROXY_SOURCE_PATH=/absolute/path/to/search-scrape/proxy_source.json",
-        "/absolute/path/to/search-scrape/mcp-server/target/release/shadowcrawl-mcp"
+        "/absolute/path/to/search-scrape/mcp-server/target/release/cortex-scout-mcp"
       ]
     }
   }
@@ -62,7 +62,7 @@ Example:
 ```json
 {
   "mcpServers": {
-    "shadowcrawl": {
+    "cortex-scout": {
       "command": "env",
       "args": [
         "RUST_LOG=info",
@@ -77,7 +77,7 @@ Example:
         "MAX_LINKS=100",
         "IP_LIST_PATH=/absolute/path/to/search-scrape/ip.txt",
         "PROXY_SOURCE_PATH=/absolute/path/to/search-scrape/proxy_source.json",
-        "/absolute/path/to/search-scrape/mcp-server/target/release/shadowcrawl-mcp"
+        "/absolute/path/to/search-scrape/mcp-server/target/release/cortex-scout-mcp"
       ]
     }
   }
@@ -102,7 +102,7 @@ Example:
 ```json
 {
   "mcpServers": {
-    "shadowcrawl": {
+    "cortex-scout": {
       "command": "env",
       "args": [
         "RUST_LOG=info",
@@ -117,7 +117,7 @@ Example:
         "MAX_LINKS=100",
         "IP_LIST_PATH=/absolute/path/to/search-scrape/ip.txt",
         "PROXY_SOURCE_PATH=/absolute/path/to/search-scrape/proxy_source.json",
-        "/absolute/path/to/search-scrape/mcp-server/target/release/shadowcrawl-mcp"
+        "/absolute/path/to/search-scrape/mcp-server/target/release/cortex-scout-mcp"
       ]
     }
   }
@@ -135,15 +135,15 @@ Continue MCP config is file-based and commonly expects **YAML** MCP server defin
 
 - `.continue/mcpServers/*.yaml`
 
-Create: `.continue/mcpServers/shadowcrawl.yaml`
+Create: `.continue/mcpServers/cortex-scout.yaml`
 
 ```yaml
-name: shadowcrawl
+name: cortex-scout
 version: 3.0.0
 schema: v1
 
 mcpServers:
-  - name: shadowcrawl
+  - name: cortex-scout
     command: env
     args:
       - RUST_LOG=info
@@ -158,7 +158,7 @@ mcpServers:
       - MAX_LINKS=100
       - IP_LIST_PATH=/absolute/path/to/search-scrape/ip.txt
       - PROXY_SOURCE_PATH=/absolute/path/to/search-scrape/proxy_source.json
-      - /absolute/path/to/search-scrape/mcp-server/target/release/shadowcrawl-mcp
+      - /absolute/path/to/search-scrape/mcp-server/target/release/cortex-scout-mcp
 ```
 
 Notes:
@@ -169,5 +169,5 @@ Notes:
 
 ## Troubleshooting
 
-- If the client shows "no tools found", confirm your `shadowcrawl-mcp` path is correct and executable.
+- If the client shows "no tools found", confirm your `cortex-scout-mcp` path is correct and executable.
 - If you use proxies, ensure `ip.txt` and `proxy_source.json` exist and `IP_LIST_PATH` / `PROXY_SOURCE_PATH` point to them.

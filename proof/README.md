@@ -1,6 +1,6 @@
 # 🔥 Proof of Evidence: Boss-Level Target Bypass
 
-This directory contains **verified evidence** that ShadowCrawl successfully bypasses enterprise-grade anti-bot protection on sites that typically block traditional scrapers.
+This directory contains **verified evidence** that Cortex Scout successfully bypasses enterprise-grade anti-bot protection on sites that typically block traditional scrapers.
 
 ## 📊 Verified Evidence Table
 
@@ -188,7 +188,7 @@ jq '{
 
 ---
 
-## 🚀 How ShadowCrawl Works (Simplified)
+## 🚀 How Cortex Scout Works (Simplified)
 
 ```
 User Request
@@ -210,7 +210,7 @@ Force-Kill Browser (Safety Kill Switch)
 Return JSON Evidence
 ```
 
-**Result**: If a human can see it, ShadowCrawl can scrape it.
+**Result**: If a human can see it, Cortex Scout can scrape it.
 
 ---
 
@@ -239,7 +239,7 @@ We don't just claim to bypass—we provide the receipts. All evidence below was 
 
 ## ⚖️ Legal Disclaimer
 
-This evidence is for **demonstration purposes only**. ShadowCrawl is designed for legitimate use cases:
+This evidence is for **demonstration purposes only**. Cortex Scout is designed for legitimate use cases:
 - Data portability (extracting your own data)
 - Accessibility (making public data machine-readable)
 - Research and testing
@@ -255,5 +255,5 @@ This evidence is for **demonstration purposes only**. ShadowCrawl is designed fo
 ---
 
 **Last Updated**: 2026-02-14  
-**ShadowCrawl Version**: 2.0.0-rc  
+**Cortex Scout Version**: 2.0.0-rc  
 **Evidence Collection Status**: COMPLETE ✅

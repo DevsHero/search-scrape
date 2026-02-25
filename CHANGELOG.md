@@ -9,9 +9,9 @@ Policy:
 ## v3.1.0 (2026-02-24)
 ### Added
 
-- **`shadowcrawl.json` file-based config loader** — `ShadowConfig` struct loaded at startup from `shadowcrawl.json` (cwd → `../shadowcrawl.json` → `SHADOWCRAWL_CONFIG` env path). All fields optional with env-var + hardcoded fallbacks; missing file is silently ignored.
+- **`cortex-scout.json` file-based config loader** — `ShadowConfig` struct loaded at startup from `cortex-scout.json` (cwd → `../cortex-scout.json` → `CORTEX_SCOUT_CONFIG` env path). All fields optional with env-var + hardcoded fallbacks; missing file is silently ignored.
 - **`ShadowDeepResearchConfig` sub-struct** with typed resolver methods providing 3-tier priority: JSON value → env var → hardcoded default for all 6 deep-research tunables (`llm_base_url`, `llm_api_key`, `llm_model`, `synthesis_max_sources`, `synthesis_max_chars_per_source`, `synthesis_enabled`).
-- **Local LLM support via `shadowcrawl.json`** — configure Ollama, LM Studio, or any OpenAI-compatible endpoint without env vars. Example: `{"deep_research": {"llm_base_url": "http://localhost:1234/v1", "llm_model": "lfm2-2.6b", "llm_api_key": ""}}`.
+- **Local LLM support via `cortex-scout.json`** — configure Ollama, LM Studio, or any OpenAI-compatible endpoint without env vars. Example: `{"deep_research": {"llm_base_url": "http://localhost:1234/v1", "llm_model": "lfm2-2.6b", "llm_api_key": ""}}`.
 - **`deep_research` tool** — multi-hop research pipeline: — multi-hop research pipeline:
   - `QueryRewriter` expands the query into focused sub-queries before searching.
   - Multi-engine search → `Reranker` (BM25-style) selects top candidate URLs.
@@ -69,8 +69,8 @@ Policy:
 
 ### Added
 
-- **`human_auth_session` (The Nuclear Option)**: Launches a visible browser for human login/CAPTCHA solving. Captures and persists full authentication cookies to `~/.shadowcrawl/sessions/{domain}.json`. Enables full automation for protected URLs after a single manual session.
-- **Instruction Overlay**: `human_auth_session` now displays a custom green "ShadowCrawl" instruction banner on top of the browser window to guide users through complex auth walls.
+- **`human_auth_session` (The Nuclear Option)**: Launches a visible browser for human login/CAPTCHA solving. Captures and persists full authentication cookies to `~/.cortex-scout/sessions/{domain}.json`. Enables full automation for protected URLs after a single manual session.
+- **Instruction Overlay**: `human_auth_session` now displays a custom green "Cortex Scout" instruction banner on top of the browser window to guide users through complex auth walls.
 - **Persistent Session Auto-Injection**: `web_fetch`, `web_crawl`, and `visual_scout` now automatically check for and inject matching cookies from the local session store.
 - **`extract_structured` / `fetch_then_extract`**: new optional params `placeholder_word_threshold` (int, default 10) and `placeholder_empty_ratio` (float 0–1, default 0.9) allow agents to tune placeholder detection sensitivity per-call.
 - **`web_crawl`**: new optional `max_chars` param (default 10 000) caps total JSON output size to prevent workspace storage spill.
@@ -150,7 +150,7 @@ Policy:
 
 - Renames the primary page fetch tool for agents from `scrape_url` (internal) to `web_fetch` (public).
 - Adds tool-name aliases: `web_fetch`, `fetch_url`, `fetch_webpage` → `scrape_url` (internal).
-- Updates tool titles/descriptions to explicitly steer agents to ShadowCrawl tools (token-efficient) over IDE fetch.
+- Updates tool titles/descriptions to explicitly steer agents to Cortex Scout tools (token-efficient) over IDE fetch.
 
 
 ## v2.4.0 (2026-02-19)
@@ -175,4 +175,4 @@ Policy:
 
 ### Notes
 
-- Kill switch: `SHADOWCRAWL_NEUROSIPHON=0` disables all NeuroSiphon behaviors.
+- Kill switch: `CORTEX_SCOUT_NEUROSIPHON=0` disables all NeuroSiphon behaviors.

@@ -1,6 +1,6 @@
-# ShadowCrawl on Ubuntu Desktop — `non_robot_search` / HITL
+# Cortex Scout on Ubuntu Desktop — `non_robot_search` / HITL
 
-This document focuses on running ShadowCrawl’s **visible-browser HITL** mode (`non_robot_search`) on **Ubuntu Desktop** (GNOME/KDE).
+This document focuses on running Cortex Scout’s **visible-browser HITL** mode (`non_robot_search`) on **Ubuntu Desktop** (GNOME/KDE).
 
 ## What works today (current repo state)
 
@@ -67,14 +67,14 @@ If you’re on Wayland and hooks still fail:
 
 ```bash
 cd mcp-server
-cargo build --release --bin shadowcrawl-mcp --features non_robot_search
+cargo build --release --bin cortex-scout-mcp --features non_robot_search
 ```
 
 ## Recommended environment variables for Ubuntu
 
 - `CHROME_EXECUTABLE` — set if auto-discovery fails (e.g. `/usr/bin/google-chrome`).
-- `SHADOWCRAWL_RENDER_PROFILE_DIR` — profile directory for persistent cookies/sessions.
-- `SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW=1` — bypass consent prompts for local trusted runs.
+- `CORTEX_SCOUT_RENDER_PROFILE_DIR` — profile directory for persistent cookies/sessions.
+- `CORTEX_SCOUT_NON_ROBOT_AUTO_ALLOW=1` — bypass consent prompts for local trusted runs.
 
 ## Known Ubuntu/Linux blockers (to reach “full support”)
 

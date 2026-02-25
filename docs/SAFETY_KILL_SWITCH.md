@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Safety Kill Switch is a comprehensive browser process management system that prevents ShadowCrawl from hanging after successful scrapes, especially on sites with persistent background scripts (Cloudflare, DataDome, etc.).
+The Safety Kill Switch is a comprehensive browser process management system that prevents Cortex Scout from hanging after successful scrapes, especially on sites with persistent background scripts (Cloudflare, DataDome, etc.).
 
 ## Problem Statement
 
@@ -213,8 +213,8 @@ ps aux | grep -E "(Brave|Chrome)" | grep -E "remote-debugging"
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `SHADOWCRAWL_NON_ROBOT_AUTO_ALLOW` | Skip consent prompt | `false` |
-| `SHADOWCRAWL_NON_ROBOT_CONSENT` | Consent mode (tty/dialog/auto) | `auto` |
+| `CORTEX_SCOUT_NON_ROBOT_AUTO_ALLOW` | Skip consent prompt | `false` |
+| `CORTEX_SCOUT_NON_ROBOT_CONSENT` | Consent mode (tty/dialog/auto) | `auto` |
 | `CHROME_EXECUTABLE` | Browser path override | Auto-detect |
 
 ### Timeout Calculation
