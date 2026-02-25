@@ -352,7 +352,7 @@ Create (or append to) `.github/copilot-instructions.md` in your workspace root:
 ```markdown
 ## MCP Usage Guidelines — Cortex Scout
 
-### Shadowcrawl Priority Rules
+### CortexScout Priority Rules
 
 1. **Memory first (NEVER skip):** ALWAYS call `research_history` BEFORE calling `search_web`,
    `search_structured`, or `scrape_url`.

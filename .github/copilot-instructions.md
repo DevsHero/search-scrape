@@ -1,4 +1,4 @@
-## MCP Tool Usage Rules (CortexAST + Shadowcrawl)
+## MCP Tool Usage Rules (CortexAST + CortexScout)
 
 ### CortexAST Priority Rules
 
@@ -112,7 +112,7 @@ the same efficient, hallucination-resistant research process.
 
 ---
 
-## Shadowcrawl Priority Rules
+## CortexScout Priority Rules
 
 ### 1. Memory Before Search (mandatory — NEVER skip)
 - **ALWAYS** call `research_history` BEFORE calling `search_web`, `search_structured`, **or** `scrape_url`

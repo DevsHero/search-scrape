@@ -1,12 +1,12 @@
-# MCP Usage Guidelines — ShadowCrawl
+# MCP Usage Guidelines — CortexScout
 
-These rules encode the optimal agent workflow for ShadowCrawl tools.
+These rules encode the optimal agent workflow for CortexScout tools.
 They are hardcoded here so every AI agent working in this repository follows
 the same efficient, hallucination-resistant research process.
 
 ---
 
-## Shadowcrawl Priority Rules
+## CortexScout Priority Rules
 
 ### 1. Memory Before Search (mandatory)
 - ALWAYS call `memory_search` BEFORE calling `web_search` or `web_search_json`

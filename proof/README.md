@@ -48,7 +48,7 @@ When `non_robot_search` is called (feature flag: `non_robot_search`):
 1. **Automatic Injection**: A floating button is injected at page load
    ```
    Position: Fixed top-right corner (z-index: 999999)
-   Label: "🚀 SHADOWCRAWL: FINISH & RETURN"
+   Label: "🚀 CORTEXSCOUT: FINISH & RETURN"
    Style: Red background, white text, shadow effect
    ```
 
