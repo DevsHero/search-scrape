@@ -1,11 +1,7 @@
----
-title: CortexScout
----
-
 # CortexScout (cortex-scout) — Search and Web Extraction Engine for AI Agents
 
 <div align="center">
-  <img src="media/logo.svg" alt="CortexScout Logo" width="180" />
+
 
   <p>
     CortexScout is the Deep Research & Web Extraction module within the Cortex-Works ecosystem.
@@ -38,11 +34,11 @@ It is built to handle the practical failure modes of web retrieval (rate limits,
 | Area | MCP Tools / Capabilities |
 |------|---------------------------|
 | Search | `web_search`, `web_search_json` (parallel meta-search + dedup/scoring) |
-| Fetch / Scrape | `web_fetch`, `web_fetch_batch` (token-efficient clean output, optional semantic filtering) |
+| Fetch| `web_fetch`, `web_fetch_batch` (token-efficient clean output, optional semantic filtering) |
 | Crawl | `web_crawl` (bounded discovery for doc sites / sub-pages) |
 | Extraction | `extract_fields`, `fetch_then_extract` (schema-driven extraction) |
 | Anti-bot handling | CDP rendering, proxy rotation, block-aware retries |
-| HITL fallback | `visual_scout` (screenshot for gate confirmation), `human_auth_session` (authenticated fetch with persisted sessions), `non_robot_search` (last resort rendering) |
+| HITL | `visual_scout` (screenshot for gate confirmation), `human_auth_session` (authenticated fetch with persisted sessions), `non_robot_search` (last resort rendering) |
 | Memory | `memory_search` (LanceDB-backed research history) |
 | Deep research | `deep_research` (multi-hop search + scrape + synthesis via OpenAI-compatible APIs) |
 
