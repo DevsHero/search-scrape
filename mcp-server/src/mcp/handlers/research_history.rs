@@ -40,7 +40,7 @@ pub async fn handle(
 
     let entry_type = arguments.get("entry_type").and_then(|v| v.as_str());
 
-    if let Some(memory) = &state.memory {
+    if let Some(memory) = state.get_memory() {
         let entry_type_filter = entry_type.map(|s| {
             if s == "search" {
                 EntryType::Search

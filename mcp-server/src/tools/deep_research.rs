@@ -509,7 +509,7 @@ pub async fn deep_research(
             // Apply semantic shave when the embedding model is available.
             let (relevant_content, kept, total) = if raw_word_count < 200 {
                 (raw_content.clone(), 0, 0)
-            } else if let Some(memory) = &state.memory {
+            } else if let Some(memory) = state.get_memory() {
                 match memory.get_embedding_model().await {
                     Ok(model) => {
                         shaved_attempted_count += 1;
@@ -617,7 +617,7 @@ pub async fn deep_research(
     }
 
     // ── Log session to persistent memory ─────────────────────────────────
-    if let Some(memory) = &state.memory {
+    if let Some(memory) = state.get_memory() {
         let preview_json = serde_json::json!({
             "sources": sources_scraped,
             "top_sources": all_findings.iter().take(3).map(|f| &f.url).collect::<Vec<_>>(),

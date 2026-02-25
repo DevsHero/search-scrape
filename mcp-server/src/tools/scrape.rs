@@ -123,7 +123,7 @@ pub async fn scrape_url_full(
     );
 
     // BOSS LEVEL OPTIMIZATION: Check if in rapid testing mode
-    let is_testing = if let Some(memory) = &state.memory {
+    let is_testing = if let Some(memory) = state.get_memory() {
         memory.is_rapid_testing(url).await.unwrap_or(false)
     } else {
         false
@@ -217,7 +217,7 @@ pub async fn scrape_url_full(
                         .await;
 
                         // Log to history
-                        if let Some(memory) = &state.memory {
+                        if let Some(memory) = state.get_memory() {
                             let summary = format!(
                                 "{} words (CDP stealth), {} code blocks",
                                 result.word_count,
@@ -462,7 +462,7 @@ pub async fn scrape_url_full(
                                                 .await;
 
                                             // Auto-log to history
-                                            if let Some(memory) = &state.memory {
+                                            if let Some(memory) = state.get_memory() {
                                                 let summary = format!(
                                                     "{} words (proxy), {} code blocks",
                                                     proxy_result.word_count,
@@ -531,7 +531,7 @@ pub async fn scrape_url_full(
                     .await;
 
                 // Auto-log to history
-                if let Some(memory) = &state.memory {
+                if let Some(memory) = state.get_memory() {
                     let summary = format!(
                         "{} words, {} code blocks",
                         result.word_count,
@@ -727,7 +727,7 @@ pub async fn scrape_url_full(
     }
 
     // Auto-log to history if memory is enabled (Phase 1)
-    if let Some(memory) = &state.memory {
+    if let Some(memory) = state.get_memory() {
         let summary = format!(
             "{} words, {} code blocks",
             result.word_count,
@@ -919,7 +919,7 @@ async fn apply_relevant_section_extract_if_enabled(
     // Prefer embedding similarity when memory/model is available; otherwise do a lightweight
     // keyword fallback so the feature still works without LanceDB.
     let mut scored: Vec<(usize, f32)> = Vec::new();
-    if let Some(memory) = &state.memory {
+    if let Some(memory) = state.get_memory() {
         if let Ok(model) = memory.get_embedding_model().await {
             let q_owned = q.to_string();
             let sections_owned = sections.clone();
@@ -1065,7 +1065,7 @@ async fn apply_semantic_shaving_if_enabled(
         return;
     };
 
-    let Some(memory) = &state.memory else {
+    let Some(memory) = state.get_memory() else {
         warn!("semantic_shave requested but memory/model not enabled");
         result.warnings.push("semantic_shave_no_memory".to_string());
         return;

@@ -740,7 +740,7 @@ pub async fn search_web_with_params(
     // Phase 2: Check for recent duplicates if memory enabled
     let mut duplicate_warning = None;
     if neurosiphon {
-        if let Some(memory) = &state.memory {
+        if let Some(memory) = state.get_memory() {
             match memory.find_recent_duplicate(query, 6).await {
                 Ok(Some((entry, score))) => {
                     let time_ago = chrono::Utc::now().signed_duration_since(entry.timestamp);
@@ -875,7 +875,7 @@ pub async fn search_web_with_params(
         .insert(cache_key, final_results.clone())
         .await;
 
-    if let Some(memory) = &state.memory {
+    if let Some(memory) = state.get_memory() {
         let result_json = serde_json::to_value(&final_results).unwrap_or_default();
 
         if let Err(e) = memory

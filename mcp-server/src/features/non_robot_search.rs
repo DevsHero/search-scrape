@@ -1285,7 +1285,7 @@ async fn extract_current_page(
         .scrape_cache
         .insert(cfg.url.clone(), scraped.clone())
         .await;
-    if let Some(memory) = &state.memory {
+    if let Some(memory) = state.get_memory() {
         let summary = format!("{} words (non_robot_search)", scraped.word_count);
         let domain = url::Url::parse(&cfg.url)
             .ok()

@@ -147,7 +147,59 @@ the same efficient, hallucination-resistant research process.
 - Use `search_structured` as the **default first step** for any research task
 - Only fall back to `search_web` (without content) when you specifically need raw URLs only
 - For private/internal/unlisted tools that won’t be indexed publicly: skip search and go directly to `scrape_url` on the known repo/docs URL (if you have it).
+### 2b. `deep_research` — Multi-Hop Synthesis for Open-Ended Questions
 
+Use `deep_research` when a question requires **exploring multiple sources, comparing information, or synthesising a structured report** — not just fetching one page.
+
+**When to call `deep_research` (not `search_structured`):**
+- Comparative or evaluative questions: "Which Rust async runtime is fastest for HTTP proxying?"
+- Open-ended research where the answer requires reading ≥ 3 sources
+- API/library capability surveys, security audits, competitive analysis
+- Any question where you would otherwise call `search_structured` + `scrape_url` 3+ times in sequence
+
+**When NOT to call `deep_research`:**
+- You have a specific known URL — use `scrape_url` directly
+- A single-hop search is sufficient — use `search_structured`
+- The question asks about this repo's own code — use `cortex_code_explorer` / `cortex_symbol_analyzer`
+
+**Key parameters:**
+| Param | Purpose | Note |
+|---|---|---|
+| `query` | Research question | Be specific; this drives sub-query expansion |
+| `depth` | Search hops (1–3) | Default 1; use 2 for exhaustive multi-level research |
+| `max_sources` | Sources scraped per hop | Default 10; reduce for speed |
+| `max_chars_per_source` | Chars extracted per source | Default 20 000; reduce to stay token-efficient |
+| `relevance_threshold` | Semantic filter aggressiveness | 0.0–1.0; default 0.25 — lower = more content kept |
+| `use_proxy` | Route scraping through proxy | Use `true` on large research runs to avoid IP blocks |
+
+**Output fields to inspect:**
+- `llm_succeeded: true` — `synthesized_report` is LLM-generated (GPT/local model)
+- `llm_succeeded: false` — `synthesized_report` is `heuristic_v1` (extractive fallback — still useful)
+- `synthesis_method` — `"openai_chat_completions"` or `"heuristic_v1"`
+- `synthesis_model` + `synthesis_endpoint` — which model/endpoint was used (audit trail)
+- `sources_scraped` — list of URLs that fed the synthesis
+- `warnings[]` — check for proxy blocks, low-confidence scrapes, or rate-limit signals
+
+**LLM backend configuration** (in `~/.cortex-scout/cortex-scout.json`):
+```json
+{
+  "deep_research": {
+    "enabled": true,
+    "llm_base_url": "http://localhost:1234/v1",
+    "llm_api_key": "",
+    "llm_model": "lfm2-2.6b",
+    "synthesis_enabled": true,
+    "synthesis_max_sources": 3,
+    "synthesis_max_chars_per_source": 800,
+    "synthesis_max_tokens": 1024
+  }
+}
+```
+- Set `llm_base_url` to an OpenAI-compatible endpoint: **OpenAI**, **Ollama** (`http://localhost:11434/v1`), or **LM Studio** (`http://localhost:1234/v1`)
+- Set `OPENAI_API_KEY` env var (any non-empty value works for local servers)
+- If `synthesis_enabled: false` or no LLM is reachable, `deep_research` automatically falls back to `heuristic_v1` — it still returns a multi-source report, just extractive rather than generative
+
+**Workflow rule:** Always call `research_history` first (Rule 1). If memory returns a hit for the same open-ended question, use it. Only call `deep_research` on a cache miss or when the cached entry is stale/low-quality.
 ### 3. Use `web_fetch` with Noise Reduction for Documentation Pages
 - For documentation, article, or tutorial pages always set:
   ```
@@ -235,6 +287,14 @@ research_history ──► hit (≥ 0.60)? ──► cache-quality guard:
         │ miss            │  entry_type=="search"? ──► do NOT skip scrape_url
         │                 │  word_count < 50 or placeholder warnings? ──► do NOT skip
         │                 └──► quality OK? ──► use cached result, STOP
+        │
+        ├──► open-ended / comparative / multi-source question?
+        │         ▼
+        │    deep_research (expand → search → scrape → synthesize)
+        │      │ llm_succeeded: true  ──► synthesized_report (LLM-generated)
+        │      │ llm_succeeded: false ──► synthesized_report (heuristic_v1 fallback)
+        │      │ check synthesis_model + synthesis_endpoint in output (audit trail)
+        │      STOP
         │
         ▼
 search_structured ──► enough content? ──► use it, STOP

@@ -86,25 +86,7 @@ impl McpService {
 
         let mut state = AppState::new(http_client);
 
-        if let Some(lancedb_uri) = crate::core::config::lancedb_uri() {
-            if !lancedb_uri.contains("://") {
-                let _ = tokio::fs::create_dir_all(&lancedb_uri).await;
-            }
-            info!("Initializing memory with LanceDB at: {}", lancedb_uri);
-            match history::MemoryManager::new(&lancedb_uri).await {
-                Ok(memory) => {
-                    state = state.with_memory(Arc::new(memory));
-                    info!("Memory initialized successfully");
-                }
-                Err(e) => warn!(
-                    "Failed to initialize memory: {}. Continuing without memory.",
-                    e
-                ),
-            }
-        } else {
-            info!("Semantic memory disabled (CORTEX_SCOUT_MEMORY_DISABLED=1)");
-        }
-
+        // Proxy manager — synchronous file read, fast.
         let ip_list_path = env::var("IP_LIST_PATH").unwrap_or_else(|_| "ip.txt".to_string());
         if tokio::fs::metadata(&ip_list_path).await.is_ok() {
             info!("Loading proxy manager from IP list: {}", ip_list_path);
@@ -126,9 +108,34 @@ impl McpService {
             );
         }
 
-        Ok(Self {
-            state: Arc::new(state),
-        })
+        // Wrap state in Arc now — MCP transport can start immediately.
+        let state = Arc::new(state);
+
+        // LanceDB / semantic memory — may trigger IVF index rebuild on large datasets
+        // (several seconds). Spawn in background so MCP handshake is not delayed.
+        if let Some(lancedb_uri) = crate::core::config::lancedb_uri() {
+            let state_bg = Arc::clone(&state);
+            if !lancedb_uri.contains("://") {
+                let _ = tokio::fs::create_dir_all(&lancedb_uri).await;
+            }
+            info!("Initializing memory with LanceDB at: {} (background)", lancedb_uri);
+            tokio::spawn(async move {
+                match history::MemoryManager::new(&lancedb_uri).await {
+                    Ok(memory) => {
+                        *state_bg.memory.write().unwrap() = Some(Arc::new(memory));
+                        info!("Memory initialized successfully (background)");
+                    }
+                    Err(e) => warn!(
+                        "Failed to initialize memory: {}. Continuing without memory.",
+                        e
+                    ),
+                }
+            });
+        } else {
+            info!("Semantic memory disabled (CORTEX_SCOUT_MEMORY_DISABLED=1)");
+        }
+
+        Ok(Self { state })
     }
 }
 

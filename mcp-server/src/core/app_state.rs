@@ -10,8 +10,9 @@ pub struct AppState {
     pub scrape_cache: moka::future::Cache<String, super::types::ScrapeResponse>,    // key: url
     // Concurrency control for external calls
     pub outbound_limit: std::sync::Arc<tokio::sync::Semaphore>,
-    // Memory manager for research history (optional)
-    pub memory: Option<std::sync::Arc<crate::history::MemoryManager>>,
+    // Memory manager for research history — late-initialized in background to avoid
+    // blocking MCP startup. Access via `.read().unwrap().clone()`.
+    pub memory: std::sync::Arc<std::sync::RwLock<Option<std::sync::Arc<crate::history::MemoryManager>>>>,
     // Proxy manager for dynamic IP rotation (optional)
     pub proxy_manager: Option<std::sync::Arc<crate::proxy_manager::ProxyManager>>,
 
@@ -28,7 +29,7 @@ pub struct AppState {
 impl std::fmt::Debug for AppState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AppState")
-            .field("memory_enabled", &self.memory.is_some())
+            .field("memory_enabled", &self.memory.read().unwrap().is_some())
             .field("proxy_manager_enabled", &self.proxy_manager.is_some())
             .finish()
     }
@@ -57,7 +58,7 @@ impl AppState {
                 .time_to_live(std::time::Duration::from_secs(60 * 30))
                 .build(),
             outbound_limit: std::sync::Arc::new(tokio::sync::Semaphore::new(outbound_limit)),
-            memory: None,        // Will be initialized if LANCEDB_URI is set
+            memory: std::sync::Arc::new(std::sync::RwLock::new(None)), // Late-initialized in background
             proxy_manager: None, // Will be initialized if IP_LIST_PATH exists
             non_robot_search_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             browser_pool: crate::scraping::browser_manager::BrowserPool::new_auto(),
@@ -65,9 +66,15 @@ impl AppState {
         }
     }
 
-    pub fn with_memory(mut self, memory: std::sync::Arc<crate::history::MemoryManager>) -> Self {
-        self.memory = Some(memory);
+    pub fn with_memory(self, memory: std::sync::Arc<crate::history::MemoryManager>) -> Self {
+        *self.memory.write().unwrap() = Some(memory);
         self
+    }
+
+    /// Returns a clone of the memory Arc if memory is initialized.
+    /// Acquires and immediately releases the read lock — safe to use before `await` points.
+    pub fn get_memory(&self) -> Option<std::sync::Arc<crate::history::MemoryManager>> {
+        self.memory.read().unwrap().clone()
     }
 
     pub fn with_proxy_manager(
