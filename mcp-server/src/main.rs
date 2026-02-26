@@ -1,7 +1,7 @@
 use axum::{
     extract::State,
     http::StatusCode,
-    response::Json,
+    response::{IntoResponse, Json, Response},
     routing::{get, post},
     Router,
 };
@@ -255,22 +255,25 @@ async fn server_card(State(state): State<Arc<AppState>>) -> Json<serde_json::Val
 async fn mcp_rpc_handler(
     State(state): State<Arc<AppState>>,
     Json(request): Json<serde_json::Value>,
-) -> Json<serde_json::Value> {
-    let id = request
-        .get("id")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
+) -> Response {
+    let id = request.get("id").cloned();
     let method = request
         .get("method")
         .and_then(|m| m.as_str())
         .unwrap_or_default();
+
+    // JSON-RPC notifications have no "id" — acknowledge with 202 Accepted, no body.
+    if id.is_none() {
+        return StatusCode::ACCEPTED.into_response();
+    }
+    let id = id.unwrap();
 
     match method {
         "initialize" => Json(serde_json::json!({
             "jsonrpc": "2.0",
             "id": id,
             "result": {
-                "protocolVersion": "2025-11-05",
+                "protocolVersion": "2024-11-05",
                 "capabilities": {
                     "tools": {}
                 },
@@ -279,7 +282,9 @@ async fn mcp_rpc_handler(
                     "version": env!("CARGO_PKG_VERSION")
                 }
             }
-        })),
+        }))
+        .into_response(),
+
         "tools/list" => {
             let tools = mcp::http::list_tools_for_state(state.as_ref());
             Json(serde_json::json!({
@@ -287,15 +292,51 @@ async fn mcp_rpc_handler(
                 "id": id,
                 "result": tools
             }))
+            .into_response()
         }
+
+        "tools/call" => {
+            let params = request.get("params").cloned().unwrap_or_default();
+            let tool_name = params
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let arguments = params.get("arguments").cloned().unwrap_or_default();
+
+            let call_req = mcp::http::McpCallRequest {
+                name: tool_name,
+                arguments,
+            };
+
+            match mcp::http::call_tool_inner(state, call_req).await {
+                Ok(result) => Json(serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": result
+                }))
+                .into_response(),
+                Err((_, Json(err))) => Json(serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {
+                        "code": -32000,
+                        "message": err.error
+                    }
+                }))
+                .into_response(),
+            }
+        }
+
         _ => Json(serde_json::json!({
             "jsonrpc": "2.0",
             "id": id,
             "error": {
                 "code": -32601,
-                "message": "Method not found"
+                "message": format!("Method not found: {}", method)
             }
-        })),
+        }))
+        .into_response(),
     }
 }
 

@@ -30,6 +30,7 @@ pub struct McpCallRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct McpCallResponse {
     pub content: Vec<McpContent>,
+    #[serde(rename = "isError")]
     pub is_error: bool,
 }
 
@@ -61,10 +62,11 @@ pub async fn list_tools(State(state): State<Arc<AppState>>) -> Json<McpToolsResp
     Json(list_tools_for_state(state.as_ref()))
 }
 
-pub async fn call_tool(
-    State(state): State<Arc<AppState>>,
-    Json(request): Json<McpCallRequest>,
-) -> Result<Json<McpCallResponse>, (StatusCode, Json<ErrorResponse>)> {
+/// Core dispatch logic — called by both the axum route handler and the JSON-RPC handler.
+pub async fn call_tool_inner(
+    state: Arc<AppState>,
+    request: McpCallRequest,
+) -> Result<McpCallResponse, (StatusCode, Json<ErrorResponse>)> {
     info!(
         "MCP tool call: {} with args: {:?}",
         request.name, request.arguments
@@ -86,7 +88,7 @@ pub async fn call_tool(
         .tool_registry
         .map_public_arguments_to_internal(&internal_name, request.arguments);
 
-    match internal_name.as_str() {
+    let result = match internal_name.as_str() {
         "search_web" => handlers::search_web::handle(state, &internal_args).await,
         "search_structured" => handlers::search_structured::handle(state, &internal_args).await,
         "scrape_url" => handlers::scrape_url::handle(state, &internal_args).await,
@@ -106,5 +108,15 @@ pub async fn call_tool(
                 error: format!("Unknown tool: {}", request.name),
             }),
         )),
-    }
+    };
+
+    result.map(|Json(r)| r)
+}
+
+/// Axum route handler: `POST /mcp/call`
+pub async fn call_tool(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<McpCallRequest>,
+) -> Result<Json<McpCallResponse>, (StatusCode, Json<ErrorResponse>)> {
+    call_tool_inner(state, request).await.map(Json)
 }
