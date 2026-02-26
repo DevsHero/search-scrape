@@ -2,9 +2,46 @@
 
 Policy:
 - Keep changes under **Unreleased** during normal development.
-- Only bump version + move Unreleased entries into a new version section when you run `bash scripts/release.sh`.
+- `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
 ## Unreleased
+
+### Fixed
+
+- **HTTP MCP server (`POST /mcp`) — `tools/call` was missing from JSON-RPC dispatcher.**  
+  The `mcp_rpc_handler` only handled `initialize` and `tools/list`; any `tools/call` request fell through to `-32601 Method not found`. LiteLLM and other Streamable HTTP MCP clients could connect but never successfully invoke tools.  Implemented full `tools/call` dispatch by extracting a shared `call_tool_inner()` function in `http.rs` reused by both the Axum route and the JSON-RPC handler.
+
+- **HTTP MCP server — wrong `protocolVersion` in `initialize` response.**  
+  Was returning `"2025-11-05"` (nonexistent). Corrected to `"2024-11-05"` (current MCP spec). Strict clients validate this field and would refuse to proceed.
+
+- **HTTP MCP server — notifications returned JSON-RPC error instead of HTTP 202.**  
+  JSON-RPC notifications (no `id` field, e.g. `notifications/initialized`) must not receive a response body. Handler now returns `HTTP 202 Accepted` with an empty body for all notification messages.
+
+- **`McpCallResponse.is_error` field name mismatch.**  
+  Was serialized as `is_error` (snake_case). MCP spec requires `isError` (camelCase). Fixed with `#[serde(rename = "isError")]`.
+
+- **VS Code / Cursor MCP panel — `EOF` error on connect.**  
+  `McpService::new()` was blocking the tokio thread for 2–4 s while LanceDB rebuilt its IVF/KMeans index. VS Code's stdio timeout fired before `serve()` was called, producing `Error: failed to get tools: calling "tools/list": EOF`.  Fix: LanceDB initialisation moved to a `tokio::spawn` background task; `Arc<AppState>` is created before the spawn so `serve()` starts immediately (~0.08 s). `AppState.memory` changed from `Option<Arc<...>>` to `Arc<RwLock<Option<Arc<...>>>>` for interior-mutability background init. Added `get_memory()` helper that acquires+drops the read-guard in one step, returning a `Send`-safe `Option<Arc<MemoryManager>>` that is safe to use across `await` points in spawned futures.
+
+### Changed
+
+- **Project renamed: ShadowCrawl → cortex-scout** (full codebase sweep):
+  - Binary names: `shadowcrawl` / `shadowcrawl-mcp` → `cortex-scout` / `cortex-scout-mcp`
+  - Crate name: `shadowcrawl` → `cortex_scout`
+  - Config file: `~/.shadowcrawl/shadowcrawl.json` → `~/.cortex-scout/cortex-scout.json`
+  - Session cookies: `~/.shadowcrawl/sessions/` → `~/.cortex-scout/sessions/`
+  - Environment-variable prefix: `SHADOWCRAWL_*` → `CORTEX_SCOUT_*`
+  - GitHub repository: `DevsHero/ShadowCrawl` → `cortex-works/cortex-scout`
+
+- **`deep_research` result — adds `synthesis_model` and `synthesis_endpoint` fields.**  
+  Agents can now verify which LLM backend + endpoint was used for synthesis (audit trail). `synthesis_method` distinguishes `"openai_chat_completions"` from `"heuristic_v1"` (extractive fallback). Documented in agent rules (`.github/copilot-instructions.md`).
+
+- **`deep_research` config — adds `synthesis_max_tokens` tunable.**  
+  Controls the maximum token budget for the LLM synthesis call via `cortex-scout.json` or `SYNTHESIS_MAX_TOKENS` env var; default `1024`.
+
+- **`mcp.json` (VS Code MCP config) — removed dead `CORTEX_SCOUT_VSCODE_RELOAD=1` env var** (was never referenced in Rust source). Changed `RUST_LOG=info` → `RUST_LOG=warn` to suppress LanceDB/IVF rebuild log lines that pollute stderr during MCP stdio communication.
+
+- **Release script (`scripts/release.sh`)** now automatically promotes `## Unreleased` to the versioned section in `CHANGELOG.md`, commits it, and uses that section verbatim as GitHub release notes. `--dry-run` skips all git mutations.
 
 ## v3.1.0 (2026-02-24)
 ### Added
