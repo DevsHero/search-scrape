@@ -137,7 +137,7 @@ fi
 
 # ── Version Guard ─────────────────────────────────────────────────────────────
 banner "Version Guard"
-SERVER_VER="$(python3 -c 'import json, pathlib; obj=json.loads(pathlib.Path("server.json").read_text(encoding="utf-8")); print(obj.get("version",""))')"
+SERVER_VER="$(python3 -c "import json, pathlib; obj=json.loads(pathlib.Path('$REPO_ROOT/server.json').read_text(encoding='utf-8')); print(obj.get('version',''))")"
 [[ -n "$SERVER_VER" ]] || die "server.json missing version"
 if [[ "$SERVER_VER" != "$VERSION" ]]; then
   die "Version mismatch: mcp-server/Cargo.toml=$VERSION server.json=$SERVER_VER"
