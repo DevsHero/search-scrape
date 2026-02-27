@@ -8,6 +8,9 @@ Policy:
 
 ### Fixed
 
+- **HTTP MCP server — `inputSchema` field serialized as `input_schema` (snake_case).**  
+  The `McpTool` struct lacked `#[serde(rename = "inputSchema")]`. Every MCP client that validates tool schemas (MetaMCP, LiteLLM, MCP Inspector) received `inputSchema: undefined` for all tools and refused to list or call them. Added the rename attribute — tools now pass Zod/schema validation in all tested clients.
+
 - **HTTP MCP server (`POST /mcp`) — `tools/call` was missing from JSON-RPC dispatcher.**  
   The `mcp_rpc_handler` only handled `initialize` and `tools/list`; any `tools/call` request fell through to `-32601 Method not found`. LiteLLM and other Streamable HTTP MCP clients could connect but never successfully invoke tools.  Implemented full `tools/call` dispatch by extracting a shared `call_tool_inner()` function in `http.rs` reused by both the Axum route and the JSON-RPC handler.
 

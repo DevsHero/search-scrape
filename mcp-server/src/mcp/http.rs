@@ -11,6 +11,7 @@ pub struct McpTool {
     pub name: String,
     pub title: String,
     pub description: String,
+    #[serde(rename = "inputSchema")]
     pub input_schema: serde_json::Value,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub icons: Vec<String>,
