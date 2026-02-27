@@ -6,7 +6,12 @@ Policy:
 
 ## Unreleased
 
+## v3.1.1 (2026-02-27)
+
 ### Fixed
+
+- **Release script (`scripts/release.sh`) — BSD `sed` crash on macOS.**  
+  The trailing-blank-line trimmer used GNU `sed` syntax (`-e :a -e '/^\n*$/{$d;N;ba}'`) that does not work on macOS BSD `sed`, causing the release to abort at the "Release Notes" step with `sed: 2: ... extra characters at the end of d command`. Replaced with `python3 -c "import sys; print(sys.stdin.read().strip())"` (python3 is already a required tool) — portable on all platforms.
 
 - **HTTP MCP server — `inputSchema` field serialized as `input_schema` (snake_case).**  
   The `McpTool` struct lacked `#[serde(rename = "inputSchema")]`. Every MCP client that validates tool schemas (MetaMCP, LiteLLM, MCP Inspector) received `inputSchema: undefined` for all tools and refused to list or call them. Added the rename attribute — tools now pass Zod/schema validation in all tested clients.

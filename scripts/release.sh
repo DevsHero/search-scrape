@@ -152,7 +152,9 @@ if [[ -z "${UNRELEASED_NOTES//[[:space:]]/}" ]]; then
   RELEASE_NOTES="Built from macOS (Apple Silicon) using cargo-zigbuild."
 else
   # Clean release notes: trim leading/trailing blank lines, then format.
-  TRIMMED="$(printf '%s' "$UNRELEASED_NOTES" | sed '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba}')"
+  # Use python3 (already required) to strip leading/trailing blank lines —
+  # avoids BSD sed vs GNU sed incompatibilities on macOS.
+  TRIMMED="$(printf '%s' "$UNRELEASED_NOTES" | python3 -c "import sys; print(sys.stdin.read().strip())")"
   RELEASE_NOTES="$(printf '%s\n\n---\n\n*Built on macOS arm64 via cargo-zigbuild.*' "$TRIMMED")"
   info "Release notes preview (first 5 lines):"
   printf '%s\n' "$TRIMMED" | head -5 | while IFS= read -r line; do info "  $line"; done
