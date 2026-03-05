@@ -22,12 +22,13 @@ use chromiumoxide::handler::viewport::Viewport;
 use chromiumoxide::{Browser, Page};
 use futures::StreamExt;
 use rand::seq::IndexedRandom;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
+use uuid::Uuid;
 
 // ── Realistic User-Agent pool (Step 1: Stealth & Evasion) ────────────────────
 
@@ -164,8 +165,13 @@ pub fn build_headless_config(
     proxy_url: Option<&str>,
     width: u32,
     height: u32,
-) -> Result<BrowserConfig> {
+) -> Result<(BrowserConfig, PathBuf)> {
     let ua = random_user_agent();
+    // Isolate every browser launch in its own profile dir so concurrent CDP
+    // instances (e.g., deep_research batch scraping) don't fight over the
+    // same SingletonLock and abort. The dir is cleaned up by the caller
+    // after browser.close().
+    let data_dir = std::env::temp_dir().join(format!("cortex-scout-cdp-{}", Uuid::new_v4()));
 
     let mut builder = BrowserConfig::builder()
         .chrome_executable(exe)
@@ -195,15 +201,19 @@ pub fn build_headless_config(
         .arg("--mute-audio")
         // Stealth: suppress CDP automation fingerprint
         .arg("--disable-blink-features=AutomationControlled")
+        // Each launch gets a unique profile dir (fixes SingletonLock conflicts
+        // when multiple browser processes start concurrently).
+        .arg(format!("--user-data-dir={}", data_dir.display()))
         .arg(format!("--user-agent={}", ua));
 
     if let Some(proxy) = proxy_url {
         builder = builder.arg(format!("--proxy-server={}", proxy));
     }
 
-    builder
+    let config = builder
         .build()
-        .map_err(|e| anyhow!("Failed to build browser config: {}", e))
+        .map_err(|e| anyhow!("Failed to build browser config: {}", e))?;
+    Ok((config, data_dir))
 }
 
 // ── Browser Pool (Step 2: tab reuse) ─────────────────────────────────────────
@@ -218,7 +228,9 @@ pub fn build_headless_config(
 /// Store `Arc<BrowserPool>` in `AppState` so all handlers share one instance.
 pub struct BrowserPool {
     exe: String,
-    inner: Mutex<Option<Browser>>,
+    /// Each (Browser, PathBuf) pair holds the browser and its unique user-data-dir
+    /// so the dir can be cleaned up when the browser is restarted or dropped.
+    inner: Mutex<Option<(Browser, PathBuf)>>,
 }
 
 impl BrowserPool {
@@ -246,19 +258,20 @@ impl BrowserPool {
 
         // Probe: try opening a blank tab to test if browser is still alive.
         let alive = match guard.as_mut() {
-            Some(b) => b.new_page("about:blank").await.is_ok(),
+            Some((b, _)) => b.new_page("about:blank").await.is_ok(),
             None => false,
         };
 
         if !alive {
             if guard.is_some() {
                 warn!("🔄 Browser pool: instance dead, restarting...");
-                if let Some(mut old) = guard.take() {
+                if let Some((mut old, old_dir)) = guard.take() {
                     let _ = old.close().await;
+                    let _ = tokio::fs::remove_dir_all(&old_dir).await;
                 }
             }
             info!("🚀 Browser pool: launching new instance ({})", self.exe);
-            let config = build_headless_config(&self.exe, proxy_url, 1920, 1080)?;
+            let (config, data_dir) = build_headless_config(&self.exe, proxy_url, 1920, 1080)?;
             let (new_browser, mut handler) = Browser::launch(config)
                 .await
                 .map_err(|e| anyhow!("Pool: failed to launch ({}): {}", self.exe, e))?;
@@ -269,10 +282,10 @@ impl BrowserPool {
                     }
                 }
             });
-            *guard = Some(new_browser);
+            *guard = Some((new_browser, data_dir));
         }
 
-        let b = guard.as_mut().expect("browser present after init");
+        let (b, _) = guard.as_mut().expect("browser present after init");
         b.new_page("about:blank")
             .await
             .map_err(|e| anyhow!("Pool: failed to open tab: {}", e))
@@ -281,8 +294,9 @@ impl BrowserPool {
     /// Gracefully close the pooled browser instance.
     pub async fn shutdown(&self) {
         let mut guard = self.inner.lock().await;
-        if let Some(mut b) = guard.take() {
+        if let Some((mut b, data_dir)) = guard.take() {
             let _ = b.close().await;
+            let _ = tokio::fs::remove_dir_all(&data_dir).await;
             info!("🛑 Browser pool shut down");
         }
     }
@@ -426,9 +440,10 @@ impl Drop for BrowserPool {
         };
 
         if let Ok(mut guard) = self.inner.try_lock() {
-            if let Some(mut browser) = guard.take() {
+            if let Some((mut browser, data_dir)) = guard.take() {
                 handle.spawn(async move {
                     let _ = browser.close().await;
+                    let _ = tokio::fs::remove_dir_all(&data_dir).await;
                 });
             }
         }
@@ -486,7 +501,7 @@ pub async fn fetch_html_native(url: &str, wait_ms: Option<u32>) -> Result<(u16, 
 
     let wait_time = wait_ms.unwrap_or(2000) as u64;
 
-    let config = build_headless_config(&exe, None, 1280, 900)?;
+    let (config, data_dir) = build_headless_config(&exe, None, 1280, 900)?;
 
     let (mut browser, mut handler) = Browser::launch(config)
         .await
@@ -527,6 +542,7 @@ pub async fn fetch_html_native(url: &str, wait_ms: Option<u32>) -> Result<(u16, 
     if let Err(e) = browser.close().await {
         warn!("Browser close error (non-fatal): {}", e);
     }
+    let _ = tokio::fs::remove_dir_all(&data_dir).await;
 
     result
 }
@@ -538,6 +554,7 @@ pub async fn fetch_html_native_mobile(url: &str, wait_ms: Option<u32>) -> Result
         .ok_or_else(|| anyhow!("No browser found for mobile fetch fallback"))?;
 
     let wait_time = wait_ms.unwrap_or(2500) as u64;
+    let mobile_data_dir = std::env::temp_dir().join(format!("cortex-scout-cdp-{}", Uuid::new_v4()));
 
     let config = BrowserConfig::builder()
         .chrome_executable(&exe)
@@ -555,6 +572,7 @@ pub async fn fetch_html_native_mobile(url: &str, wait_ms: Option<u32>) -> Result
         .arg("--disable-dev-shm-usage")
         .arg("--no-first-run")
         .arg("--disable-blink-features=AutomationControlled")
+        .arg(format!("--user-data-dir={}", mobile_data_dir.display()))
         .arg("--user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1")
         .build()
         .map_err(|e| anyhow!("Mobile browser config error: {}", e))?;
@@ -589,5 +607,6 @@ pub async fn fetch_html_native_mobile(url: &str, wait_ms: Option<u32>) -> Result
     .await;
 
     browser.close().await.ok();
+    let _ = tokio::fs::remove_dir_all(&mobile_data_dir).await;
     result
 }

@@ -65,7 +65,7 @@ pub async fn take_screenshot(
         exe, vp_width, vp_height, url
     );
 
-    let config = browser_manager::build_headless_config(&exe, proxy_url, vp_width, vp_height)?;
+    let (config, vs_data_dir) = browser_manager::build_headless_config(&exe, proxy_url, vp_width, vp_height)?;
 
     let (mut browser, mut handler) = chromiumoxide::Browser::launch(config)
         .await
@@ -154,6 +154,7 @@ pub async fn take_screenshot(
         warn!("visual_scout: browser close error (non-fatal): {}", e);
     }
     handle.abort();
+    let _ = tokio::fs::remove_dir_all(&vs_data_dir).await;
 
     let auth_hint = {
         let tl = page_title.trim().to_lowercase();

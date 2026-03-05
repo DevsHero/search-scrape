@@ -22,7 +22,7 @@ impl RustScraper {
 
         warn!("🚀 Direct CDP Stealth Mode: {} (browser: {})", url, exe);
 
-        let config =
+        let (config, data_dir) =
             browser_manager::build_headless_config(&exe, proxy_url.as_deref(), 1920, 1080)?;
 
         let (mut browser, mut handler) = chromiumoxide::Browser::launch(config)
@@ -197,6 +197,7 @@ impl RustScraper {
             drop(page);
             browser.close().await.ok();
             handle.abort();
+            let _ = tokio::fs::remove_dir_all(&data_dir).await;
 
             return Err(anyhow!("CDP bypass failed: Challenge detected"));
         }
@@ -207,6 +208,7 @@ impl RustScraper {
             drop(page);
             browser.close().await.ok();
             handle.abort();
+            let _ = tokio::fs::remove_dir_all(&data_dir).await;
 
             return Err(anyhow!("CDP bypass failed: {}", block_reason));
         }
@@ -216,6 +218,7 @@ impl RustScraper {
         drop(page);
         browser.close().await.ok();
         handle.abort();
+        let _ = tokio::fs::remove_dir_all(&data_dir).await;
 
         Ok((content, 200))
     }
