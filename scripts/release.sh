@@ -146,10 +146,15 @@ pass "Versions match ($VERSION)"
 
 # ── Release Notes (from CHANGELOG.md Unreleased section) ─────────────────────
 banner "Release Notes"
+
+# Guard: ensure ## Unreleased section actually exists
+if ! grep -q '^## Unreleased[[:space:]]*$' "$REPO_ROOT/CHANGELOG.md"; then
+  die "CHANGELOG.md has no '## Unreleased' section. Add release notes before running."
+fi
+
 UNRELEASED_NOTES="$(extract_unreleased_notes | sed -e 's/[[:space:]]\+$//')"
 if [[ -z "${UNRELEASED_NOTES//[[:space:]]/}" ]]; then
-  warn "CHANGELOG.md '## Unreleased' section is empty — add entries before releasing."
-  RELEASE_NOTES="Built from macOS (Apple Silicon) using cargo-zigbuild."
+  die "CHANGELOG.md '## Unreleased' section is empty — add entries before releasing."
 else
   # Clean release notes: trim leading/trailing blank lines, then format.
   # Use python3 (already required) to strip leading/trailing blank lines —

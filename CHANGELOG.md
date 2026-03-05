@@ -4,6 +4,50 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
+## Unreleased
+
+### Fixed
+
+- **CDP concurrent launches — `SingletonLock` race condition (closes #7).**  
+  When multiple MCP tools triggered headless browser fetches simultaneously, all
+  launched into the same default Chrome user-data dir, causing every instance
+  after the first to fail with `"SingletonLock"`. Each CDP launch now gets an
+  isolated `--user-data-dir` under a unique `/tmp/cortex-scout-cdp-XXXXXXXX`
+  directory (cleaned up automatically after each request). Concurrent headless
+  scraping now works correctly under load.
+
+- **`release.sh` — Version Guard used relative path for `server.json`.**  
+  `python3 -c "... pathlib.Path('server.json') ..."` resolved relative to the
+  shell's working directory, not the repo root, causing the guard to fail when
+  the script was invoked from any directory other than the repo root. Fixed to
+  use the absolute `$REPO_ROOT/server.json` path.
+
+- **`release.sh` — empty `## Unreleased` section causes silent commit failure.**  
+  When `## Unreleased` was absent or empty, `promote_changelog` left the file
+  unchanged but the script still ran `git commit`, which exited 1 ("nothing to
+  commit"), aborting the release via `set -e`. Script now checks for a
+  `## Unreleased` section and exits early with a clear error if absent.
+
+### Changed
+
+- **Documentation overhaul — all configuration guides updated for v3.1.x.**  
+  All example configs previously used `RUST_LOG=info` (floods MCP stdio clients)
+  and were missing the required `--` separator before the binary path on
+  macOS/Linux. All path examples referenced the old `search-scrape` repo name.
+  Updated across README, IDE_SETUP.md, VSCODE_SETUP.md, window_setup.md, and
+  ubuntu_setup.md:
+  - `RUST_LOG=warn` in every example (was `info`)
+  - `"--"` added before binary path in `env`-command args arrays
+  - All paths use `cortex-scout` (was `search-scrape`)
+  - Build command updated to `--all-features` (was `--features non_robot_search`)
+  - New VS Code section with macOS/Linux vs Windows config split
+  - Deep research env vars table added (`DEEP_RESEARCH_SYNTHESIS_*`)
+  - 8 previously undocumented environment variables added to README table
+  - `window_setup.md`: removed `[DEPRECATED]` tag, removed Browserless/ONNX
+    references from v2 architecture, rewritten for current binary-only setup
+  - `docs/SAFETY_KILL_SWITCH_SUMMARY.md`: deleted (stale internal dev note,
+    superseded by `docs/SAFETY_KILL_SWITCH.md`)
+
 ## v3.1.1 (2026-02-27)
 
 ### Fixed
