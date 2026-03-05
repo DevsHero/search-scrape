@@ -51,3 +51,4 @@ docs/RELEASING.md
 /errors/
 /dist/
 .cortexast/
+.github/copilot-instructions.md
