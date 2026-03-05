@@ -67,7 +67,11 @@ If you’re on Wayland and hooks still fail:
 
 ```bash
 cd mcp-server
-cargo build --release --bin cortex-scout-mcp --features non_robot_search
+# Basic build (search, scrape, deep research, memory):
+cargo build --release --bin cortex-scout-mcp
+
+# Full build (adds hitl_web_fetch / visible-browser HITL):
+cargo build --release --all-features --bin cortex-scout-mcp
 ```
 
 ## Recommended environment variables for Ubuntu
@@ -89,31 +93,18 @@ cargo build --release --bin cortex-scout-mcp --features non_robot_search
 3. **Browser discovery**
   - If auto-discovery fails, set `CHROME_EXECUTABLE` explicitly (e.g., `/usr/bin/google-chrome`).
 
-## Engineering plan (Ubuntu Desktop)
+## Verified build targets
 
-### Phase 1 — Confirm build deps and document them
+- Ubuntu 22.04 LTS
+- Ubuntu 24.04 LTS
 
-- Run `cargo build --release --features non_robot_search` on:
-  - Ubuntu 22.04 LTS
-  - Ubuntu 24.04 LTS
-- Capture missing library errors and expand the apt list accordingly.
+Build command:
 
-### Phase 2 — Stabilize input hooks across X11/Wayland
+```bash
+cd mcp-server
+cargo build --release --all-features --bin cortex-scout-mcp
+```
 
-- Keep current checks in [mcp-server/src/setup/os/linux.rs](../mcp-server/src/setup/os/linux.rs).
-- Document “X11 recommended” if Wayland blocks hooks.
-- Ensure kill-switch remains best-effort (never hard-fail if hooks unavailable).
-
-### Phase 3 — Unify browser discovery
-
-- Use a single helper for browser discovery used by both:
-  - `non_robot_search` (visible browser), and
-  - CDP-based scraping paths.
-
-### Phase 4 — CI verification
-
-- Add a Linux desktop build job (compile-only) for `--features non_robot_search`.
-- Optionally run a smoke test against a local `about:blank` navigation.
 
 ## Troubleshooting
 

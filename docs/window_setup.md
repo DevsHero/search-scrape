@@ -1,136 +1,127 @@
-# [DEPRECATED] Cortex Scout Windows Installation Guide (Legacy)
+# Cortex Scout — Windows Setup Guide
 
-> This guide predates the v2.3.x migration to native Chromium/CDP (no Browserless sidecar).
-> Use it as a starting point for Windows build prerequisites, but follow the current README + docs/VSCODE_SETUP.md for runtime setup.
-
-This guide provides a comprehensive, step-by-step procedure to set up **Cortex Scout** on Windows 10/11, enabling full **Human-in-the-Loop (HITL)** capabilities.
+This guide covers building and configuring Cortex Scout on Windows 10/11.
+For macOS/Linux see [docs/ubuntu_setup.md](ubuntu_setup.md) and the main [README](../README.md).
 
 ---
 
-## 🏗️ 1. Prerequisites (Do this first)
+## Prerequisites
 
-1.  **Install Rust:**
-    Download and install `rustup-init.exe` from [rust-lang.org](https://www.rust-lang.org/tools/install). Select the default installation (Microsoft C++ build tools).
+1. **Install Rust** from [rust-lang.org/tools/install](https://www.rust-lang.org/tools/install).
+   Choose the default MSVC toolchain during setup.
 
-2.  **Install Build Tools & Windows SDK:**
-    Cortex Scout uses modern AI libraries (ONNX Runtime) that require specific DirectX libraries.
-    - Install **Visual Studio Build Tools 2022**.
-    - Ensure **"Desktop development with C++"** workload is checked.
-    - **CRITICAL:** Ensure a recent Windows 10/11 SDK is installed (version **10.0.19041.0** or higher is REQUIRED for `DXCORE.lib`).
-    
-    *If you get linker errors involving `DXCORE.lib`, run:*
-    ```powershell
-    winget install Microsoft.WindowsSDK.10.0.22621
-    ```
+2. **Install Visual Studio Build Tools 2022** with the
+   "Desktop development with C++" workload
+   (required for the Rust MSVC linker).
 
-3.  **Install a Browser (Brave Recommended):**
-  - [Brave Browser](https://brave.com/) (Best for `non_robot_search` / HITL)
-    - OR Google Chrome / Microsoft Edge.
+3. **Install a Chromium-based browser** (Brave, Chrome, or Edge) if you plan to use
+   CDP-based anti-bot bypass (`SEARCH_CDP_FALLBACK=true`) or the HITL visible-browser
+   tools (`hitl_web_fetch`, `human_auth_session`).
 
 ---
 
-## 🛠️ 2. Build the Project
+## Build
 
-Open PowerShell (Run as Administrator recommended for best experience with global hooks).
+Open PowerShell and run:
 
 ```powershell
-# 1. Clone the repository
 git clone https://github.com/cortex-works/cortex-scout.git
-cd Cortex Scout
+cd cortex-scout\mcp-server
 
-# 2. Enter the server directory
-cd mcp-server
+# Basic build (search, scrape, deep research, memory)
+cargo build --release --bin cortex-scout-mcp
 
-# 3. Build with Windows HITL support
-# This may take 5-10 minutes initially to compile dependencies like `ort` and `sysinfo`.
-cargo build --release --bin cortex-scout-mcp --features non_robot_search
+# Full build (adds hitl_web_fetch / human_auth_session)
+cargo build --release --all-features --bin cortex-scout-mcp
 ```
 
-**Verify the build:**
-```powershell
-.\target\release\cortex-scout-mcp.exe --version
-# Should output: 2.0.0-rc (or similar)
+The output binary is at:
+
+```
+cortex-scout\mcp-server\target\release\cortex-scout-mcp.exe
 ```
 
 ---
 
-## 🐳 3. Start Services
+## Configure VS Code
 
-Cortex Scout is Zero-Docker; run the binary directly.
+Windows has no `env` command, so pass environment variables as an object.
 
-## ⚙️ 4. Configure MCP in VS Code (The "Windows Set")
+Open `%APPDATA%\Code\User\mcp.json` (create if it does not exist):
 
-This configuration connects VS Code to your local Cortex Scout binary.
-
-1.  Open VS Code.
-2.  Open your MCP settings file:
-    - **Method A:** Press `F1` or `Ctrl+Shift+P` -> type `MCP: Configure MCP Servers` -> select `Open configuration file`.
-    - **Method B:** Manually open `%APPDATA%\Code\User\mcp.json`.
-3.  Add the following implementation. **Update paths to match your actual folders.**
-
-```json
+```jsonc
 {
   "servers": {
     "cortex-scout": {
       "type": "stdio",
-      "command": "c:\\Users\\YOUR_USER\\Downloads\\Cortex Scout\\mcp-server\\target\\release\\cortex-scout-mcp.exe",
+      "command": "C:\\Users\\YOU\\cortex-scout\\mcp-server\\target\\release\\cortex-scout-mcp.exe",
       "args": [],
       "env": {
-        "RUST_LOG": "info",
-        "LANCEDB_URI": "c:\\Users\\YOUR_USER\\Downloads\\Cortex Scout\\lancedb",
+        "RUST_LOG": "warn",
+        "SEARCH_ENGINES": "google,bing,duckduckgo,brave",
+        "LANCEDB_URI": "C:\\Users\\YOU\\cortex-scout\\lancedb",
         "HTTP_TIMEOUT_SECS": "30",
-        "HTTP_CONNECT_TIMEOUT_SECS": "10",
-        "OUTBOUND_LIMIT": "32",
         "MAX_CONTENT_CHARS": "10000",
-        "MAX_LINKS": "100",
-        "CORTEX_SCOUT_NON_ROBOT_AUTO_ALLOW": "1",
-        "IP_LIST_PATH": "c:\\Users\\YOUR_USER\\Downloads\\Cortex Scout\\ip.txt",
-        "PROXY_SOURCE_PATH": "c:\\Users\\YOUR_USER\\Downloads\\Cortex Scout\\proxy_source.json"
+        "IP_LIST_PATH": "C:\\Users\\YOU\\cortex-scout\\ip.txt",
+        "PROXY_SOURCE_PATH": "C:\\Users\\YOU\\cortex-scout\\proxy_source.json"
       }
     }
   }
 }
 ```
 
-> **Note:** `CORTEX_SCOUT_NON_ROBOT_AUTO_ALLOW="1"` enables "Agent Mode" where the browser opens automatically without a confirmation popup for every action. Set to `0` if you want manual approval for every browser launch.
+Restart VS Code after saving.
 
 ---
 
-## 🧪 5. Verification
+## Configure other clients (Claude Desktop, Cursor, Windsurf)
 
-1.  **Restart VS Code** to reload the MCP configuration.
-2.  Open the MCP servers view (icon in sidebar) to confirm `cortex-scout` is connected (green dot).
-3.  Open a Chat in VS Code (e.g., using GitHub Copilot or an MCP-enabled chat agent).
-4.  Ask: *"Search the web for 'Rust programming 2026' using Cortex Scout"*
-  - **Result:** Should return search results from the built-in Rust metasearch.
-5.  Ask: *"Go to https://example.com using non_robot_search and extract the content"*
-    - **Result:** 
-      - A browser window (Brave/Chrome) should visibly open on your desktop.
-      - It will navigate to example.com.
-      - It will hold for a few seconds (simulating human behavior).
-      - It will close automatically (or wait for timeout/finish).
-      - The agent should receive the extracted text.
+These clients use the `"mcpServers"` top-level key (not `"servers"`).
 
----
-
-## ❓ Troubleshooting
-
-- **Build error `cannot find -lDXCORE`**:
-  - You are missing the Windows 10 SDK (version 2004 / 10.0.19041.0 or newer). Run the `winget` command in Prerequisites.
-- **Browser path not found**:
-  - Add `"CHROME_EXECUTABLE": "C:\\Path\\To\\Your\\Browser.exe"` to the `env` section in `mcp.json`.
-- **Proxy errors**:
-  - Create an empty `ip.txt` and `proxy_source.json` in your Cortex Scout root folder if you are not using proxies.
-- **"Access Denied" on kill switch**:
-  - VS Code or the terminal launching the process needs to be run as **Administrator** to use global input hooks required for the safety kill switch.
+```jsonc
+// claude_desktop_config.json / ~/.cursor/mcp.json / etc.
+{
+  "mcpServers": {
+    "cortex-scout": {
+      "command": "C:\\Users\\YOU\\cortex-scout\\mcp-server\\target\\release\\cortex-scout-mcp.exe",
+      "args": [],
+      "env": {
+        "RUST_LOG": "warn",
+        "SEARCH_ENGINES": "google,bing,duckduckgo,brave",
+        "LANCEDB_URI": "C:\\Users\\YOU\\cortex-scout\\lancedb",
+        "HTTP_TIMEOUT_SECS": "30",
+        "MAX_CONTENT_CHARS": "10000",
+        "IP_LIST_PATH": "C:\\Users\\YOU\\cortex-scout\\ip.txt",
+        "PROXY_SOURCE_PATH": "C:\\Users\\YOU\\cortex-scout\\proxy_source.json"
+      }
+    }
+  }
+}
+```
 
 ---
 
-## 📜 Feature & Config Reference (Windows)
+## Feature support on Windows
 
-| Feature | Windows Status | Implementation Details |
-|---------|----------------|------------------------|
-| **Browser Control** | ✅ Working | Uses `sysinfo` to manage processes (replaces Unix `ps`/`kill`). |
-| **Notifications** | ✅ Working | Uses `notify-rust` (native Windows 10/11 Toasts). |
-| **Local Proxy** | ✅ Working | Reads native Windows paths from JSON config. |
-| **Consent Dialog** | ✅ Working | Uses `rfd` crate for native message boxes. |
+| Feature | Status |
+|---------|--------|
+| Web search (all engines) | Supported |
+| Web fetch / crawl | Supported |
+| Deep research + LLM synthesis | Supported |
+| Proxy rotation | Supported |
+| CDP anti-bot (`SEARCH_CDP_FALLBACK`) | Supported (requires Brave/Chrome installed) |
+| `hitl_web_fetch` / `human_auth_session` | Supported — build with `--all-features` |
+| `visual_scout` (headless screenshot) | Supported |
+| Semantic memory (LanceDB) | Supported |
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| Build fails with linker errors | Verify VS Build Tools 2022 + C++ workload installed |
+| No tools appear in VS Code | Check binary path in mcp.json; restart VS Code |
+| Tools time out immediately | Set `RUST_LOG=warn` (not `info`) |
+| CDP fetch fails | Ensure Brave/Chrome is installed and discoverable |
+| `hitl_web_fetch` not listed | Rebuild with `--all-features` |

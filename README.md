@@ -85,11 +85,17 @@ curl http://localhost:5000/health
 
 ### Option B — Build from source
 
+Basic build (search, scrape, deep research, memory):
+
 ```bash
 git clone https://github.com/cortex-works/cortex-scout.git
-cd cortex-scout
+cd cortex-scout/mcp-server
+cargo build --release
+```
 
-cd mcp-server
+Full build (includes `hitl_web_fetch` / visible-browser HITL):
+
+```bash
 cargo build --release --all-features
 ```
 
@@ -97,7 +103,39 @@ cargo build --release --all-features
 
 ## MCP Integration (VS Code / Cursor / Claude Desktop)
 
-Add a server entry to your MCP config. Example for VS Code (stdio transport):
+Add a server entry to your MCP config.
+
+**VS Code** (`mcp.json` — global, or `settings.json` under `mcp.servers`):
+
+```jsonc
+// mcp.json (global): top-level key is "servers"
+// settings.json (workspace): use "mcp.servers" instead
+{
+  "servers": {
+    "cortex-scout": {
+      "type": "stdio",
+      "command": "env",
+      "args": [
+        "RUST_LOG=warn",
+        "SEARCH_ENGINES=google,bing,duckduckgo,brave",
+        "LANCEDB_URI=/YOUR_PATH/cortex-scout/lancedb",
+        "HTTP_TIMEOUT_SECS=30",
+        "MAX_CONTENT_CHARS=10000",
+        "IP_LIST_PATH=/YOUR_PATH/cortex-scout/ip.txt",
+        "PROXY_SOURCE_PATH=/YOUR_PATH/cortex-scout/proxy_source.json",
+        "--",
+        "/YOUR_PATH/cortex-scout/mcp-server/target/release/cortex-scout-mcp"
+      ]
+    }
+  }
+}
+```
+
+> **Important:** Always use `RUST_LOG=warn`, not `info`. At `info` level, the server emits hundreds of log lines per request to stderr, which can confuse MCP clients that monitor stderr.
+
+> **Windows:** Windows has no `env` command. Use the `command`+`env` object format instead — see [docs/IDE_SETUP.md](docs/IDE_SETUP.md).
+
+**With deep research (LLM synthesis via OpenRouter / any OpenAI-compatible API):**
 
 ```jsonc
 {
@@ -106,13 +144,20 @@ Add a server entry to your MCP config. Example for VS Code (stdio transport):
       "type": "stdio",
       "command": "env",
       "args": [
-        "RUST_LOG=info",
+        "RUST_LOG=warn",
         "SEARCH_ENGINES=google,bing,duckduckgo,brave",
         "LANCEDB_URI=/YOUR_PATH/cortex-scout/lancedb",
         "HTTP_TIMEOUT_SECS=30",
         "MAX_CONTENT_CHARS=10000",
         "IP_LIST_PATH=/YOUR_PATH/cortex-scout/ip.txt",
         "PROXY_SOURCE_PATH=/YOUR_PATH/cortex-scout/proxy_source.json",
+        "OPENAI_BASE_URL=https://openrouter.ai/api/v1",
+        "OPENAI_API_KEY=sk-or-v1-...",
+        "DEEP_RESEARCH_LLM_MODEL=moonshotai/kimi-k2.5",
+        "DEEP_RESEARCH_ENABLED=1",
+        "DEEP_RESEARCH_SYNTHESIS=1",
+        "DEEP_RESEARCH_SYNTHESIS_MAX_TOKENS=4096",
+        "--",
         "/YOUR_PATH/cortex-scout/mcp-server/target/release/cortex-scout-mcp"
       ]
     }
@@ -147,24 +192,65 @@ Create `cortex-scout.json` in the same directory as the binary (or repository ro
 
 ## Key Environment Variables
 
+### Core
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CHROME_EXECUTABLE` | auto-detected | Override path to Chromium/Chrome/Brave |
+| `RUST_LOG` | `warn` | Log level. **Keep `warn` for MCP stdio** — `info` floods stderr and confuses MCP clients |
+| `HTTP_TIMEOUT_SECS` | `30` | Per-request read timeout (seconds) |
+| `HTTP_CONNECT_TIMEOUT_SECS` | `10` | TCP connect timeout (seconds) |
+| `OUTBOUND_LIMIT` | `32` | Max concurrent outbound HTTP connections |
+| `MAX_CONTENT_CHARS` | `10000` | Max characters returned per scraped page |
+
+### Browser / Anti-bot
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CHROME_EXECUTABLE` | auto-detected | Override path to Chromium/Chrome/Brave binary |
+| `SEARCH_CDP_FALLBACK` | `true` | Retry search engine fetches via native Chromium CDP when blocked |
+| `SEARCH_TIER2_NON_ROBOT` | unset | Set `1` to allow `hitl_web_fetch` as last-resort search escalation |
+| `MAX_LINKS` | `100` | Max links followed per page crawl |
+
+### Search
+
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `SEARCH_ENGINES` | `google,bing,duckduckgo,brave` | Active engines (comma-separated) |
-| `SEARCH_MAX_RESULTS_PER_ENGINE` | `10` | Results per engine before merge |
-| `SEARCH_CDP_FALLBACK` | auto | Retry blocked retrieval via native Chromium CDP |
-| `LANCEDB_URI` | — | Path for semantic memory (optional) |
-| `CORTEX_SCOUT_MEMORY_DISABLED` | `0` | Set `1` to disable memory features |
-| `HTTP_TIMEOUT_SECS` | `30` | Per-request timeout |
-| `OUTBOUND_LIMIT` | `32` | Max concurrent outbound connections |
-| `MAX_CONTENT_CHARS` | `10000` | Max chars per scraped document |
-| `IP_LIST_PATH` | — | Proxy IP list path |
-| `PROXY_SOURCE_PATH` | — | Proxy source definition path |
-| `DEEP_RESEARCH_ENABLED` | `1` | Disable the `deep_research` tool at runtime by setting `0` |
-| `OPENAI_API_KEY` | — | API key for synthesis (omit for key-less local endpoints) |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible endpoint (Ollama/LM Studio supported) |
-| `DEEP_RESEARCH_LLM_MODEL` | `gpt-4o-mini` | Model name (OpenAI-compatible) |
-| `DEEP_RESEARCH_SYNTHESIS_MAX_TOKENS` | `1024` | Response token budget for synthesis |
+| `SEARCH_MAX_RESULTS_PER_ENGINE` | `10` | Results per engine before merge/dedup |
+
+### Proxy
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IP_LIST_PATH` | — | Path to `ip.txt` (one proxy per line: `http://`, `socks5://`) |
+| `PROXY_SOURCE_PATH` | — | Path to `proxy_source.json` (used by `proxy_control grab`) |
+
+### Semantic Memory (LanceDB)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LANCEDB_URI` | — | Directory path for persistent research memory. Omit to disable |
+| `CORTEX_SCOUT_MEMORY_DISABLED` | `0` | Set `1` to disable memory even when `LANCEDB_URI` is set |
+| `MODEL2VEC_MODEL` | built-in | HuggingFace model ID or local path for embedding (e.g. `minishlab/potion-base-8M`) |
+
+### Deep Research
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEEP_RESEARCH_ENABLED` | `1` | Set `0` to disable the `deep_research` tool at runtime |
+| `OPENAI_API_KEY` | — | API key for LLM synthesis. Omit for key-less local endpoints (Ollama) |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible endpoint (OpenRouter, Ollama, LM Studio, etc.) |
+| `DEEP_RESEARCH_LLM_MODEL` | `gpt-4o-mini` | Model identifier (must be supported by the endpoint) |
+| `DEEP_RESEARCH_SYNTHESIS` | `1` | Set `0` to skip LLM synthesis (search+scrape only) |
+| `DEEP_RESEARCH_SYNTHESIS_MAX_TOKENS` | `1024` | Max tokens for synthesis response. Use `4096`+ for large-context models |
+| `DEEP_RESEARCH_SYNTHESIS_MAX_SOURCES` | `8` | Max source documents fed to LLM synthesis |
+| `DEEP_RESEARCH_SYNTHESIS_MAX_CHARS_PER_SOURCE` | `2500` | Max characters extracted per source for synthesis |
+
+### HTTP Server only
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CORTEX_SCOUT_PORT` / `PORT` | `5000` | Listening port for the HTTP server binary (`cortex-scout`) |
 
 ---
 
@@ -172,13 +258,13 @@ Create `cortex-scout.json` in the same directory as the binary (or repository ro
 
 Recommended operational flow:
 
-1) Use `memory_search` before new research runs to avoid re-fetching.
-2) Prefer `web_search_json` for initial discovery (search + content summaries).
-3) Use `web_fetch` for known URLs; use `output_format="clean_json"` and set `query` + `strict_relevance=true` for token efficiency.
-4) On 403/429/rate-limit: call `proxy_control` with `action:"grab"`, then retry with `use_proxy:true`.
-5) For auth walls: `visual_scout` to confirm gating, then `human_auth_session` to complete login and persist sessions under `~/.cortex-scout/sessions/`.
-
-Full agent rules: [/.github/copilot-instructions.md](.github/copilot-instructions.md)
+1. Call `memory_search` before any new research run — skip live fetching if similarity ≥ 0.60 and `skip_live_fetch` is `true`.
+2. For initial topic discovery use `web_search_json` (returns structured snippets, lower token cost than full scrape).
+3. For known URLs use `web_fetch` with `output_format="clean_json"`, set `query` + `strict_relevance=true` to truncate irrelevant content.
+4. On 403/429: call `proxy_control` with `action:"grab"` to refresh the proxy list, then retry with `use_proxy:true`.
+5. For auth-gated pages: `visual_scout` to confirm the gate type → `human_auth_session` to complete login (cookies persisted under `~/.cortex-scout/sessions/`).
+6. For deep research: `deep_research` handles multi-hop search + scrape + LLM synthesis automatically. Tune `depth` (1–3) and `max_sources` per run cost budget.
+7. For CAPTCHA or heavy JS pages that all other paths fail: `hitl_web_fetch` opens a visible Brave/Chrome window for human completion (requires `--all-features` build and a local desktop session).
 
 ---
 

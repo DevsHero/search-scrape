@@ -6,8 +6,6 @@ Policy:
 
 ## v3.1.1 (2026-02-27)
 
-## v3.1.1 (2026-02-27)
-
 ### Fixed
 
 - **Release script (`scripts/release.sh`) — BSD `sed` crash on macOS.**  
