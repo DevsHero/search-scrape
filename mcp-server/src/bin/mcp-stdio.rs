@@ -4,7 +4,7 @@ use cortex_scout::stdio_service;
 async fn main() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_env_filter(cortex_scout::build_env_filter("warn"))
         .try_init();
 
     // VS Code MCP host may probe stdio servers with `--version`/`--help`.

@@ -287,6 +287,8 @@ If you still see slow or unstable synthesis, reduce `synthesis_max_sources` befo
 
 Issue #7 fixed concurrent headless CDP launches by giving each request a unique temporary `--user-data-dir`. That prevents the default shared-temp-profile race during normal scraping and `deep_research` batch work.
 
+Later builds also clean up stale `chromiumoxide-runner` temp-profile lock files before each new headless launch. If users still see `chromiumoxide-runner/SingletonLock` in logs, they are almost certainly running an older binary.
+
 Users can still hit real profile locks in these cases:
 
 - They are running an older binary built before the fix on 2026-03-05

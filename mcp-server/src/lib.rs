@@ -6,6 +6,16 @@ pub mod scraping;
 pub mod setup;
 pub mod tools;
 
+pub fn build_env_filter(default_directives: &str) -> tracing_subscriber::EnvFilter {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_directives));
+
+    filter
+        .add_directive("chromiumoxide::handler=off".parse().expect("valid directive"))
+        .add_directive("chromiumoxide::browser=off".parse().expect("valid directive"))
+        .add_directive("chromiumoxide=warn".parse().expect("valid directive"))
+}
+
 // --- Primary core exports ---
 pub use core::content_quality;
 pub use core::types;

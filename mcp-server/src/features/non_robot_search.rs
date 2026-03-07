@@ -3022,7 +3022,10 @@ fn spawn_handler_task(
             match event {
                 Ok(_) => {}
                 Err(e) => {
-                    tracing::warn!("chromiumoxide handler event error: {}", e);
+                    crate::scraping::browser_manager::log_cdp_handler_error(
+                        "chromiumoxide handler event error",
+                        &e.to_string(),
+                    );
                 }
             }
         }

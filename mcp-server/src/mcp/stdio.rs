@@ -56,7 +56,7 @@ impl McpService {
     pub async fn new() -> anyhow::Result<Self> {
         tracing_subscriber::fmt()
             .with_writer(std::io::stderr)
-            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_env_filter(crate::build_env_filter("warn"))
             .try_init()
             .ok();
 

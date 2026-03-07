@@ -45,8 +45,7 @@ fn port_from_env() -> Option<u16> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing
-    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,tower_http=warn"));
+    let env_filter = cortex_scout::build_env_filter("info,tower_http=warn");
     tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
     // Handle setup-only mode

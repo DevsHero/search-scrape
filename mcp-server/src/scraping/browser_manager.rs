@@ -26,9 +26,96 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
+use tokio::task::JoinHandle;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 use uuid::Uuid;
+
+static BROWSER_LAUNCH_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn browser_launch_lock() -> &'static Mutex<()> {
+    BROWSER_LAUNCH_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn cleanup_chromiumoxide_runner_profile() {
+    let runner_dir = std::env::temp_dir().join("chromiumoxide-runner");
+    if !runner_dir.exists() {
+        return;
+    }
+
+    let _ = std::fs::remove_file(runner_dir.join("SingletonLock"));
+    let _ = std::fs::remove_file(runner_dir.join("SingletonSocket"));
+    let _ = std::fs::remove_file(runner_dir.join("SingletonCookie"));
+}
+
+pub fn is_benign_cdp_disconnect(message: &str) -> bool {
+    [
+        "ResetWithoutClosingHandshake",
+        "Connection reset by peer",
+        "Broken pipe",
+        "connection closed",
+        "WebSocket protocol error: Connection reset without closing handshake",
+    ]
+    .iter()
+    .any(|needle| message.contains(needle))
+}
+
+pub fn log_cdp_handler_error(context: &str, message: &str) {
+    if is_benign_cdp_disconnect(message) {
+        info!("{}: browser connection closed during shutdown: {}", context, message);
+    } else {
+        warn!("{}: {}", context, message);
+    }
+}
+
+pub async fn launch_browser_serialized(
+    config: BrowserConfig,
+    context: &str,
+) -> Result<(Browser, chromiumoxide::Handler)> {
+    let _guard = browser_launch_lock().lock().await;
+    cleanup_chromiumoxide_runner_profile();
+    match Browser::launch(config).await {
+        Ok(result) => Ok(result),
+        Err(e) => {
+            cleanup_chromiumoxide_runner_profile();
+            Err(anyhow!("{}: {}", context, e))
+        }
+    }
+}
+
+pub async fn shutdown_browser_session(
+    browser: &mut Browser,
+    handler_task: JoinHandle<()>,
+    data_dir: PathBuf,
+    context: &str,
+) {
+    match tokio::time::timeout(Duration::from_secs(3), browser.close()).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(e)) => {
+            let message = e.to_string();
+            if !is_benign_cdp_disconnect(&message) {
+                warn!("{}: browser close error (non-fatal): {}", context, message);
+            }
+        }
+        Err(_) => {
+            warn!("{}: timed out waiting for browser.close(); aborting handler task", context);
+        }
+    }
+
+    match tokio::time::timeout(Duration::from_secs(3), handler_task).await {
+        Ok(Ok(())) => {}
+        Ok(Err(join_err)) => {
+            if !join_err.is_cancelled() {
+                warn!("{}: handler task join error: {}", context, join_err);
+            }
+        }
+        Err(_) => {
+            warn!("{}: timed out waiting for handler task shutdown", context);
+        }
+    }
+
+    let _ = tokio::fs::remove_dir_all(&data_dir).await;
+}
 
 // ── Realistic User-Agent pool (Step 1: Stealth & Evasion) ────────────────────
 
@@ -272,13 +359,15 @@ impl BrowserPool {
             }
             info!("🚀 Browser pool: launching new instance ({})", self.exe);
             let (config, data_dir) = build_headless_config(&self.exe, proxy_url, 1920, 1080)?;
-            let (new_browser, mut handler) = Browser::launch(config)
-                .await
-                .map_err(|e| anyhow!("Pool: failed to launch ({}): {}", self.exe, e))?;
+            let (new_browser, mut handler) = launch_browser_serialized(
+                config,
+                &format!("Pool: failed to launch ({})", self.exe),
+            )
+            .await?;
             tokio::spawn(async move {
                 while let Some(event) = handler.next().await {
                     if let Err(e) = event {
-                        warn!("Pool CDP handler error: {}", e);
+                        log_cdp_handler_error("Pool CDP handler error", &e.to_string());
                     }
                 }
             });
@@ -503,14 +592,16 @@ pub async fn fetch_html_native(url: &str, wait_ms: Option<u32>) -> Result<(u16, 
 
     let (config, data_dir) = build_headless_config(&exe, None, 1280, 900)?;
 
-    let (mut browser, mut handler) = Browser::launch(config)
-        .await
-        .map_err(|e| anyhow!("Failed to launch browser ({}): {}", exe, e))?;
+    let (mut browser, mut handler) = launch_browser_serialized(
+        config,
+        &format!("Failed to launch browser ({})", exe),
+    )
+    .await?;
 
     let _handle = tokio::spawn(async move {
         while let Some(event) = handler.next().await {
             if let Err(e) = event {
-                warn!("CDP handler error: {}", e);
+                log_cdp_handler_error("CDP handler error", &e.to_string());
             }
         }
     });
@@ -539,10 +630,7 @@ pub async fn fetch_html_native(url: &str, wait_ms: Option<u32>) -> Result<(u16, 
     .await;
 
     // Best-effort cleanup — don't let a close error shadow the fetch error
-    if let Err(e) = browser.close().await {
-        warn!("Browser close error (non-fatal): {}", e);
-    }
-    let _ = tokio::fs::remove_dir_all(&data_dir).await;
+    shutdown_browser_session(&mut browser, _handle, data_dir, "fetch_html_native").await;
 
     result
 }
@@ -577,14 +665,16 @@ pub async fn fetch_html_native_mobile(url: &str, wait_ms: Option<u32>) -> Result
         .build()
         .map_err(|e| anyhow!("Mobile browser config error: {}", e))?;
 
-    let (mut browser, mut handler) = Browser::launch(config)
-        .await
-        .map_err(|e| anyhow!("Failed to launch mobile browser: {}", e))?;
+    let (mut browser, mut handler) = launch_browser_serialized(
+        config,
+        "Failed to launch mobile browser",
+    )
+    .await?;
 
     let _handle = tokio::spawn(async move {
         while let Some(event) = handler.next().await {
             if let Err(e) = event {
-                warn!("CDP mobile handler error: {}", e);
+                log_cdp_handler_error("CDP mobile handler error", &e.to_string());
             }
         }
     });
@@ -606,7 +696,6 @@ pub async fn fetch_html_native_mobile(url: &str, wait_ms: Option<u32>) -> Result
     }
     .await;
 
-    browser.close().await.ok();
-    let _ = tokio::fs::remove_dir_all(&mobile_data_dir).await;
+    shutdown_browser_session(&mut browser, _handle, mobile_data_dir, "fetch_html_native_mobile").await;
     result
 }

@@ -6,7 +6,7 @@ use chrono::Utc;
 use futures::StreamExt;
 use scraper::Html;
 use std::time::Duration;
-use tracing::{error, warn};
+use tracing::warn;
 use url::Url;
 
 impl RustScraper {
@@ -25,14 +25,16 @@ impl RustScraper {
         let (config, data_dir) =
             browser_manager::build_headless_config(&exe, proxy_url.as_deref(), 1920, 1080)?;
 
-        let (mut browser, mut handler) = chromiumoxide::Browser::launch(config)
-            .await
-            .map_err(|e| anyhow!("Failed to launch browser ({}): {}", exe, e))?;
+        let (mut browser, mut handler) = browser_manager::launch_browser_serialized(
+            config,
+            &format!("Failed to launch browser ({})", exe),
+        )
+        .await?;
 
         let handle = tokio::spawn(async move {
             while let Some(event) = handler.next().await {
                 if let Err(e) = event {
-                    error!("CDP handler error: {}", e);
+                    browser_manager::log_cdp_handler_error("CDP handler error", &e.to_string());
                 }
             }
         });
@@ -195,9 +197,7 @@ impl RustScraper {
             warn!("❌ CDP fetch hit challenge iframe/content signature");
 
             drop(page);
-            browser.close().await.ok();
-            handle.abort();
-            let _ = tokio::fs::remove_dir_all(&data_dir).await;
+            browser_manager::shutdown_browser_session(&mut browser, handle, data_dir, "fetch_via_cdp").await;
 
             return Err(anyhow!("CDP bypass failed: Challenge detected"));
         }
@@ -206,9 +206,7 @@ impl RustScraper {
             warn!("❌ CDP fetch still blocked: {}", block_reason);
 
             drop(page);
-            browser.close().await.ok();
-            handle.abort();
-            let _ = tokio::fs::remove_dir_all(&data_dir).await;
+            browser_manager::shutdown_browser_session(&mut browser, handle, data_dir, "fetch_via_cdp").await;
 
             return Err(anyhow!("CDP bypass failed: {}", block_reason));
         }
@@ -216,9 +214,7 @@ impl RustScraper {
         warn!("✅ CDP fetch successful ({} chars)", content.len());
 
         drop(page);
-        browser.close().await.ok();
-        handle.abort();
-        let _ = tokio::fs::remove_dir_all(&data_dir).await;
+        browser_manager::shutdown_browser_session(&mut browser, handle, data_dir, "fetch_via_cdp").await;
 
         Ok((content, 200))
     }

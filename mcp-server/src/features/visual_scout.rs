@@ -15,7 +15,7 @@ use anyhow::{anyhow, Result};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tracing::{error, info, warn};
+use tracing::info;
 
 /// Response returned by `take_screenshot`.
 #[derive(Debug, Serialize, Deserialize)]
@@ -67,14 +67,19 @@ pub async fn take_screenshot(
 
     let (config, vs_data_dir) = browser_manager::build_headless_config(&exe, proxy_url, vp_width, vp_height)?;
 
-    let (mut browser, mut handler) = chromiumoxide::Browser::launch(config)
-        .await
-        .map_err(|e| anyhow!("visual_scout: browser launch failed ({}): {}", exe, e))?;
+    let (mut browser, mut handler) = browser_manager::launch_browser_serialized(
+        config,
+        &format!("visual_scout: browser launch failed ({})", exe),
+    )
+    .await?;
 
     let handle = tokio::spawn(async move {
         while let Some(event) = handler.next().await {
             if let Err(e) = event {
-                error!("visual_scout CDP handler error: {}", e);
+                browser_manager::log_cdp_handler_error(
+                    "visual_scout CDP handler error",
+                    &e.to_string(),
+                );
             }
         }
     });
@@ -150,11 +155,7 @@ pub async fn take_screenshot(
     let screenshot_path = screenshot_path_buf.to_string_lossy().to_string();
 
     // Shut down browser cleanly.
-    if let Err(e) = browser.close().await {
-        warn!("visual_scout: browser close error (non-fatal): {}", e);
-    }
-    handle.abort();
-    let _ = tokio::fs::remove_dir_all(&vs_data_dir).await;
+    browser_manager::shutdown_browser_session(&mut browser, handle, vs_data_dir, "visual_scout").await;
 
     let auth_hint = {
         let tl = page_title.trim().to_lowercase();
