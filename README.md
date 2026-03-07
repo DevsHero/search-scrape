@@ -268,6 +268,51 @@ Recommended operational flow:
 
 ---
 
+## FAQ
+
+### Why does `deep_research` with Ollama or `qwen3.5` sometimes fail or fall back to heuristic mode?
+
+Some reasoning-capable local models return OpenAI-compatible `/v1/chat/completions` responses with `message.reasoning` populated but `message.content` empty. Cortex Scout now retries local Ollama endpoints through native `/api/chat` with `think:false` when that pattern is detected.
+
+Recommended config for local 4B-class Ollama models:
+
+- `llm_api_key: ""` in `cortex-scout.json` is valid and means "no auth required"
+- Keep `synthesis_max_sources` at `1-2`
+- Keep `synthesis_max_chars_per_source` around `600-1000`
+- Keep `synthesis_max_tokens` around `512-768`
+
+If you still see slow or unstable synthesis, reduce `synthesis_max_sources` before increasing token limits.
+
+### Why do some users still report `SingletonLock` or Chromium profile lock errors after Issue #7?
+
+Issue #7 fixed concurrent headless CDP launches by giving each request a unique temporary `--user-data-dir`. That prevents the default shared-temp-profile race during normal scraping and `deep_research` batch work.
+
+Users can still hit real profile locks in these cases:
+
+- They are running an older binary built before the fix on 2026-03-05
+- They are using `non_robot_search` or another HITL flow with a real browser profile such as Brave `Default`
+- They launch multiple HITL/browser-profile calls concurrently
+- Brave/Chrome is already open on the same live profile path
+
+Prevention checklist:
+
+1. Rebuild or download a release newer than the 2026-03-05 fix.
+2. For normal scraping and `deep_research`, do not set a persistent profile path unless you explicitly need a logged-in browser session.
+3. For `non_robot_search` and live-profile sessions, run calls sequentially.
+4. Close Brave/Chrome fully before reusing the same profile path.
+5. If you need concurrent research, let Cortex Scout use its own temporary profile directories instead of a shared real profile.
+
+### My MCP client connects but tools fail or time out immediately. What should I check first?
+
+Check these before anything else:
+
+1. Use `RUST_LOG=warn`, not `info`.
+2. On macOS/Linux `env`-style configs, include `"--"` before the binary path.
+3. On Windows, do not use `env`; use `command` plus an `env` object.
+4. Make sure the binary path points to a current build, not an old pre-fix binary.
+
+---
+
 ## Versioning and Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).

@@ -7,17 +7,17 @@
       "llm_api_key": "API key. Leave blank ('') for key-less local endpoints (Ollama/LM Studio). Env fallback: OPENAI_API_KEY.",
       "llm_model": "Model name. Env fallback: DEEP_RESEARCH_LLM_MODEL. Default: gpt-4o-mini.",
       "synthesis_enabled": "Set false to run search+scrape only and skip LLM synthesis entirely. Env fallback: DEEP_RESEARCH_SYNTHESIS=0.",
-      "synthesis_max_sources": "Max source docs fed to the LLM. Env fallback: DEEP_RESEARCH_SYNTHESIS_MAX_SOURCES. Default: 8.",
-      "synthesis_max_chars_per_source": "Max chars per source document. Env fallback: DEEP_RESEARCH_SYNTHESIS_MAX_CHARS_PER_SOURCE. Default: 2500.",
-      "synthesis_max_tokens": "Max tokens in the LLM response. Tune per model: 512-1024 for small 4k-ctx models, 2048+ for large models. Env fallback: DEEP_RESEARCH_SYNTHESIS_MAX_TOKENS. Default: 1024."
+      "synthesis_max_sources": "Max source docs fed to the LLM. Env fallback: DEEP_RESEARCH_SYNTHESIS_MAX_SOURCES. Default: 8. For local 4B-class Ollama models, 1-2 is usually more reliable than 3+.",
+      "synthesis_max_chars_per_source": "Max chars per source document. Env fallback: DEEP_RESEARCH_SYNTHESIS_MAX_CHARS_PER_SOURCE. Default: 2500. For local 4B-class Ollama models, 600-1000 chars per source is a safer range.",
+      "synthesis_max_tokens": "Max tokens in the LLM response. Tune per model: 512-1024 for small 4k-ctx models, 2048+ for large models. Env fallback: DEEP_RESEARCH_SYNTHESIS_MAX_TOKENS. Default: 1024. For local 4B-class Ollama models, 512-768 is typically more stable."
     },
     "enabled": true,
-    "llm_base_url": "http://localhost:1234/v1",
+    "llm_base_url": "http://localhost:11434/v1",
     "llm_api_key": "",
-    "llm_model": "lfm2-2.6b",
+    "llm_model": "qwen3.5:4b",
     "synthesis_enabled": true,
-    "synthesis_max_sources": 3,
+    "synthesis_max_sources": 2,
     "synthesis_max_chars_per_source": 800,
-    "synthesis_max_tokens": 1024
+    "synthesis_max_tokens": 768
   }
 }

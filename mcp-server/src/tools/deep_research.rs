@@ -23,6 +23,91 @@ use anyhow::{Context, Result};
 use std::{collections::HashMap, collections::HashSet, sync::Arc, time::Instant};
 use tracing::{info, warn};
 
+fn is_local_ollama_base_url(base_url: &str) -> bool {
+    let normalized = base_url.trim().trim_end_matches('/').to_ascii_lowercase();
+    normalized.starts_with("http://localhost:11434")
+        || normalized.starts_with("http://127.0.0.1:11434")
+}
+
+async fn llm_synthesize_report_ollama_native(
+    state: &Arc<AppState>,
+    query: &str,
+    findings: &[DeepResearchSource],
+    model: &str,
+    base_url: &str,
+    max_sources: usize,
+    max_chars_per_source: usize,
+) -> Result<Option<String>> {
+    let mut packed_sources = String::new();
+    for (i, f) in findings.iter().take(max_sources).enumerate() {
+        let mut snippet = f.relevant_content.clone();
+        if snippet.chars().count() > max_chars_per_source {
+            snippet = snippet.chars().take(max_chars_per_source).collect::<String>();
+            snippet.push_str("\n...[truncated]\n");
+        }
+
+        packed_sources.push_str(&format!(
+            "SOURCE {}\nurl: {}\ntitle: {}\ndepth: {}\ncontent:\n{}\n\n",
+            i + 1,
+            f.url,
+            f.title,
+            f.depth,
+            snippet
+        ));
+    }
+
+    if packed_sources.trim().is_empty() {
+        return Ok(None);
+    }
+
+    let system_prompt = "You are a data-synthesis core operating for an AI agent. Your goal is maximum information density. Extract concrete facts, metrics, architectures, and code/tool names. STRICT RULE: NO introductions, NO conclusions, NO conversational filler. Use strict Markdown formats (bullet points, tables, code blocks).";
+    let user_prompt = format!(
+        "Synthesize a dense technical fact-sheet from these sources based on the query: {}.\nIgnore marketing fluff. Output only: key facts, metrics, architecture names, tool names, code references, known limitations.\n\nSources:\n{}",
+        query, packed_sources
+    );
+
+    let url = format!("{}/api/chat", base_url.trim_end_matches("/v1").trim_end_matches('/'));
+    let body = serde_json::json!({
+        "model": model,
+        "stream": false,
+        "think": false,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+    });
+
+    let response = state
+        .http_client
+        .post(url)
+        .json(&body)
+        .send()
+        .await
+        .context("ollama /api/chat request failed")?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow::anyhow!(
+            "ollama /api/chat failed: status={} body={}",
+            status,
+            text
+        ));
+    }
+
+    let value: serde_json::Value = response
+        .json()
+        .await
+        .context("ollama /api/chat response json parse failed")?;
+
+    Ok(value
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty()))
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
@@ -330,6 +415,35 @@ async fn llm_synthesize_report_openai(
         .and_then(|c| c.as_str())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
+
+    if content.is_some() {
+        return Ok(content);
+    }
+
+    let reasoning_present = value
+        .get("choices")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("reasoning"))
+        .and_then(|r| r.as_str())
+        .is_some_and(|r| !r.trim().is_empty());
+
+    if reasoning_present && is_local_ollama_base_url(&base_url) {
+        warn!(
+            "openai-compatible Ollama response returned reasoning without content; retrying via /api/chat"
+        );
+        return llm_synthesize_report_ollama_native(
+            state,
+            query,
+            findings,
+            &model,
+            &base_url,
+            max_sources,
+            max_chars_per_source,
+        )
+        .await;
+    }
 
     Ok(content)
 }
