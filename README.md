@@ -108,8 +108,13 @@ python3 publish/ci/smoke_mcp.py
 ```
 
 This runs a newline-delimited JSON-RPC stdio session against the local `cortex-scout-mcp` binary and exercises the main public tools with safe example inputs.
- 
-A GitHub Actions workflow (`.github/workflows/ci.yml`) invokes the same validation, Rust test suite, and the `smoke_mcp.py` smoke test on every push/PR. It replaces the older HTTP-mode smoke script (`publish/ci/smoke.py`), which has been removed as obsolete.
+
+---
+
+## MCP Integration (VS Code / Cursor / Claude Desktop)
+
+Add a server entry to your MCP config.
+
 **VS Code** (`mcp.json` — global, or `settings.json` under `mcp.servers`):
 
 ```jsonc
@@ -284,26 +289,17 @@ Recommended config for local 4B-class Ollama models:
 
 If you still see slow or unstable synthesis, reduce `synthesis_max_sources` before increasing token limits.
 
-### Why do some users still report `SingletonLock` or Chromium profile lock errors after Issue #7?
 
-Issue #7 fixed concurrent headless CDP launches by giving each request a unique temporary `--user-data-dir`. That prevents the default shared-temp-profile race during normal scraping and `deep_research` batch work.
+### Why do I see Chromium profile lock errors?
 
-Later builds also clean up stale `chromiumoxide-runner` temp-profile lock files before each new headless launch. If users still see `chromiumoxide-runner/SingletonLock` in logs, they are almost certainly running an older binary.
+Each headless request uses a unique temporary profile, so normal scraping and deep_research are safe from profile lock races. Only HITL flows (like non_robot_search) using a real browser profile can hit a lock if you run them concurrently or have Brave/Chrome open on the same profile. To avoid: run HITL calls one at a time, and close all browser windows before reusing a profile.
 
-Users can still hit real profile locks in these cases:
-
-- They are running an older binary built before the fix on 2026-03-05
-- They are using `non_robot_search` or another HITL flow with a real browser profile such as Brave `Default`
-- They launch multiple HITL/browser-profile calls concurrently
-- Brave/Chrome is already open on the same live profile path
-
-Prevention checklist:
-
-1. Rebuild or download a release newer than the 2026-03-05 fix.
-2. For normal scraping and `deep_research`, do not set a persistent profile path unless you explicitly need a logged-in browser session.
-3. For `non_robot_search` and live-profile sessions, run calls sequentially.
-4. Close Brave/Chrome fully before reusing the same profile path.
-5. If you need concurrent research, let Cortex Scout use its own temporary profile directories instead of a shared real profile.
+Checklist:
+1. Use a recent build (2026-03-05 or newer)
+2. Avoid persistent profile paths unless you need a logged-in session
+3. Run HITL/profile flows sequentially
+4. Close all browser windows before reusing a profile
+5. Let Cortex Scout use its own temp profiles for concurrent research
 
 ### My MCP client connects but tools fail or time out immediately. What should I check first?
 
@@ -312,7 +308,7 @@ Check these before anything else:
 1. Use `RUST_LOG=warn`, not `info`.
 2. On macOS/Linux `env`-style configs, pass the binary path directly after the env assignments. Do not insert `"--"` in `mcp.json` args.
 3. On Windows, do not use `env`; use `command` plus an `env` object.
-4. Make sure the binary path points to a current build, not an old pre-fix binary.
+4. Make sure the binary path points to a current build.
 
 ---
 

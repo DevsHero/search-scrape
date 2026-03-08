@@ -4,7 +4,7 @@
 
 This repo uses **`ip.txt` as the primary proxy list** and exposes the MCP tool: **`proxy_control`**.
 
-The older `proxies.yaml` registry approach is deprecated/removed.
+
 
 ## Files
 
