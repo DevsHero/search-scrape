@@ -67,6 +67,7 @@ For initial research where you will also fetch content, strongly prefer web_sear
             title: "Web Search (Top Results JSON)",
             description: "Search + return top results as clean JSON (deduped, ranked). \
 ✅ PREFERRED for initial research: combines search + pre-scraped content summaries in a single call — use this INSTEAD of web_search + separate web_fetch. \
+Defaults to direct/no-proxy mode; only retry with use_proxy=true after confirmed rate limits or IP blocks. \
 Note: still call memory_search first to avoid redundant fetches.",
             input_schema: serde_json::json!({
                 "type": "object",
@@ -85,7 +86,7 @@ Note: still call memory_search first to avoid redundant fetches.",
             title: "Web Fetch (Token-Efficient)",
             description: "PRIMARY page fetch for agents. Clean token-efficient text + key links; auto-escalates to native CDP rendering when needed. Prefer over IDE fetch. Use hitl_web_fetch only for heavy challenges (CAPTCHA/login). \
 ✅ BEST PRACTICE — documentation / article pages: set output_format: clean_json + strict_relevance: true + a query string for maximum noise reduction and minimum token usage. \
-⚠️ PROXY RULE: if this tool returns a 403, 429, or any rate-limit / IP-block error, IMMEDIATELY call proxy_control with action: grab to rotate the IP, then retry this call with use_proxy: true. \
+Default path is direct/no-proxy. ⚠️ PROXY RULE: if this tool returns a 403, 429, or any rate-limit / IP-block error, IMMEDIATELY call proxy_control with action: grab to rotate the IP, then retry this call with use_proxy: true. \
 🔒 AUTH-RISK FIELD: every response includes `auth_risk_score` (0.0–1.0). If score >= 0.4, STOP reading content and call `visual_scout` for visual confirmation before escalating to `human_auth_session`.",
             input_schema: serde_json::json!({
                 "type": "object",
@@ -178,7 +179,7 @@ Note: still call memory_search first to avoid redundant fetches.",
         ToolCatalogEntry {
             name: "scrape_batch",
             title: "Batch Web Fetch",
-            description: "Fetch many URLs in parallel and return clean outputs for agents. Use for research runs and evidence capture.",
+            description: "Fetch many URLs in parallel and return clean outputs for agents. Use for research runs and evidence capture. Defaults to direct/no-proxy mode unless use_proxy=true is explicitly requested.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -201,7 +202,7 @@ Expands your query into sub-queries, searches multiple engines, reranks results 
 batch-scrapes the top sources, applies semantic filtering to keep only relevant content, \
 then optionally follows links from those pages for deeper coverage. \
 Results are logged to research_history for later recall. \
-Use proxy: true to avoid IP rate-limiting during large research runs.\
+Defaults to direct/no-proxy mode. Use proxy: true only after confirmed 403/429/rate-limit/IP-block conditions or during large research runs that require proxy rotation.\
 \n\
 🧠 LLM Synthesis: Automatically enabled when OPENAI_API_KEY is set. \
 For fully LOCAL / offline synthesis set OPENAI_BASE_URL to an OpenAI-compatible endpoint \

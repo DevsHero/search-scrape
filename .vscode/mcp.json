@@ -1,0 +1,19 @@
+{
+  "servers": {
+    "cortex-scout": {
+      "type": "stdio",
+      "command": "env",
+      "args": [
+        "RUST_LOG=warn",
+        "SEARCH_ENGINES=google,bing,duckduckgo,brave",
+        "LANCEDB_URI=/Users/hero/Documents/GitHub/ShadowCrawl/lancedb",
+        "HTTP_TIMEOUT_SECS=30",
+        "HTTP_CONNECT_TIMEOUT_SECS=10",
+        "MAX_CONTENT_CHARS=10000",
+        "IP_LIST_PATH=/Users/hero/Documents/GitHub/ShadowCrawl/ip.txt",
+        "PROXY_SOURCE_PATH=/Users/hero/Documents/GitHub/ShadowCrawl/proxy_source.json",
+        "/Users/hero/Documents/GitHub/ShadowCrawl/mcp-server/target/release/cortex-scout-mcp"
+      ]
+    }
+  }
+}

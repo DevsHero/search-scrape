@@ -56,15 +56,14 @@ VS Code reads MCP servers from two places:
         "LANCEDB_URI=/absolute/path/to/cortex-scout/lancedb",
         "HTTP_TIMEOUT_SECS=30",
         "MAX_CONTENT_CHARS=10000",
-        "IP_LIST_PATH=/absolute/path/to/cortex-scout/ip.txt",
-        "PROXY_SOURCE_PATH=/absolute/path/to/cortex-scout/proxy_source.json",
-        "--",
         "/absolute/path/to/cortex-scout/mcp-server/target/release/cortex-scout-mcp"
       ]
     }
   }
 }
 ```
+
+Default behavior is direct/no-proxy. Add `IP_LIST_PATH` and `PROXY_SOURCE_PATH` only if you want proxy support available. For an opt-in proxy setup, keep `ip.txt` empty and let `proxy_control grab` populate it only when an agent decides a retry should use proxies.
 
 ### Windows
 
@@ -83,9 +82,7 @@ Windows has no `env` command. Pass env vars as an object instead:
         "SEARCH_ENGINES": "google,bing,duckduckgo,brave",
         "LANCEDB_URI": "C:\\Users\\YOU\\cortex-scout\\lancedb",
         "HTTP_TIMEOUT_SECS": "30",
-        "MAX_CONTENT_CHARS": "10000",
-        "IP_LIST_PATH": "C:\\Users\\YOU\\cortex-scout\\ip.txt",
-        "PROXY_SOURCE_PATH": "C:\\Users\\YOU\\cortex-scout\\proxy_source.json"
+        "MAX_CONTENT_CHARS": "10000"
       }
     }
   }
@@ -126,4 +123,4 @@ After editing any MCP config, **restart VS Code** (Cmd+Q / Alt+F4) to reload the
 | Tools time out | Set `RUST_LOG=warn` (not `info` or `debug`) |
 | `hitl_web_fetch` missing | Rebuild with `--all-features` |
 | Config not picked up | Fully restart VS Code after editing mcp.json |
-| Proxy tools fail | Confirm `ip.txt` and `proxy_source.json` exist and paths are set |
+| Proxy tools fail | Proxy support is optional. If you want it, set `IP_LIST_PATH`/`PROXY_SOURCE_PATH`; keep `ip.txt` empty by default and populate it only when needed |

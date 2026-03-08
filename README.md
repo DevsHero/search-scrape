@@ -90,21 +90,26 @@ Basic build (search, scrape, deep research, memory):
 ```bash
 git clone https://github.com/cortex-works/cortex-scout.git
 cd cortex-scout/mcp-server
-cargo build --release
+cargo build --release --bin cortex-scout-mcp
 ```
 
 Full build (includes `hitl_web_fetch` / visible-browser HITL):
 
 ```bash
-cargo build --release --all-features
+cargo build --release --all-features --bin cortex-scout-mcp
 ```
 
----
+If you also want the optional HTTP server binary, build it explicitly with `cargo build --release --bin cortex-scout`.
 
-## MCP Integration (VS Code / Cursor / Claude Desktop)
+Local MCP smoke test:
 
-Add a server entry to your MCP config.
+```bash
+python3 publish/ci/smoke_mcp.py
+```
 
+This runs a newline-delimited JSON-RPC stdio session against the local `cortex-scout-mcp` binary and exercises the main public tools with safe example inputs.
+ 
+A GitHub Actions workflow (`.github/workflows/ci.yml`) invokes the same validation, Rust test suite, and the `smoke_mcp.py` smoke test on every push/PR. It replaces the older HTTP-mode smoke script (`publish/ci/smoke.py`), which has been removed as obsolete.
 **VS Code** (`mcp.json` — global, or `settings.json` under `mcp.servers`):
 
 ```jsonc
@@ -121,15 +126,14 @@ Add a server entry to your MCP config.
         "LANCEDB_URI=/YOUR_PATH/cortex-scout/lancedb",
         "HTTP_TIMEOUT_SECS=30",
         "MAX_CONTENT_CHARS=10000",
-        "IP_LIST_PATH=/YOUR_PATH/cortex-scout/ip.txt",
-        "PROXY_SOURCE_PATH=/YOUR_PATH/cortex-scout/proxy_source.json",
-        "--",
         "/YOUR_PATH/cortex-scout/mcp-server/target/release/cortex-scout-mcp"
       ]
     }
   }
 }
 ```
+
+Default behavior is direct/no-proxy. Add `IP_LIST_PATH` and `PROXY_SOURCE_PATH` only if you want proxy tools available. If you want `proxy_control` available without routing normal traffic through proxies, point `IP_LIST_PATH` at an empty `ip.txt` file and let agents populate it on demand.
 
 > **Important:** Always use `RUST_LOG=warn`, not `info`. At `info` level, the server emits hundreds of log lines per request to stderr, which can confuse MCP clients that monitor stderr.
 
@@ -149,15 +153,12 @@ Add a server entry to your MCP config.
         "LANCEDB_URI=/YOUR_PATH/cortex-scout/lancedb",
         "HTTP_TIMEOUT_SECS=30",
         "MAX_CONTENT_CHARS=10000",
-        "IP_LIST_PATH=/YOUR_PATH/cortex-scout/ip.txt",
-        "PROXY_SOURCE_PATH=/YOUR_PATH/cortex-scout/proxy_source.json",
         "OPENAI_BASE_URL=https://openrouter.ai/api/v1",
         "OPENAI_API_KEY=sk-or-v1-...",
         "DEEP_RESEARCH_LLM_MODEL=moonshotai/kimi-k2.5",
         "DEEP_RESEARCH_ENABLED=1",
         "DEEP_RESEARCH_SYNTHESIS=1",
         "DEEP_RESEARCH_SYNTHESIS_MAX_TOKENS=4096",
-        "--",
         "/YOUR_PATH/cortex-scout/mcp-server/target/release/cortex-scout-mcp"
       ]
     }
@@ -222,8 +223,8 @@ Create `cortex-scout.json` in the same directory as the binary (or repository ro
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `IP_LIST_PATH` | — | Path to `ip.txt` (one proxy per line: `http://`, `socks5://`) |
-| `PROXY_SOURCE_PATH` | — | Path to `proxy_source.json` (used by `proxy_control grab`) |
+| `IP_LIST_PATH` | — | Optional path to `ip.txt` (one proxy per line: `http://`, `socks5://`). Leave unset to disable proxy support entirely, or point at an empty file to keep proxy tools available but inactive by default |
+| `PROXY_SOURCE_PATH` | — | Optional path to `proxy_source.json` (used by `proxy_control grab`) |
 
 ### Semantic Memory (LanceDB)
 
@@ -309,7 +310,7 @@ Prevention checklist:
 Check these before anything else:
 
 1. Use `RUST_LOG=warn`, not `info`.
-2. On macOS/Linux `env`-style configs, include `"--"` before the binary path.
+2. On macOS/Linux `env`-style configs, pass the binary path directly after the env assignments. Do not insert `"--"` in `mcp.json` args.
 3. On Windows, do not use `env`; use `command` plus an `env` object.
 4. Make sure the binary path points to a current build, not an old pre-fix binary.
 

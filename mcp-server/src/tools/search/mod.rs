@@ -761,7 +761,7 @@ pub async fn search_web_with_params(
                     "⚠️ Similar search found from {} (similarity: {:.2}). Consider checking history first.",
                     time_str, score
                 ));
-                    warn!(
+                    info!(
                         "Duplicate search detected: {} ({} ago)",
                         entry.query, time_str
                     );

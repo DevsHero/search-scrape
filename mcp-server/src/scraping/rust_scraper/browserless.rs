@@ -1,6 +1,6 @@
 use super::RustScraper;
 use scraper::{Html, Selector};
-use tracing::warn;
+use tracing::info;
 
 impl RustScraper {
     fn utf8_prefix_chars<'a>(value: &'a str, max_chars: usize) -> &'a str {
@@ -104,7 +104,7 @@ impl RustScraper {
                 return Some("Captcha");
             }
 
-            warn!(
+            info!(
                 "Block-like text detected but HTML is {}KB - treating as success",
                 html_size / 1024
             );

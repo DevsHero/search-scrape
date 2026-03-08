@@ -6,7 +6,7 @@ use select::{
     document::Document as SelectDoc,
     predicate::{Attr as SelAttr, Class as SelClass, Name as SelName, Predicate},
 };
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use url::Url;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -817,7 +817,7 @@ impl RustScraper {
 
         let output_words = self.count_words(&result);
         if output_words < input_words / 2 {
-            warn!(
+            debug!(
                 "post_clean_text stripped >50% content ({} → {} words)",
                 input_words, output_words
             );

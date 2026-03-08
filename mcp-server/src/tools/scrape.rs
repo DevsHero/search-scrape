@@ -259,10 +259,17 @@ pub async fn scrape_url_full(
                 }
             }
             Err(e) => {
-                warn!(
-                    "❌ CDP fetch failed: {}, attempting proxy rotation and retry",
-                    e
-                );
+                if use_proxy {
+                    warn!(
+                        "❌ CDP fetch failed: {}, attempting proxy rotation and retry",
+                        e
+                    );
+                } else {
+                    warn!(
+                        "❌ CDP fetch failed: {}, falling back without proxy retry because use_proxy=false",
+                        e
+                    );
+                }
 
                 // Record proxy failure if used
                 if let (Some(proxy_url), Some(manager)) =
@@ -272,7 +279,8 @@ pub async fn scrape_url_full(
                 }
 
                 // Try with different proxy
-                if let Some(proxy_manager) = &state.proxy_manager {
+                if allow_proxy_retry(use_proxy, state.proxy_manager.is_some()) {
+                    let proxy_manager = state.proxy_manager.as_ref().expect("checked above");
                     match proxy_manager.switch_to_best_proxy().await {
                         Ok(new_proxy_url) => {
                             info!("🔀 Retrying CDP with different proxy");
@@ -406,7 +414,7 @@ pub async fn scrape_url_full(
                     || result.title.contains("Captcha")
                     || result.word_count < 50;
 
-                if is_blocked && state.proxy_manager.is_some() {
+                if is_blocked && allow_proxy_retry(use_proxy, state.proxy_manager.is_some()) {
                     warn!(
                         "⚠️ BLOCK DETECTED: {} words, title: '{}'. Attempting proxy retry...",
                         result.word_count, result.title
@@ -838,6 +846,10 @@ fn compute_scrape_cache_key(url: &str, knobs: ScrapeCacheKeyKnobs<'_>) -> String
     key
 }
 
+fn allow_proxy_retry(use_proxy: bool, proxy_manager_available: bool) -> bool {
+    use_proxy && proxy_manager_available
+}
+
 fn split_markdown_sections(markdown: &str) -> Vec<String> {
     let mut sections: Vec<String> = Vec::new();
     let mut current: Vec<String> = Vec::new();
@@ -1251,6 +1263,8 @@ pub async fn scrape_url_fallback(state: &Arc<AppState>, url: &str) -> Result<Scr
 /// Currently handles:
 /// - `github.com/{owner}/{repo}/blob/{ref}/{path}` → `raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}`
 ///   GitHub blob pages are React SPAs; the raw URL returns plain source text directly.
+/// - `github.com/{owner}/{repo}` → `raw.githubusercontent.com/{owner}/{repo}/HEAD/README.md`
+///   Repo root pages are also SPAs; rewriting to the raw README gives a stable text entry point.
 fn rewrite_url_for_clean_content(url: &str) -> Option<String> {
     // GitHub file blob viewer pages
     if url.contains("github.com/")
@@ -1272,6 +1286,23 @@ fn rewrite_url_for_clean_content(url: &str) -> Option<String> {
             }
         }
     }
+
+    if url.contains("github.com") && !url.contains("raw.githubusercontent.com") {
+        if let Ok(parsed) = url::Url::parse(url) {
+            if parsed.host_str() == Some("github.com") {
+                let segments: Vec<&str> = parsed.path_segments()?.collect();
+                if segments.len() == 2 && segments.iter().all(|segment| !segment.is_empty()) {
+                    let raw_url = format!(
+                        "https://raw.githubusercontent.com/{}/{}/HEAD/README.md",
+                        segments[0], segments[1]
+                    );
+                    info!("🔀 GitHub repo root → raw README URL: {}", raw_url);
+                    return Some(raw_url);
+                }
+            }
+        }
+    }
+
     None
 }
 
@@ -1489,6 +1520,14 @@ Observability tooling such as Prometheus and Grafana helps track key metrics.
             .warnings
             .iter()
             .any(|w| w == "section_extract_missing_query"));
+    }
+
+    #[test]
+    fn test_allow_proxy_retry_respects_opt_in() {
+        assert!(!allow_proxy_retry(false, false));
+        assert!(!allow_proxy_retry(false, true));
+        assert!(!allow_proxy_retry(true, false));
+        assert!(allow_proxy_retry(true, true));
     }
 
     #[test]

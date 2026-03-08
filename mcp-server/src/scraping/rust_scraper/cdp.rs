@@ -6,7 +6,7 @@ use chrono::Utc;
 use futures::StreamExt;
 use scraper::Html;
 use std::time::Duration;
-use tracing::warn;
+use tracing::{debug, info, warn};
 use url::Url;
 
 impl RustScraper {
@@ -20,7 +20,7 @@ impl RustScraper {
             anyhow!("No browser found for CDP stealth mode. Install Brave, Chrome, or Chromium.")
         })?;
 
-        warn!("🚀 Direct CDP Stealth Mode: {} (browser: {})", url, exe);
+        info!("🚀 Direct CDP Stealth Mode: {} (browser: {})", url, exe);
 
         let (config, data_dir) =
             browser_manager::build_headless_config(&exe, proxy_url.as_deref(), 1920, 1080)?;
@@ -44,7 +44,7 @@ impl RustScraper {
             .await
             .map_err(|e| anyhow!("Failed to create page: {}", e))?;
 
-        warn!("💉 Injecting Universal Stealth Engine (site-agnostic)");
+        debug!("💉 Injecting Universal Stealth Engine (site-agnostic)");
         let stealth_script = self.get_universal_stealth_script();
         page.execute(
             chromiumoxide::cdp::browser_protocol::page::AddScriptToEvaluateOnNewDocumentParams::new(
@@ -58,7 +58,7 @@ impl RustScraper {
         // initial HTTP request is sent with a valid auth token.
         let had_session = crate::features::session_store::auto_inject(&page, url).await;
 
-        warn!("🌐 Navigating to: {}", url);
+        info!("🌐 Navigating to: {}", url);
         page.goto(url)
             .await
             .map_err(|e| anyhow!("Failed to navigate: {}", e))?;
@@ -79,7 +79,7 @@ impl RustScraper {
                     .await;
                 tokio::time::sleep(Duration::from_millis(40 + jitter % 60)).await;
             }
-            warn!(
+            debug!(
                 "🖱️ Post-session jitter: {}ms + 2 micro-moves applied",
                 jitter
             );
@@ -91,7 +91,7 @@ impl RustScraper {
             dist.sample(&mut rng)
         };
 
-        warn!(
+        debug!(
             "⏳ Initial idle time: {}ms (simulating human reading)",
             idle_time
         );
@@ -117,7 +117,7 @@ impl RustScraper {
                 .collect()
         };
 
-        warn!(
+        debug!(
             "📜 Performing {} randomized scroll passes",
             scroll_actions.len()
         );
@@ -130,7 +130,7 @@ impl RustScraper {
                 ))
                 .await
             {
-                warn!("Scroll simulation error: {}", e);
+                debug!("Scroll simulation error: {}", e);
             }
 
             tokio::time::sleep(Duration::from_millis(read_pause)).await;
@@ -143,7 +143,7 @@ impl RustScraper {
                     ))
                     .await
                 {
-                    warn!("Scroll-up simulation error: {}", e);
+                    debug!("Scroll-up simulation error: {}", e);
                 }
                 tokio::time::sleep(Duration::from_millis(200 + (scroll_up as u64 % 300))).await;
             }
@@ -170,7 +170,7 @@ impl RustScraper {
         // Extend the settle window and poll for the comment DOM before capture.
         if url.contains("github.com") && (url.contains("/discussions/") || url.contains("/issues/"))
         {
-            warn!("🗨️ GitHub threaded page detected — extended comment hydration");
+            info!("🗨️ GitHub threaded page detected — extended comment hydration");
             browser_manager::wait_until_stable(&page, 2500, 12_000)
                 .await
                 .ok();
@@ -184,7 +184,7 @@ impl RustScraper {
             let noise_filter_script = Self::visual_noise_filter_script();
             if let Err(e) = page.evaluate(noise_filter_script).await {
                 // Non-fatal: some pages block eval or are cross-origin restricted
-                warn!("⚠️ Visual noise filter script failed (non-fatal): {}", e);
+                debug!("⚠️ Visual noise filter script failed (non-fatal): {}", e);
             }
         }
 
@@ -211,7 +211,7 @@ impl RustScraper {
             return Err(anyhow!("CDP bypass failed: {}", block_reason));
         }
 
-        warn!("✅ CDP fetch successful ({} chars)", content.len());
+        info!("✅ CDP fetch successful ({} chars)", content.len());
 
         drop(page);
         browser_manager::shutdown_browser_session(&mut browser, handle, data_dir, "fetch_via_cdp").await;
@@ -244,7 +244,7 @@ impl RustScraper {
                 .evaluate(format!("document.elementFromPoint({}, {})", x, y))
                 .await
             {
-                warn!("Mouse simulation error: {}", e);
+                debug!("Mouse simulation error: {}", e);
             }
 
             tokio::time::sleep(Duration::from_millis(delay)).await;

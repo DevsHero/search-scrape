@@ -271,8 +271,6 @@ async fn execute_manual_auth_flow_inner(
 
 #[cfg(feature = "non_robot_search")]
 struct CookieHealth {
-    total: usize,
-    session_like_names: Vec<String>,
     has_session_like: bool,
 }
 
@@ -366,8 +364,6 @@ async fn save_session_cookies_checked(
     super::auth_registry::mark_requires_auth(url, expiry);
 
     Ok(CookieHealth {
-        total: cookies.len(),
-        session_like_names,
         has_session_like,
     })
 }

@@ -58,15 +58,14 @@ VS Code reads MCP servers from two places (both are valid):
         "LANCEDB_URI=/absolute/path/to/cortex-scout/lancedb",
         "HTTP_TIMEOUT_SECS=30",
         "MAX_CONTENT_CHARS=10000",
-        "IP_LIST_PATH=/absolute/path/to/cortex-scout/ip.txt",
-        "PROXY_SOURCE_PATH=/absolute/path/to/cortex-scout/proxy_source.json",
-        "--",
         "/absolute/path/to/cortex-scout/mcp-server/target/release/cortex-scout-mcp"
       ]
     }
   }
 }
 ```
+
+Default behavior is direct/no-proxy. Add `IP_LIST_PATH` and `PROXY_SOURCE_PATH` only if you want proxy support available. For opt-in proxy usage, keep `ip.txt` empty and let the agent call `proxy_control grab` before retrying with `use_proxy: true`.
 
 ### Windows
 
@@ -85,9 +84,7 @@ Windows has no `env` command. Use the `command` + `env` object format:
         "SEARCH_ENGINES": "google,bing,duckduckgo,brave",
         "LANCEDB_URI": "C:\\Users\\YOU\\cortex-scout\\lancedb",
         "HTTP_TIMEOUT_SECS": "30",
-        "MAX_CONTENT_CHARS": "10000",
-        "IP_LIST_PATH": "C:\\Users\\YOU\\cortex-scout\\ip.txt",
-        "PROXY_SOURCE_PATH": "C:\\Users\\YOU\\cortex-scout\\proxy_source.json"
+        "MAX_CONTENT_CHARS": "10000"
       }
     }
   }
@@ -117,9 +114,6 @@ Claude uses `"mcpServers"` (not `"servers"`).
         "LANCEDB_URI=/absolute/path/to/cortex-scout/lancedb",
         "HTTP_TIMEOUT_SECS=30",
         "MAX_CONTENT_CHARS=10000",
-        "IP_LIST_PATH=/absolute/path/to/cortex-scout/ip.txt",
-        "PROXY_SOURCE_PATH=/absolute/path/to/cortex-scout/proxy_source.json",
-        "--",
         "/absolute/path/to/cortex-scout/mcp-server/target/release/cortex-scout-mcp"
       ]
     }
@@ -147,9 +141,6 @@ Cursor stores MCP config in `~/.cursor/mcp.json` (also configurable via UI).
         "LANCEDB_URI=/absolute/path/to/cortex-scout/lancedb",
         "HTTP_TIMEOUT_SECS=30",
         "MAX_CONTENT_CHARS=10000",
-        "IP_LIST_PATH=/absolute/path/to/cortex-scout/ip.txt",
-        "PROXY_SOURCE_PATH=/absolute/path/to/cortex-scout/proxy_source.json",
-        "--",
         "/absolute/path/to/cortex-scout/mcp-server/target/release/cortex-scout-mcp"
       ]
     }
@@ -176,9 +167,6 @@ Windsurf config file: `~/.codeium/windsurf/mcp_config.json`
         "LANCEDB_URI=/absolute/path/to/cortex-scout/lancedb",
         "HTTP_TIMEOUT_SECS=30",
         "MAX_CONTENT_CHARS=10000",
-        "IP_LIST_PATH=/absolute/path/to/cortex-scout/ip.txt",
-        "PROXY_SOURCE_PATH=/absolute/path/to/cortex-scout/proxy_source.json",
-        "--",
         "/absolute/path/to/cortex-scout/mcp-server/target/release/cortex-scout-mcp"
       ]
     }
@@ -208,9 +196,6 @@ mcpServers:
       - LANCEDB_URI=/absolute/path/to/cortex-scout/lancedb
       - HTTP_TIMEOUT_SECS=30
       - MAX_CONTENT_CHARS=10000
-      - IP_LIST_PATH=/absolute/path/to/cortex-scout/ip.txt
-      - PROXY_SOURCE_PATH=/absolute/path/to/cortex-scout/proxy_source.json
-      - --
       - /absolute/path/to/cortex-scout/mcp-server/target/release/cortex-scout-mcp
 ```
 
@@ -239,6 +224,6 @@ These require an `OPENAI_API_KEY` (or compatible endpoint) in the environment.
 |---------|-----|
 | "no tools found" | Check binary path is correct and executable (`chmod +x`) |
 | Tools time out immediately | Ensure `RUST_LOG=warn` — not `info` or `debug` |
-| Proxy tools fail | Confirm `ip.txt` and `proxy_source.json` exist and path vars are set |
+| Proxy tools fail | Proxy support is optional. If you want it, set `IP_LIST_PATH`/`PROXY_SOURCE_PATH`; keep `ip.txt` empty by default and populate it only when needed |
 | `hitl_web_fetch` not available | Binary must be built with `--all-features` |
 | Config not picked up | Fully restart the client app after editing the JSON/YAML |

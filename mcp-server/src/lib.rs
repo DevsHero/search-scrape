@@ -13,6 +13,9 @@ pub fn build_env_filter(default_directives: &str) -> tracing_subscriber::EnvFilt
     filter
         .add_directive("chromiumoxide::handler=off".parse().expect("valid directive"))
         .add_directive("chromiumoxide::browser=off".parse().expect("valid directive"))
+        .add_directive("html5ever=error".parse().expect("valid directive"))
+        .add_directive("lance_index::vector::kmeans=error".parse().expect("valid directive"))
+        .add_directive("lance::dataset::scanner=error".parse().expect("valid directive"))
         .add_directive("chromiumoxide=warn".parse().expect("valid directive"))
 }
 
