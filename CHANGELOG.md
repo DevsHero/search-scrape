@@ -130,7 +130,6 @@ Policy:
 
 ### Added
 
-- **Dynamic payload cap (`max_chars`)** — `web_fetch` (`scrape_url`) now applies `max_chars` to the **total serialized JSON payload** in both `json` and `clean_json` modes, not just the `clean_content` text field. Prevents 93 KB workspace-storage spills caused by unbounded `links[]`, `images[]`, `code_blocks[]`. A `⚠️ JSON_PAYLOAD_TRUNCATED` / `CLEAN_JSON_PAYLOAD_TRUNCATED` notice is appended when truncation occurs.
 - **Media-Aware Extraction (`clean_json` mode)** — `web_fetch` auto-detects raw file URLs (`.md`, `.mdx`, `.rst`, `.txt`, `.csv`, `.toml`, `.yaml`, `.yml`) and skips the HTML extraction pipeline entirely. Content is returned as-is to eliminate duplicate frontmatter. Response includes a `raw_markdown_url` warning.
 - **`raw_markdown_url` auto-warn** — `extract_structured` and `fetch_then_extract` automatically inject `raw_markdown_url` into `warnings[]` when called on raw text/markdown files, alerting agents that schema fields will likely return `null`.
 - **Agent-tunable dynamic parameters** — previously hardcoded values are now per-call overridable:
@@ -138,17 +137,38 @@ Policy:
   - `extraction_score_threshold` (default `0.4`) — quality floor for `low_extraction_score` warning
   - `max_headings` (default `10`) — heading count in `text` mode output
   - `max_images` (default `3`) — image markdown hints in `text` mode output
-  - `snippet_chars` (default `120` NeuroSiphon / `200` standard) — search result snippet length
 - **Copilot/agent instructions hardened** (`.github/copilot-instructions.md`):
   - **Rule 1** extended: `memory_search`-first applies to `web_fetch` too, not just `web_search`
   - **Rule 1a** (new): _Dynamic Parameters_ table documents all new tunable params
   - **Rule 4a** (new): _Auto-Escalation on Low Confidence_ — agents must retry with `quality_mode: aggressive` → `visual_scout` → `human_auth_session` autonomously when `confidence < 0.3` or `extraction_score < 0.4`
   - **Decision flow diagram** updated with confidence-check branches, raw markdown path, and corrected tool names throughout
-  - **Tool Quick-Reference** updated to use actual MCP tool names (`research_history`, `search_web`, `search_structured`, `scrape_url`, `crawl_website`, `extract_structured`, `proxy_manager`, `non_robot_search`) and includes `visual_scout` and `human_auth_session`
 
 ### Changed
 
 - `scrape_url` tool schema: `max_chars` description updated to clarify it caps the full serialized payload, not just the text field.
+## Unreleased
+
+### Added
+
+- **Workspace and global MCP config sync** — `.vscode/mcp.json` and global `mcp.json` now match production best practices, including `HTTP_CONNECT_TIMEOUT_SECS=10` and direct/no-proxy default.
+- **Local validation and smoke test scripts** — Added `publish/ci/validate.py` (docs/config sanity) and `publish/ci/smoke_mcp.py` (end-to-end MCP stdio tool coverage) to the repo. README documents their use.
+- **Regression test for proxy retry gating** — Ensures proxy fallback only occurs when `use_proxy=true`.
+
+### Changed
+
+- **Direct/no-proxy is now the default** — All fetch/search/deep_research tools run direct by default; proxy is opt-in and only used after block/rate-limit or explicit request. `ip.txt` is empty by default for opt-in proxy population.
+- **Runtime proxy fallback logic hardened** — `scrape.rs` and related code now strictly require `use_proxy=true` for proxy retry; no more hidden fallback.
+- **Reduced log noise** — Downgraded non-fatal CDP/browserless logs to info/debug, suppressed `html5ever`, `lance_index::vector::kmeans`, and `lance::dataset::scanner` warnings in tracing filter.
+- **Documentation overhaul** — README, IDE_SETUP.md, VSCODE_SETUP.md, and related docs updated: removed obsolete proxy defaults, clarified direct-first, removed `--` from env args, and added explicit build/smoke/validation instructions.
+- **Removed obsolete/unused test scripts and workflows** — All legacy smoke/test scripts and unused GitHub Actions workflows deleted; only `publish/ci/smoke_mcp.py` and `publish/ci/validate.py` remain.
+- **Cleaned up deprecated/obsolete info in docs** — Removed references to old binaries, profile lock warnings, and deprecated proxy registry notes.
+
+### Fixed
+
+- **GitHub repo-root rewrite bug** — `rewrite_url_for_clean_content()` now correctly rewrites `github.com/{owner}/{repo}` to `raw.githubusercontent.com/{owner}/{repo}/HEAD/README.md` (test and runtime match).
+- **Dead code warning** — Removed unused fields from `CookieHealth` struct in `non_robot_search.rs`.
+- **All tests pass cleanly** — `cargo test --all-features` is green after all changes.
+
 - `extract_structured` tool description: added `⚠️ AUTO-WARN` note about `raw_markdown_url` injection.
 - Copilot instructions: Rule 7 renamed from `hitl_web_fetch` to `non_robot_search` (correct MCP tool name); session persistence note added.
 
