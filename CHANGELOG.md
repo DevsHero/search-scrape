@@ -146,7 +146,7 @@ Policy:
 ### Changed
 
 - `scrape_url` tool schema: `max_chars` description updated to clarify it caps the full serialized payload, not just the text field.
-## Unreleased
+## v3.1.3 (2026-03-08)
 
 ### Added
 
