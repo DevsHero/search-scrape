@@ -134,14 +134,35 @@ pub async fn handle(
                 .unwrap_or("text");
 
             // ────────────────────────────────────────────────────────────────────────
-            // 🔒 Auth-Wall Early Exit — Feature 2 + HITL Integration
-            // When an auth-wall is confirmed, NEVER return a garbled/empty page.
-            // Instead surface a structured response or an agent-ready HITL prompt.
+            // 🔒 Auth-Signal Handling — adaptive: advisory vs. hard NEED_HITL
+            //
+            // Strategy:
+            //   • word_count > 100 → content is accessible; auth form (e.g. login modal
+            //     in nav) is incidental.  Prepend an advisory note and return content.
+            //   • word_count ≤ 100 → page is genuinely empty/blocked.  Return NEED_HITL
+            //     so the agent can escalate to non_robot_search.
+            //
+            // This prevents false positives on forums (Discourse, Reddit) and any site
+            // that embeds a login form in the header while serving full public content.
             // ────────────────────────────────────────────────────────────────────────
             let is_auth_walled = content.auth_wall_reason.is_some()
                 || content.warnings.iter().any(|w| w == "content_restricted");
 
-            if is_auth_walled {
+            if is_auth_walled && content.word_count > 100 {
+                // Content is accessible — add an advisory note, don't block.
+                let reason = content
+                    .auth_wall_reason
+                    .as_deref()
+                    .unwrap_or("Auth form detected on page");
+                let advisory = format!(
+                    "⚠️ **Auth Signal (Advisory):** {reason}\n\
+                     Content is accessible without login. \
+                     Use `non_robot_search` only if key sections appear missing.\n\n"
+                );
+                content.clean_content = advisory + &content.clean_content;
+                content.warnings.retain(|w| w != "content_restricted");
+                // Fall through to normal output rendering below.
+            } else if is_auth_walled {
                 let reason = content
                     .auth_wall_reason
                     .as_deref()

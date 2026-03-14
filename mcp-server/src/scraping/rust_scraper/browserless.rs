@@ -243,20 +243,39 @@ impl RustScraper {
 
         let document = Html::parse_document(html);
 
-        // ─ High-precision CSS selectors — each uniquely identifies a login form ──────
+        // ─ Pre-check: page title and URL for corroborating signals ───────────────
+        let is_auth_title = if let Ok(title_sel) = Selector::parse("title") {
+            document.select(&title_sel).next().map_or(false, |el| {
+                let t = el.text().collect::<String>();
+                let tl = t.trim().to_lowercase();
+                tl.starts_with("sign in")
+                    || tl.starts_with("log in")
+                    || tl.starts_with("login")
+                    || tl.ends_with("- sign in")
+                    || tl.ends_with("\u{00b7} sign in")
+                    || tl.ends_with("- log in")
+                    || tl.ends_with("\u{00b7} log in")
+            })
+        } else {
+            false
+        };
+        let url_lower = url.to_lowercase();
+        let is_auth_url = url_lower.contains("/login")
+            || url_lower.contains("/signin")
+            || url_lower.contains("/sign-in")
+            || url_lower.contains("/session")
+            || url_lower.contains("/auth/login");
+
+        // ─ High-confidence selectors — uniquely identify a login-only page ────────
+        //   These fire unconditionally because they never appear outside auth forms.
         //
-        // Examples:
-        //  #login_field  — GitHub's username input
-        //  #password     — GitHub / generic password input
-        //  .auth-form    — Many OAuth providers
-        //  #loginForm    — Common across enterprise apps
-        let selectors: &[(&str, &str)] = &[
+        //   Examples:
+        //     #login_field  — GitHub's username input (login page specific)
+        //     .auth-form    — OAuth providers
+        //     #loginForm    — Enterprise apps
+        let high_confidence_selectors: &[(&str, &str)] = &[
             ("#login_field", "GitHub username field"),
             ("#user_login", "login username field"),
-            ("[name='password']", "password input (name attr)"),
-            ("[name='passwd']", "password input (name=passwd)"),
-            ("[name='login']", "login username input (name attr)"),
-            ("[type='password']", "password input (type=password)"),
             (".auth-form", "auth-form CSS class"),
             (".login-form", "login-form CSS class"),
             (".signin-form", "signin-form CSS class"),
@@ -266,7 +285,7 @@ impl RustScraper {
             ("#loginform", "loginform id"),
         ];
 
-        for (sel_str, label) in selectors {
+        for (sel_str, label) in high_confidence_selectors {
             if let Ok(sel) = Selector::parse(sel_str) {
                 if document.select(&sel).next().is_some() {
                     return if url.contains("github.com") {
@@ -287,26 +306,74 @@ impl RustScraper {
             }
         }
 
+        // ─ Low-confidence selectors — generic password / login inputs ─────────────
+        //   These appear on forums, news sites, and any page with a login modal
+        //   in the header.  Only treat as auth-wall when corroborated by an
+        //   auth-specific page title or auth-path URL; otherwise the page is
+        //   publicly accessible even though a login form is present.
+        let low_confidence_selectors: &[(&str, &str)] = &[
+            ("[name='password']", "password input (name attr)"),
+            ("[name='passwd']", "password input (name=passwd)"),
+            ("[name='login']", "login username input (name attr)"),
+            ("[type='password']", "password input (type=password)"),
+        ];
+
+        if is_auth_title || is_auth_url {
+            for (sel_str, label) in low_confidence_selectors {
+                if let Ok(sel) = Selector::parse(sel_str) {
+                    if document.select(&sel).next().is_some() {
+                        return if url.contains("github.com") {
+                            Some(format!(
+                                "GitHub Auth-Wall detected (DOM: {label}). \
+                                 This repo is private or your session has expired. \
+                                 /blob/ pages are already auto-retried via raw.githubusercontent.com. \
+                                 Recommendation: Use HITL (non_robot_search) to login manually."
+                            ))
+                        } else {
+                            Some(format!(
+                                "Auth-Wall detected (DOM selector matched: {label}). \
+                                 This page requires authentication before content is served. \
+                                 Recommendation: Use HITL (non_robot_search) to login manually."
+                            ))
+                        };
+                    }
+                }
+            }
+        }
+
         // ─ Form action pattern check ————————————————————————————————
-        // Forms with action='/login', '/session', '/signin' etc. are strong
-        // indicators of a dedicated authentication page.
-        let auth_form_actions = [
+        // Forms with action='/login', '/session', '/signin' etc. are found on
+        // dedicated authentication pages.  However, many public sites (Discourse,
+        // Reddit, etc.) embed a login modal with these actions while still serving
+        // full content.  Only treat as auth-wall when corroborated by an auth URL
+        // or auth page title; the word_count gate in the caller provides a final
+        // safety net for any remaining false positives.
+        let auth_form_actions_strict = [
+            "/auth/login",
+            "/account/login",
+            "/users/sign_in",
+        ];
+        let auth_form_actions_loose = [
             "/login",
             "/signin",
             "/sign_in",
             "/session",
-            "/auth/login",
-            "/account/login",
-            "/users/sign_in",
         ];
         if let Ok(form_sel) = Selector::parse("form") {
             for form in document.select(&form_sel) {
                 if let Some(action) = form.value().attr("action") {
                     let act = action.to_lowercase();
-                    if auth_form_actions
+                    let strict_match = auth_form_actions_strict
                         .iter()
-                        .any(|a| act.ends_with(a) || act.contains(a))
-                    {
+                        .any(|a| act.ends_with(a) || act.contains(a));
+                    let loose_match = !strict_match
+                        && auth_form_actions_loose
+                            .iter()
+                            .any(|a| act.ends_with(a) || act.contains(a));
+                    // Strict matches are always meaningful; loose matches need
+                    // a corroborating auth title or auth URL to avoid false
+                    // positives on forums/communities with site-wide login modals.
+                    if strict_match || (loose_match && (is_auth_title || is_auth_url)) {
                         return Some(format!(
                             "Auth-Wall detected (login form: action=\"{action}\"). \
                              Recommendation: Use HITL (non_robot_search) to login manually."
@@ -319,18 +386,10 @@ impl RustScraper {
         // ─ Page `<title>` check ——————————————————————————————————
         // A page titled "Sign in · GitHub", "Log in | Acme Corp" etc. is
         // almost certainly a pure auth wall with no real content.
-        if let Ok(title_sel) = Selector::parse("title") {
-            if let Some(el) = document.select(&title_sel).next() {
-                let t = el.text().collect::<String>();
-                let tl = t.trim().to_lowercase();
-                if tl.starts_with("sign in")
-                    || tl.starts_with("log in")
-                    || tl.starts_with("login")
-                    || tl.ends_with("- sign in")
-                    || tl.ends_with("· sign in")
-                    || tl.ends_with("- log in")
-                    || tl.ends_with("· log in")
-                {
+        if is_auth_title {
+            if let Ok(title_sel) = Selector::parse("title") {
+                if let Some(el) = document.select(&title_sel).next() {
+                    let t = el.text().collect::<String>();
                     return Some(format!(
                         "Auth-Wall detected (page title: \"{}\"). \
                          Recommendation: Use HITL (non_robot_search) to login manually.",
@@ -651,13 +710,66 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_auth_wall_html_fast_gate_skips_parse() {
-        // Page with no auth-related keywords — fast gate should skip DOM parse
+    fn test_detect_auth_wall_html_no_false_positive_forum_login_modal() {
+        // Discourse / public forum: login modal in header with [name='password'] and
+        // action="/session" but the thread content is fully publicly accessible.
+        // Must NOT be detected as an auth wall.
         let s = scraper();
-        let html = "<html><body><h1>Hello World</h1><p>Welcome to our site.</p></body></html>";
-        let result = s.detect_auth_wall_html(html, "https://example.com");
-        assert!(result.is_none());
+        let html = r#"<html>
+            <head><title>A command for passing a prompt to the chat - Cursor Forum</title></head>
+            <body>
+                <header>
+                    <form class="login-modal" action="/session" method="post">
+                        <input type="text" name="login" placeholder="Username" />
+                        <input type="password" name="password" placeholder="Password" />
+                        <button type="submit">Log In</button>
+                    </form>
+                </header>
+                <main>
+                    <article>
+                        <h1>A command for passing a prompt to the chat</h1>
+                        <p>Feature request: I'm developing a VS Code extension and would like to
+                        send text to the chat. vscode.commands.executeCommand('workbench.action.chat.open', prompt);
+                        This command is not supported in Cursor — could you add support for it?</p>
+                        <p>Solved by Andrew Milich in post 7. Just did it will have it out in
+                        the next 10 days, just needed a reminder! Multiple community replies.</p>
+                    </article>
+                </main>
+            </body>
+        </html>"#;
+        let result = s.detect_auth_wall_html(
+            html,
+            "https://forum.cursor.com/t/a-command-for-passing-a-prompt-to-the-chat/138049",
+        );
+        assert!(
+            result.is_none(),
+            "Public forum thread with login modal in header must NOT be auth-wall, got: {:?}",
+            result
+        );
     }
+
+    #[test]
+    fn test_detect_auth_wall_html_login_url_with_password_input_fires() {
+        // When URL is an auth path AND password input exists, it IS an auth wall.
+        let s = scraper();
+        let html = r#"<html>
+            <head><title>Log in to Example</title></head>
+            <body>
+                <form action="/session" method="post">
+                    <input type="text" name="login" />
+                    <input type="password" name="password" />
+                    <button>Log in</button>
+                </form>
+            </body>
+        </html>"#;
+        let result = s.detect_auth_wall_html(html, "https://example.com/login");
+        assert!(
+            result.is_some(),
+            "Login URL + password input should still be detected"
+        );
+    }
+
+
 
     // ------------------------------------------------------------------
     // (a) Strict-redirect auth wall — e.g. GitHub login page

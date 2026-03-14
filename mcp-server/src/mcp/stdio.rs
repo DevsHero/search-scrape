@@ -141,22 +141,19 @@ impl McpService {
 
 impl rmcp::ServerHandler for McpService {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::LATEST,
-            server_info: Implementation {
-                title: Some("Search & Sync MCP".to_string()),
-                description: Some(
-                    "A pure Rust web research service using federated search plus high-integrity content synchronization for consistent downstream analysis."
-                        .to_string(),
-                ),
-                ..Implementation::from_build_env()
-            },
-            instructions: Some(
-                "Use these tools to discover sources and synchronize web content into consistent, analysis-ready outputs."
-                    .to_string(),
-            ),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-        }
+        let server_info = Implementation::from_build_env()
+            .with_title("Search & Sync MCP")
+            .with_description(
+                "A pure Rust web research service using federated search plus high-integrity content synchronization for consistent downstream analysis."
+            );
+        let mut info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
+        info.protocol_version = ProtocolVersion::LATEST;
+        info.server_info = server_info;
+        info.instructions = Some(
+            "Use these tools to discover sources and synchronize web content into consistent, analysis-ready outputs."
+                .to_string(),
+        );
+        info
     }
 
     async fn list_tools(
@@ -169,16 +166,13 @@ impl rmcp::ServerHandler for McpService {
             .tool_registry
             .public_specs()
             .into_iter()
-            .map(|spec| Tool {
-                name: Cow::Owned(spec.public_name),
-                title: Some(spec.public_title),
-                description: Some(Cow::Owned(spec.public_description)),
-                input_schema: schema_to_object_map(&spec.public_input_schema),
-                output_schema: None,
-                annotations: None,
-                execution: None,
-                icons: None,
-                meta: None,
+            .map(|spec| {
+                let mut tool = Tool::default();
+                tool.name = Cow::Owned(spec.public_name);
+                tool.title = Some(spec.public_title);
+                tool.description = Some(Cow::Owned(spec.public_description));
+                tool.input_schema = schema_to_object_map(&spec.public_input_schema);
+                tool
             })
             .collect();
 

@@ -350,10 +350,20 @@ impl RustScraper {
         };
 
         // 🔒 Auth-Wall Guard Dog (merged): HTML-level + clean-text detection.
-        let auth_wall_reason =
+        // Content-length gate: pages with >100 words that have a login modal are not truly
+        // blocked. Downgrade to advisory warning rather than hard-blocking content.
+        let preliminary_word_count = self.count_words(&clean_content);
+        let detected_auth_reason =
             auth_wall_html_reason.or_else(|| self.detect_auth_wall(&clean_content, url));
+        let auth_wall_reason = if preliminary_word_count > 100 {
+            None
+        } else {
+            detected_auth_reason.clone()
+        };
         if auth_wall_reason.is_some() {
             warnings.push("content_restricted".to_string());
+        } else if detected_auth_reason.is_some() {
+            warnings.push("auth_form_detected".to_string());
         }
 
         clean_content = self.append_image_context_markdown(clean_content, &images, &title);

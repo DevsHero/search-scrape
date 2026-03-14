@@ -320,10 +320,23 @@ impl RustScraper {
         // 🔒 Auth-Wall Guard Dog (merged): HTML-level DOM detection + clean-text keyword detection.
         // Stores the reason in `auth_wall_reason` for the handler to surface as structured JSON.
         // Does NOT modify clean_content — the handler decides how to present this.
-        let auth_wall_reason =
+        //
+        // Content-length gate: pages with substantial content (>100 words) that have a password
+        // form in the nav/header are NOT auth-walled — the content is publicly accessible.
+        // Downgrade to advisory warning only; the handler will prepend a note rather than block.
+        let preliminary_word_count = self.count_words(&clean_content);
+        let detected_auth_reason =
             auth_wall_html_reason.or_else(|| self.detect_auth_wall(&clean_content, url));
+        let auth_wall_reason = if preliminary_word_count > 100 {
+            None // Content accessible — advisory only, not a hard block
+        } else {
+            detected_auth_reason.clone()
+        };
         if auth_wall_reason.is_some() {
             warnings.push("content_restricted".to_string());
+        } else if detected_auth_reason.is_some() {
+            // Auth form present but content is accessible — advisory signal for agents.
+            warnings.push("auth_form_detected".to_string());
         }
 
         // 🎯 Auth-Risk Score — continuous 0.0–1.0 probability computed from content + DOM signals.

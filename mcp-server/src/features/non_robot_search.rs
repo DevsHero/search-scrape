@@ -72,7 +72,7 @@ use notify_rust::Notification;
 ))]
 use rfd::{MessageButtons, MessageDialog, MessageLevel};
 #[cfg(feature = "non_robot_search")]
-use rodio::{OutputStreamBuilder, Sink, Source};
+use rodio::{DeviceSinkBuilder, Player, Source};
 
 #[cfg(feature = "non_robot_search")]
 use std::time::SystemTime;
@@ -3426,11 +3426,11 @@ fn play_tone(tone: Tone) {
     };
 
     std::thread::spawn(move || {
-        let Ok(mut stream) = OutputStreamBuilder::open_default_stream() else {
+        let Ok(mut stream) = DeviceSinkBuilder::open_default_sink() else {
             return;
         };
         stream.log_on_drop(false);
-        let sink = Sink::connect_new(stream.mixer());
+        let sink = Player::connect_new(stream.mixer());
         let src = rodio::source::SineWave::new(freq)
             .take_duration(Duration::from_millis(dur_ms))
             .amplify(0.20);

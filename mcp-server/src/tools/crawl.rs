@@ -171,12 +171,14 @@ pub async fn crawl_website(
                     .await
                     {
                         Ok(data) => {
-                            // Auth-wall handling: never treat login walls as successful content.
-                            // If the START URL is auth-walled, abort the entire crawl and
-                            // signal NEED_HITL to the caller for immediate HITL escalation.
+                            // Auth-wall handling: only abort the crawl when the start URL is
+                            // genuinely blocked (no real content).  Pages with substantial
+                            // content (> 100 words) that have a login form in their header/nav
+                            // are publicly accessible — proceed with the crawl.
                             let is_auth_walled = data.auth_wall_reason.is_some()
                                 || data.warnings.iter().any(|w| w == "content_restricted");
-                            if is_auth_walled {
+                            let is_truly_blocked = is_auth_walled && data.word_count < 50;
+                            if is_truly_blocked {
                                 let reason = data.auth_wall_reason.clone().unwrap_or_else(|| {
                                     "Auth-Wall detected (login page returned HTTP 200)".to_string()
                                 });
