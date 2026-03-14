@@ -4,6 +4,33 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
+## Unreleased
+
+### Fixed
+
+- **Auth-wall false positives on public pages with login modals.**
+  Pages like Discourse forum threads were incorrectly blocked with `NEED_HITL`
+  because the password input in the header login modal triggered auth detection.
+  Rewrote `detect_auth_wall_html` with a high/low-confidence selector split:
+  - **High-confidence selectors** (e.g. `#login_field`, `.auth-form`, `#loginForm`)
+    fire unconditionally.
+  - **Low-confidence selectors** (e.g. `[type='password']`, generic `/login` form
+    actions) now require corroboration from the page title or URL to fire.
+  Added a word-count gate in `mod.rs`, `cdp.rs`, and `scrape_url.rs`: if a page
+  has more than 100 words, any auth signal is downgraded from blocking to an
+  advisory prepended to the content. Crawl aborts are now gated on
+  `word_count < 50` (was: any auth signal).
+
+- **rodio 0.22 build failure in `non_robot_search.rs`.**
+  `OutputStreamBuilder` and `Sink` were removed in rodio 0.22.2. Updated to
+  `DeviceSinkBuilder::open_default_sink()` and `Player::connect_new()`.
+
+- **rmcp 1.2 `#[non_exhaustive]` build failure in `stdio.rs`.**
+  `Tool`, `ServerInfo`, and `Implementation` are now `#[non_exhaustive]` in
+  rmcp 1.2.0, preventing struct-literal construction outside the crate. Replaced
+  struct literals with `Default::default()` + field mutation or the provided
+  builder-chain methods.
+
 ## v3.1.2 (2026-03-05)
 
 ### Fixed
