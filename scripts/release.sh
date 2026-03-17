@@ -61,6 +61,16 @@ extract_unreleased_notes() {
   ' "$REPO_ROOT/CHANGELOG.md" 2>/dev/null || true
 }
 
+# Extract the body under '## vX.Y.Z (DATE)' (re-release: notes already promoted).
+extract_version_notes() {
+  local tag="$1"
+  awk -v t="$tag" '
+    $0 ~ ("^## " t " ") {in_section=1; next}
+    /^##[[:space:]]+/   {if (in_section) exit}
+    {if (in_section) print}
+  ' "$REPO_ROOT/CHANGELOG.md" 2>/dev/null || true
+}
+
 # Promote "## Unreleased" → "## vVERSION (DATE)" in CHANGELOG.md.
 promote_changelog() {
   local version="$1" date="$2"
@@ -141,26 +151,30 @@ if [[ "$SERVER_VER" != "$VERSION" ]]; then
 fi
 pass "Versions match ($VERSION)"
 
-# ── Release Notes (from CHANGELOG.md Unreleased section) ─────────────────────
+# ── Release Notes (from CHANGELOG.md) ───────────────────────────────────────
 banner "Release Notes"
 
-# Guard: ensure ## Unreleased section actually exists
-if ! grep -q '^## Unreleased[[:space:]]*$' "$REPO_ROOT/CHANGELOG.md"; then
-  die "CHANGELOG.md has no '## Unreleased' section. Add release notes before running."
+HAVE_UNRELEASED=false
+grep -q '^## Unreleased[[:space:]]*$' "$REPO_ROOT/CHANGELOG.md" && HAVE_UNRELEASED=true || true
+
+if $HAVE_UNRELEASED; then
+  RAW_NOTES="$(extract_unreleased_notes | sed -e 's/[[:space:]]\+$//')"
+  if [[ -z "${RAW_NOTES//[[:space:]]/}" ]]; then
+    die "CHANGELOG.md '## Unreleased' section is empty — add entries before releasing."
+  fi
+else
+  # Re-release mode: '## Unreleased' was already promoted in a previous run.
+  if ! grep -q "^## $TAG " "$REPO_ROOT/CHANGELOG.md"; then
+    die "CHANGELOG.md has no '## Unreleased' section. Add release notes before running."
+  fi
+  RAW_NOTES="$(extract_version_notes "$TAG" | sed -e 's/[[:space:]]\+$//')"
+  warn "Re-release: using existing $TAG notes from CHANGELOG (promotion already done)"
 fi
 
-UNRELEASED_NOTES="$(extract_unreleased_notes | sed -e 's/[[:space:]]\+$//')"
-if [[ -z "${UNRELEASED_NOTES//[[:space:]]/}" ]]; then
-  die "CHANGELOG.md '## Unreleased' section is empty — add entries before releasing."
-else
-  # Clean release notes: trim leading/trailing blank lines, then format.
-  # Use python3 (already required) to strip leading/trailing blank lines —
-  # avoids BSD sed vs GNU sed incompatibilities on macOS.
-  TRIMMED="$(printf '%s' "$UNRELEASED_NOTES" | python3 -c "import sys; print(sys.stdin.read().strip())")"
-  RELEASE_NOTES="$(printf '%s\n\n---\n\n*Built on macOS arm64 via cargo-zigbuild.*' "$TRIMMED")"
-  info "Release notes preview (first 5 lines):"
-  printf '%s\n' "$TRIMMED" | head -5 | while IFS= read -r line; do info "  $line"; done
-fi
+TRIMMED="$(printf '%s' "$RAW_NOTES" | python3 -c "import sys; print(sys.stdin.read().strip())")"
+RELEASE_NOTES="$(printf '%s\n\n---\n\n*Built on macOS arm64 via cargo-zigbuild.*' "$TRIMMED")"
+info "Release notes preview (first 5 lines):"
+printf '%s\n' "$TRIMMED" | head -5 | while IFS= read -r line; do info "  $line"; done
 
 # ── Warm dependencies (must run before commit so Cargo.lock is up-to-date) ───
 banner "Warm dependencies"
@@ -171,12 +185,18 @@ pass "Cargo deps fetched"
 banner "Updating CHANGELOG.md"
 if $DRY_RUN; then
   warn "Dry-run: skipping CHANGELOG promotion and git commit"
-else
+elif $HAVE_UNRELEASED; then
   promote_changelog "$TAG" "$RELEASE_DATE"
   pass "Promoted '## Unreleased' → '## $TAG ($RELEASE_DATE)'"
   git -C "$REPO_ROOT" add CHANGELOG.md "$MCP/Cargo.lock"
-  git -C "$REPO_ROOT" commit -m "chore: release $TAG — promote CHANGELOG, update Cargo.lock"
-  pass "Committed CHANGELOG update"
+  if ! git -C "$REPO_ROOT" diff --cached --quiet; then
+    git -C "$REPO_ROOT" commit -m "chore: release $TAG — promote CHANGELOG, update Cargo.lock"
+    pass "Committed CHANGELOG update"
+  else
+    info "CHANGELOG already at $TAG — skipping commit"
+  fi
+else
+  info "Re-release: CHANGELOG already promoted for $TAG — skipping commit"
 fi
 
 # ── Tag management ────────────────────────────────────────────────────────────
