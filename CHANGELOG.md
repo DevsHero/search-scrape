@@ -4,7 +4,7 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
-## Unreleased
+## v3.2.0 (2026-03-17)
 
 ### Added
 
