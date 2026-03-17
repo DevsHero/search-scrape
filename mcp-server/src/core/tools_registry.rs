@@ -115,6 +115,8 @@ impl ToolRegistry {
                 "research_history" => "memory_search".to_string(),
                 "proxy_manager" => "proxy_control".to_string(),
                 "non_robot_search" => "hitl_web_fetch".to_string(),
+                "browser_automate" => "scout_browser_automate".to_string(),
+                "browser_close" => "scout_browser_close".to_string(),
                 _ => internal_name.clone(),
             };
             let public_title = internal.title.to_string();

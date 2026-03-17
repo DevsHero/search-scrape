@@ -103,6 +103,8 @@ pub async fn call_tool_inner(
         "non_robot_search" => handlers::non_robot_search::handle(state, &internal_args).await,
         "visual_scout" => handlers::visual_scout::handle(state, &internal_args).await,
         "human_auth_session" => handlers::human_auth_session::handle(state, &internal_args).await,
+        "browser_automate" => handlers::automate::handle(state, &internal_args).await,
+        "browser_close" => handlers::automate::handle_close(state, &internal_args).await,
         _ => Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {

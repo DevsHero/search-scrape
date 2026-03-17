@@ -1,3 +1,4 @@
+pub mod cdp;
 pub mod core;
 pub mod features;
 pub mod mcp;

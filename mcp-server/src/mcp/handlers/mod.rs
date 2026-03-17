@@ -1,3 +1,4 @@
+pub mod automate;
 pub mod common;
 pub mod crawl_website;
 pub mod deep_research;

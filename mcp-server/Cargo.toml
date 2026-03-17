@@ -6,6 +6,9 @@ description = "God-Tier stealth intelligence engine for AI agents — zero-depen
 repository = "https://github.com/cortex-works/cortex-scout"
 license = "MIT"
 
+# Opt out of any accidental parent-workspace discovery.
+[workspace]
+
 [lib]
 name = "cortex_scout"
 path = "src/lib.rs"

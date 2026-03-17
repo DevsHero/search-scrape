@@ -502,6 +502,71 @@ Send `instruction_message` to tell the user exactly what to log in to and why, e
         }
     ];
 
+    // ── Phase 18: Playwright Killer — stateful browser automation ─────────────
+    tools.push(ToolCatalogEntry {
+        name: "browser_automate",
+        title: "Browser Automate (Omni-Tool)",
+        description: "The ultimate browser automation tool. Executes an ordered sequence of \
+actions in a stateful Brave browser session that persists between calls. \
+Use this for E2E testing, form filling, clicking, typing, evaluating JS, and observing the DOM. \
+The browser stays open until scout_browser_close is called. \
+\n\
+Supported actions (passed as the `steps` array):\n\
+• navigate — go to a URL and wait for network-idle (target=URL)\n\
+• click    — click a CSS selector (target=selector)\n\
+• type     — click + type text into a CSS selector (target=selector, value=text)\n\
+• evaluate — run arbitrary JS and capture the return value (value=script)\n\
+• wait_for_selector — poll until a CSS selector appears (target=selector, timeout_ms=10000)\n\
+• snapshot — returns page title, URL, headings, interactive elements, and body text so the LLM can observe the current state",
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "steps": {
+                    "type": "array",
+                    "description": "Ordered list of automation actions to execute sequentially.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "enum": ["navigate", "click", "type", "evaluate", "wait_for_selector", "snapshot"],
+                                "description": "The action to perform."
+                            },
+                            "target": {
+                                "type": "string",
+                                "description": "URL (for navigate) or CSS selector (for click, type, wait_for_selector)."
+                            },
+                            "value": {
+                                "type": "string",
+                                "description": "Text to type (for type) or JS expression to evaluate (for evaluate)."
+                            },
+                            "timeout_ms": {
+                                "type": "integer",
+                                "default": 10000,
+                                "description": "Timeout for wait_for_selector in milliseconds (default 10000)."
+                            }
+                        },
+                        "required": ["action"]
+                    }
+                }
+            },
+            "required": ["steps"]
+        }),
+        icons: vec![CORTEX_SCOUT_ICON],
+    });
+
+    tools.push(ToolCatalogEntry {
+        name: "browser_close",
+        title: "Browser Close (Cleanup)",
+        description: "Gracefully terminate the stateful Brave browser session started by \
+scout_browser_automate. Call this when you are done with all automation steps to free resources.",
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {}
+        }),
+        icons: vec![CORTEX_SCOUT_ICON],
+    });
+
     // Build-time + runtime gate: remove deep_research from the catalog when disabled.
     // This makes it invisible to agents (list_tools returns nothing) and unreachable
     // (call_tool returns "Unknown tool") without touching any other codepath.
