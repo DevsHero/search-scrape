@@ -162,22 +162,22 @@ else
   printf '%s\n' "$TRIMMED" | head -5 | while IFS= read -r line; do info "  $line"; done
 fi
 
-# ── Promote CHANGELOG & Commit ────────────────────────────────────────────────
+# ── Warm dependencies (must run before commit so Cargo.lock is up-to-date) ───
+banner "Warm dependencies"
+(cd "$MCP" && cargo fetch)
+pass "Cargo deps fetched"
+
+# ── Promote CHANGELOG & Commit (includes Cargo.lock if updated) ───────────────
 banner "Updating CHANGELOG.md"
 if $DRY_RUN; then
   warn "Dry-run: skipping CHANGELOG promotion and git commit"
 else
   promote_changelog "$TAG" "$RELEASE_DATE"
   pass "Promoted '## Unreleased' → '## $TAG ($RELEASE_DATE)'"
-  git -C "$REPO_ROOT" add CHANGELOG.md
-  git -C "$REPO_ROOT" commit -m "chore: release $TAG — promote CHANGELOG Unreleased section"
+  git -C "$REPO_ROOT" add CHANGELOG.md "$MCP/Cargo.lock"
+  git -C "$REPO_ROOT" commit -m "chore: release $TAG — promote CHANGELOG, update Cargo.lock"
   pass "Committed CHANGELOG update"
 fi
-
-# ── Warm dependencies ─────────────────────────────────────────────────────────
-banner "Warm dependencies"
-(cd "$MCP" && cargo fetch)
-pass "Cargo deps fetched"
 
 # ── Tag management ────────────────────────────────────────────────────────────
 banner "Tagging $TAG"
