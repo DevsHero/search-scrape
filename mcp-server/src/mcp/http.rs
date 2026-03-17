@@ -105,6 +105,7 @@ pub async fn call_tool_inner(
         "human_auth_session" => handlers::human_auth_session::handle(state, &internal_args).await,
         "browser_automate" => handlers::automate::handle(state, &internal_args).await,
         "browser_close" => handlers::automate::handle_close(state, &internal_args).await,
+        "agent_profile_auth" => handlers::automate::handle_profile_auth(state, &internal_args).await,
         _ => Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {

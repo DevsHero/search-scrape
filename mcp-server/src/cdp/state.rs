@@ -60,7 +60,9 @@ impl AutomationSession {
 ///
 /// Path: `~/.cortex-scout/agent_profile`
 /// Falls back to a UUID temp dir if the home directory cannot be determined.
-fn agent_profile_dir() -> (PathBuf, bool) {
+///
+/// `pub` so the auth-portal handler can reuse the same path for the visible launch.
+pub fn agent_profile_dir() -> (PathBuf, bool) {
     if let Some(home) = dirs::home_dir() {
         let dir = home.join(".cortex-scout").join("agent_profile");
         if std::fs::create_dir_all(&dir).is_ok() {

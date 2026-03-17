@@ -590,6 +590,47 @@ scout_browser_automate. Call this when you are done with all automation steps to
         icons: vec![CORTEX_SCOUT_ICON],
     });
 
+    // ── Phase 20: Agent Auth Portal ───────────────────────────────────────────
+    tools.push(ToolCatalogEntry {
+        name: "agent_profile_auth",
+        title: "Agent Auth Portal (HITL Login Bootstrap)",
+        description: "🔓 Launch the silent agent profile in a VISIBLE browser window so a human can \
+complete an initial login, OAuth flow, 2FA, or CAPTCHA challenge — in the agent's name. \
+\n\
+Use this ONLY when scout_browser_automate is blocked because the agent profile has no \
+authenticated session for a domain (e.g., first-time Google/AWS/GitHub login). \
+\n\
+Workflow:\n\
+1. Closes the headless automation session to release the SingletonLock.\n\
+2. Opens a VISIBLE Brave window pointing to the same ~/.cortex-scout/agent_profile.\n\
+3. Navigates to `url` and shows the window to the user.\n\
+4. Waits up to `timeout_secs` seconds (default 120) — the user completes the login.\n\
+5. Closes the window; cookies are flushed to the persistent profile.\n\
+6. Future scout_browser_automate calls will reuse those cookies silently.",
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The URL to open (e.g. the login page for the service)."
+                },
+                "instruction": {
+                    "type": "string",
+                    "description": "Human-readable instruction shown in server logs telling the user what to do, e.g. 'Please log in to AWS so I can automate it'."
+                },
+                "timeout_secs": {
+                    "type": "integer",
+                    "minimum": 10,
+                    "maximum": 600,
+                    "default": 120,
+                    "description": "How many seconds to keep the window open waiting for the user. Default 120 (2 minutes). The window also closes immediately if the user closes it manually."
+                }
+            },
+            "required": ["url"]
+        }),
+        icons: vec![CORTEX_SCOUT_ICON],
+    });
+
     // Build-time + runtime gate: remove deep_research from the catalog when disabled.
     // This makes it invisible to agents (list_tools returns nothing) and unreachable
     // (call_tool returns "Unknown tool") without touching any other codepath.

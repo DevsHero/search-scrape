@@ -117,6 +117,7 @@ impl ToolRegistry {
                 "non_robot_search" => "hitl_web_fetch".to_string(),
                 "browser_automate" => "scout_browser_automate".to_string(),
                 "browser_close" => "scout_browser_close".to_string(),
+                "agent_profile_auth" => "scout_agent_profile_auth".to_string(),
                 _ => internal_name.clone(),
             };
             let public_title = internal.title.to_string();

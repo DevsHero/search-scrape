@@ -410,3 +410,192 @@ pub async fn handle_close(
         })),
     }
 }
+
+// ── Phase 20: Agent Auth Portal ───────────────────────────────────────────────
+
+/// Launch the agent profile in **visible** mode so a human can complete an
+/// OAuth / CAPTCHA / 2FA flow, then close the browser and return.
+///
+/// Steps:
+/// 1. Close any live headless session to release the SingletonLock.
+/// 2. Launch a fully visible browser window on the SAME agent profile.
+/// 3. Navigate to `url`.
+/// 4. Block for up to `timeout_secs` seconds (default 120) — this is the
+///    window during which the user completes the login.
+/// 5. Close the visible browser; profile cookies are now persisted.
+/// 6. Future `scout_browser_automate` calls will reuse those cookies silently.
+pub async fn handle_profile_auth(
+    _state: Arc<AppState>,
+    arguments: &Value,
+) -> Result<Json<McpCallResponse>, (StatusCode, Json<ErrorResponse>)> {
+    use chromiumoxide::browser::BrowserConfig;
+    use chromiumoxide::handler::viewport::Viewport;
+    use futures::StreamExt;
+
+    let url = arguments
+        .get("url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("about:blank");
+
+    let instruction = arguments
+        .get("instruction")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Please complete the login in this window, then close it when done.");
+
+    let timeout_secs = arguments
+        .get("timeout_secs")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(120)
+        .max(10)
+        .min(600); // clamp: 10s–10min
+
+    // Step 1: release the headless SingletonLock on the profile.
+    if let Err(e) = state::close_session().await {
+        return Ok(Json(McpCallResponse {
+            content: vec![McpContent {
+                content_type: "text".to_string(),
+                text: format!("agent_profile_auth: could not close headless session: {}", e),
+            }],
+            is_error: true,
+        }));
+    }
+
+    // Step 2: resolve browser and build a VISIBLE config.
+    let exe = match browser_manager::find_chrome_executable() {
+        Some(e) => e,
+        None => {
+            return Ok(Json(McpCallResponse {
+                content: vec![McpContent {
+                    content_type: "text".to_string(),
+                    text: "agent_profile_auth: no browser found (install Brave, Chrome, or Chromium)"
+                        .to_string(),
+                }],
+                is_error: true,
+            }));
+        }
+    };
+
+    let (profile_dir, _) = state::agent_profile_dir();
+    let ua = browser_manager::random_user_agent();
+
+    // Visible browser: omit --headless=new so the OS shows the window.
+    let config = match BrowserConfig::builder()
+        .chrome_executable(&exe)
+        .viewport(Viewport {
+            width: 1280,
+            height: 900,
+            device_scale_factor: Some(1.0),
+            emulating_mobile: false,
+            is_landscape: true,
+            has_touch: false,
+        })
+        .window_size(1280, 900)
+        .arg("--no-sandbox")
+        .arg("--disable-setuid-sandbox")
+        .arg("--no-first-run")
+        .arg("--no-default-browser-check")
+        .arg("--disable-blink-features=AutomationControlled")
+        .arg(format!("--user-data-dir={}", profile_dir.display()))
+        .arg(format!("--user-agent={}", ua))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return Ok(Json(McpCallResponse {
+                content: vec![McpContent {
+                    content_type: "text".to_string(),
+                    text: format!("agent_profile_auth: config build failed: {}", e),
+                }],
+                is_error: true,
+            }));
+        }
+    };
+
+    info!(
+        "🔓 Opening agent profile in VISIBLE mode for human auth ({}s window): {}",
+        timeout_secs, url
+    );
+    info!("📋 Instruction: {}", instruction);
+
+    let (mut browser, mut handler) =
+        match browser_manager::launch_browser_serialized(config, "agent_profile_auth").await {
+            Ok(pair) => pair,
+            Err(e) => {
+                return Ok(Json(McpCallResponse {
+                    content: vec![McpContent {
+                        content_type: "text".to_string(),
+                        text: format!("agent_profile_auth: browser launch failed: {}", e),
+                    }],
+                    is_error: true,
+                }));
+            }
+        };
+
+    let handler_task = tokio::spawn(async move {
+        while let Some(event) = handler.next().await {
+            if let Err(e) = event {
+                browser_manager::log_cdp_handler_error("auth-portal handler", &e.to_string());
+            }
+        }
+    });
+
+    // Step 3: navigate to the target URL.
+    let nav_result = browser.new_page(url).await;
+    if let Err(e) = nav_result {
+        let _ = browser.close().await;
+        handler_task.abort();
+        return Ok(Json(McpCallResponse {
+            content: vec![McpContent {
+                content_type: "text".to_string(),
+                text: format!("agent_profile_auth: navigation failed: {}", e),
+            }],
+            is_error: true,
+        }));
+    }
+
+    // Step 4: wait for the user to finish (or for the timeout).
+    // We poll the browser liveness every 2 seconds so we return promptly
+    // if the user closes the window manually before the timeout expires.
+    let page = nav_result.unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout_secs);
+    let mut user_closed = false;
+    loop {
+        if tokio::time::Instant::now() >= deadline {
+            break;
+        }
+        // Probe: a closed window makes the page unreachable.
+        if page.evaluate("1").await.is_err() {
+            user_closed = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+
+    // Step 5: close the visible browser to flush cookies to disk.
+    let _ = tokio::time::timeout(Duration::from_secs(5), browser.close()).await;
+    handler_task.abort();
+    let _ = handler_task.await;
+
+    let reason = if user_closed {
+        "user closed window"
+    } else {
+        "timeout reached"
+    };
+    info!("✅ Auth portal closed ({}). Agent profile is now authenticated.", reason);
+
+    let text = serde_json::to_string_pretty(&json!({
+        "status": "ok",
+        "reason": reason,
+        "profile": profile_dir.to_string_lossy(),
+        "message": "Session saved to agent profile. Future scout_browser_automate calls will reuse these cookies silently."
+    }))
+    .unwrap_or_default();
+
+    Ok(Json(McpCallResponse {
+        content: vec![McpContent {
+            content_type: "text".to_string(),
+            text,
+        }],
+        is_error: false,
+    }))
+}
