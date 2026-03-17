@@ -506,25 +506,28 @@ Send `instruction_message` to tell the user exactly what to log in to and why, e
     tools.push(ToolCatalogEntry {
         name: "browser_automate",
         title: "Browser Automate (Omni-Tool)",
-        description: "The ultimate browser automation tool. Executes an ordered sequence of \
+        description: "The ultimate browser automation + QA tool. Executes an ordered sequence of \
 actions in a stateful Brave browser session that persists between calls. \
 Runs silently in the background (--headless=new) using a dedicated isolated agent profile \
 (~/.cortex-scout/agent_profile) so it never disrupts the user's active desktop session. \
 Cookies and login state persist across close/reopen cycles. \
-Use this for E2E testing, form filling, clicking, typing, key presses, scrolling, \
-evaluating JS, taking screenshots, and observing the DOM. \
 The session stays open until scout_browser_close is called. \
 \n\
 Supported actions (steps array):\n\
-• navigate         — go to a URL and wait for network-idle (target=URL)\n\
-• click            — click a CSS selector (target=selector)\n\
-• type             — click + type text into a selector (target=selector, value=text)\n\
-• press_key        — dispatch a key event (key=\"Enter\"|\"Escape\"|\"Tab\"|\"ArrowDown\"|...)\n\
-• scroll           — scroll the viewport (direction=\"down\"|\"up\"|\"bottom\"|\"top\", pixels=500)\n\
-• evaluate         — run arbitrary JS, capture return value (value=script)\n\
+• navigate          — go to a URL and wait for network-idle (target=URL)\n\
+• click             — click a CSS selector (target=selector)\n\
+• type              — click + type text into a selector (target=selector, value=text)\n\
+• press_key         — dispatch a key event (key=\"Enter\"|\"Escape\"|\"Tab\"|\"ArrowDown\"|...)\n\
+• scroll            — scroll the viewport (direction=\"down\"|\"up\"|\"bottom\"|\"top\", pixels=500)\n\
+• evaluate          — run arbitrary JS, capture return value (value=script)\n\
 • wait_for_selector — poll until selector appears (target=selector, timeout_ms=10000)\n\
-• snapshot         — returns title/URL/headings/inputs/buttons/links/bodyText snapshot\n\
-• screenshot       — returns inline base64 PNG of current viewport",
+• snapshot          — returns title/URL/headings/inputs/buttons/links/bodyText snapshot\n\
+• screenshot        — returns inline base64 PNG of current viewport\n\
+• assert            — fail-fast DOM assertion; HALTS the sequence on failure \
+(target=selector, value=expected_text, condition=\"contains_text\"|\"is_visible\"|\"is_hidden\")\n\
+• mock_api          — intercept fetch+XHR matching a glob URL pattern and return a fake JSON \
+response (url_pattern=\"*api/v1/users*\", response_json=\"{...}\", status_code=200); \
+active on current page AND all future navigations",
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -537,16 +540,35 @@ Supported actions (steps array):\n\
                             "action": {
                                 "type": "string",
                                 "enum": ["navigate", "click", "type", "press_key", "scroll",
-                                         "evaluate", "wait_for_selector", "snapshot", "screenshot"],
+                                         "evaluate", "wait_for_selector", "snapshot", "screenshot",
+                                         "assert", "mock_api"],
                                 "description": "The action to perform."
                             },
                             "target": {
                                 "type": "string",
-                                "description": "URL (for navigate) or CSS selector (for click, type, wait_for_selector)."
+                                "description": "URL (for navigate) or CSS selector (for click, type, wait_for_selector, assert)."
                             },
                             "value": {
                                 "type": "string",
-                                "description": "Text to type (for type) or JS expression to evaluate (for evaluate)."
+                                "description": "Text to type (for type), JS expression (for evaluate), or expected text/state (for assert)."
+                            },
+                            "condition": {
+                                "type": "string",
+                                "enum": ["contains_text", "is_visible", "is_hidden"],
+                                "description": "Assertion condition (for assert). Default: contains_text."
+                            },
+                            "url_pattern": {
+                                "type": "string",
+                                "description": "Glob URL pattern to intercept (for mock_api). Supports * and ? wildcards. Example: '*api/v1/users*'."
+                            },
+                            "response_json": {
+                                "type": "string",
+                                "description": "JSON string to return as the mocked API response body (for mock_api)."
+                            },
+                            "status_code": {
+                                "type": "integer",
+                                "default": 200,
+                                "description": "HTTP status code for the mocked response (for mock_api). Default 200."
                             },
                             "key": {
                                 "type": "string",

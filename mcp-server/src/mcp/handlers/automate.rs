@@ -1,7 +1,8 @@
-//! Phase 18/19 — Playwright Killer: `scout_browser_automate` + `scout_browser_close`.
+//! Phase 18/19/21 — Playwright Killer: `scout_browser_automate` + `scout_browser_close`.
 //!
 //! Phase 18: navigate, click, type, evaluate, wait_for_selector, snapshot
 //! Phase 19: scroll, press_key, screenshot  +  --headless=new persistent session
+//! Phase 21: assert (fail-fast DOM assertions), mock_api (fetch+XHR network mocking)
 
 use crate::cdp::state;
 use crate::mcp::{McpCallResponse, McpContent};
@@ -82,15 +83,30 @@ async fn execute_step(page: &chromiumoxide::Page, step: &Value, idx: usize) -> V
             run_press_key(page, key).await
         }
         "screenshot" => run_screenshot(page).await,
+        // ── Phase 21 ───────────────────────────────────────────────────────────
+        "assert" => {
+            let condition = step.get("condition").and_then(|v| v.as_str()).unwrap_or("contains_text");
+            run_assert(page, target, value, condition).await
+        }
+        "mock_api" => {
+            let url_pattern = step.get("url_pattern").and_then(|v| v.as_str()).unwrap_or("");
+            let response_json = step.get("response_json").and_then(|v| v.as_str()).unwrap_or("{}");
+            let status_code = step.get("status_code").and_then(|v| v.as_u64()).unwrap_or(200) as u16;
+            run_mock_api(page, url_pattern, response_json, status_code).await
+        }
         other => Err(anyhow!(
-            "Unknown action '{}'. Valid actions: navigate, click, type, evaluate, wait_for_selector, snapshot, scroll, press_key, screenshot",
+            "Unknown action '{}'. Valid actions: navigate, click, type, evaluate, wait_for_selector, snapshot, scroll, press_key, screenshot, assert, mock_api",
             other
         )),
     };
 
     match result {
         Ok(r) => json!({ "step": idx, "action": action, "status": "ok", "result": r }),
-        Err(e) => json!({ "step": idx, "action": action, "status": "error", "error": e.to_string() }),
+        Err(e) => {
+            // assert failures set halt=true to stop the sequence immediately.
+            let halt = action == "assert";
+            json!({ "step": idx, "action": action, "status": "error", "error": e.to_string(), "halt": halt })
+        }
     }
 }
 
@@ -320,6 +336,199 @@ async fn run_screenshot(page: &chromiumoxide::Page) -> Result<Value> {
     }))
 }
 
+// ── Phase 21: assert ─────────────────────────────────────────────────────────
+
+/// Convert a glob pattern (using `*` and `?`) to a JS-safe regex source string.
+/// All regex-special characters except `*` / `?` are escaped.
+fn glob_to_js_regex(pattern: &str) -> String {
+    let mut out = String::with_capacity(pattern.len() * 2);
+    for ch in pattern.chars() {
+        match ch {
+            '*' => out.push_str(".*"),
+            '?' => out.push('.'),
+            '.' | '+' | '^' | '$' | '{' | '}' | '(' | ')' | '|' | '[' | ']' | '\\' => {
+                out.push('\\');
+                out.push(ch);
+            }
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// Evaluate a DOM assertion in the page. Returns an error when the condition is false,
+/// which will trigger fail-fast halt in the execution loop.
+async fn run_assert(
+    page: &chromiumoxide::Page,
+    selector: &str,
+    expected_value: &str,
+    condition: &str,
+) -> Result<Value> {
+    if selector.is_empty() {
+        return Err(anyhow!("assert: 'target' (CSS selector) is required"));
+    }
+    let sel_js = serde_json::to_string(selector).unwrap_or_default();
+    let val_js = serde_json::to_string(expected_value).unwrap_or_default();
+
+    let script = match condition {
+        "contains_text" => format!(
+            "(function(){{var el=document.querySelector({sel});if(!el)return{{ok:false,reason:'element not found'}};var t=(el.textContent||el.value||'').trim();return{{ok:t.includes({val}),actual:t.slice(0,200)}};}})()",
+            sel = sel_js,
+            val = val_js
+        ),
+        "is_visible" => format!(
+            "(function(){{var el=document.querySelector({sel});if(!el)return{{ok:false,reason:'element not found'}};var r=el.getBoundingClientRect();var s=window.getComputedStyle(el);var ok=s.display!='none'&&s.visibility!='hidden'&&s.opacity!='0'&&r.width>0&&r.height>0;return{{ok:ok,display:s.display,visibility:s.visibility,w:r.width,h:r.height}};}})()",
+            sel = sel_js
+        ),
+        "is_hidden" => format!(
+            "(function(){{var el=document.querySelector({sel});if(!el)return{{ok:true,reason:'element not found (counts as hidden)'}};var r=el.getBoundingClientRect();var s=window.getComputedStyle(el);var visible=s.display!='none'&&s.visibility!='hidden'&&s.opacity!='0'&&r.width>0&&r.height>0;return{{ok:!visible}};}})()",
+            sel = sel_js
+        ),
+        other => {
+            return Err(anyhow!(
+                "assert: unknown condition '{}'. Valid: contains_text, is_visible, is_hidden",
+                other
+            ))
+        }
+    };
+
+    debug!("🔍 assert '{}' {} '{}'", selector, condition, expected_value);
+    let remote = page
+        .evaluate(script)
+        .await
+        .map_err(|e| anyhow!("assert: evaluate failed: {}", e))?;
+    let result = remote.into_value::<Value>().unwrap_or(Value::Null);
+
+    let ok = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+    if ok {
+        Ok(json!({
+            "asserted": condition,
+            "selector": selector,
+            "passed": true
+        }))
+    } else {
+        Err(anyhow!(
+            "Assertion failed: '{}' {} '{}'. Details: {}",
+            selector, condition, expected_value, result
+        ))
+    }
+}
+
+// ── Phase 21: mock_api ────────────────────────────────────────────────────────
+
+/// Inject a `fetch` + `XMLHttpRequest` interceptor for URLs matching `url_pattern` (glob).
+/// Uses `Page.addScriptToEvaluateOnNewDocument` so the mock persists across navigations,
+/// then evaluates the same script on the live page immediately.
+async fn run_mock_api(
+    page: &chromiumoxide::Page,
+    url_pattern: &str,
+    response_json: &str,
+    status_code: u16,
+) -> Result<Value> {
+    use chromiumoxide::cdp::browser_protocol::page::AddScriptToEvaluateOnNewDocumentParams;
+
+    if url_pattern.is_empty() {
+        return Err(anyhow!("mock_api: 'url_pattern' is required"));
+    }
+
+    // Pre-convert glob → regex in Rust to avoid complex JS regex-escaping inside format!.
+    let js_regex = glob_to_js_regex(url_pattern);
+    let regex_js = serde_json::to_string(&js_regex).unwrap_or_default();
+    let body_js = serde_json::to_string(response_json).unwrap_or_default();
+    let status = status_code as u32;
+
+    let script = format!(
+        r#"
+(function() {{
+  var _re = new RegExp({regex});
+  var _body = {body};
+  var _status = {status};
+  function _match(url) {{ return _re.test(url); }}
+
+  /* ── fetch override ─────────────────────────── */
+  var _origFetch = window.fetch ? window.fetch.bind(window) : null;
+  window.fetch = function(resource, init) {{
+    var url = typeof resource === 'string' ? resource
+              : (resource && resource.url ? resource.url : String(resource));
+    if (_match(url)) {{
+      return Promise.resolve(new Response(_body, {{
+        status: _status,
+        headers: {{ 'Content-Type': 'application/json' }}
+      }}));
+    }}
+    return _origFetch ? _origFetch(resource, init) : Promise.reject(new Error('fetch unavailable'));
+  }};
+
+  /* ── XMLHttpRequest override ─────────────────── */
+  var _OrigXHR = XMLHttpRequest;
+  function _MockXHR() {{
+    var _xhr = new _OrigXHR();
+    var _self = this;
+    var _url = '', _mocked = false;
+    this.readyState = 0; this.status = 0; this.statusText = '';
+    this.responseText = ''; this.response = '';
+    this.onreadystatechange = null; this.onload = null; this.onerror = null;
+    this.timeout = 0; this.withCredentials = false;
+
+    this.open = function(m, u) {{
+      _url = u; _mocked = _match(u);
+      if (!_mocked) _xhr.open.apply(_xhr, arguments);
+    }};
+    this.send = function(body) {{
+      if (_mocked) {{
+        setTimeout(function() {{
+          _self.readyState = 4; _self.status = _status; _self.statusText = 'OK';
+          _self.responseText = _body; _self.response = _body;
+          if (_self.onreadystatechange) _self.onreadystatechange();
+          if (_self.onload) _self.onload({{ target: _self }});
+        }}, 0);
+      }} else {{
+        _xhr.onreadystatechange = function() {{
+          _self.readyState = _xhr.readyState; _self.status = _xhr.status;
+          _self.statusText = _xhr.statusText; _self.responseText = _xhr.responseText;
+          _self.response = _xhr.response;
+          if (_self.onreadystatechange) _self.onreadystatechange();
+        }};
+        _xhr.onload  = function(e) {{ if (_self.onload)  _self.onload(e); }};
+        _xhr.onerror = function(e) {{ if (_self.onerror) _self.onerror(e); }};
+        _xhr.send(body);
+      }}
+    }};
+    this.setRequestHeader = function() {{ if (!_mocked) _xhr.setRequestHeader.apply(_xhr, arguments); }};
+    this.getResponseHeader = function(n) {{ return _mocked ? (n === 'Content-Type' ? 'application/json' : null) : _xhr.getResponseHeader(n); }};
+    this.abort = function() {{ if (!_mocked) _xhr.abort(); }};
+    this.addEventListener = function(ev, cb) {{
+      if (_mocked && ev === 'load') setTimeout(cb, 0);
+      else if (!_mocked) _xhr.addEventListener(ev, cb);
+    }};
+  }}
+  XMLHttpRequest = _MockXHR;
+}})();
+"#,
+        regex = regex_js,
+        body = body_js,
+        status = status
+    );
+
+    debug!("🔀 mock_api pattern='{}' status={}", url_pattern, status_code);
+
+    // Persist mock across future page loads.
+    page.execute(AddScriptToEvaluateOnNewDocumentParams::new(script.clone()))
+        .await
+        .map_err(|e| anyhow!("mock_api: addScriptToEvaluateOnNewDocument failed: {}", e))?;
+
+    // Also activate on the currently-loaded page immediately.
+    page.evaluate(script)
+        .await
+        .map_err(|e| anyhow!("mock_api: immediate inject on current page failed: {}", e))?;
+
+    Ok(json!({
+        "mocked": url_pattern,
+        "status_code": status_code,
+        "scope": "current page + all future navigations"
+    }))
+}
+
 // ── scout_browser_automate handler ───────────────────────────────────────────
 
 pub async fn handle(
@@ -369,10 +578,16 @@ pub async fn handle(
 
     for (idx, step) in steps.iter().enumerate() {
         let step_result = execute_step(&page, step, idx).await;
-        if step_result.get("status").and_then(|v| v.as_str()) == Some("error") {
+        let is_error = step_result.get("status").and_then(|v| v.as_str()) == Some("error");
+        let should_halt = step_result.get("halt").and_then(|v| v.as_bool()).unwrap_or(false);
+        if is_error {
             had_error = true;
         }
         results.push(step_result);
+        if should_halt {
+            // Fail-fast: assertion failed — do not execute any further steps.
+            break;
+        }
     }
 
     let text = serde_json::to_string_pretty(&results)
