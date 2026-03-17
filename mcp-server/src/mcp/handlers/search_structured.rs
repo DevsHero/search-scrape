@@ -82,12 +82,26 @@ pub async fn handle(
     ));
     for (i, item) in scraped_content.iter().enumerate() {
         text.push_str(&format!(
-            "{}. {} ({} words)\nURL: {}\n\n",
+            "{}. {} ({} words)\nURL: {}\n",
             i + 1,
             item.title,
             item.word_count,
             item.url
         ));
+        // Include truncated content so agents get actual page summaries.
+        let content = if !item.clean_content.is_empty() {
+            item.clean_content.as_str()
+        } else {
+            item.content.as_str()
+        };
+        if !content.is_empty() {
+            let preview: String = content.chars().take(1500).collect();
+            text.push_str(&format!("Content: {}\n", preview));
+            if content.len() > 1500 {
+                text.push_str("... [truncated — use web_fetch for full content]\n");
+            }
+        }
+        text.push('\n');
     }
 
     Ok(Json(McpCallResponse {

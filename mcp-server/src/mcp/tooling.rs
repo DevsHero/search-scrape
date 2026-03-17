@@ -37,9 +37,10 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
         ToolCatalogEntry {
             name: "search_web",
             title: "Web Search (Multi-Engine)",
-            description: "Primary URL discovery. Multi-engine search (Google/Bing/DDG/Brave), deduped + ranked. Use this before web_fetch. \
-⚠️ AGENT RULE: ALWAYS call memory_search BEFORE this tool — the answer may already be cached from a previous session. \
-For initial research where you will also fetch content, strongly prefer web_search_json over calling this tool and then web_fetch separately — it short-circuits to a single round-trip.",
+            description: "Search the web across Google/Bing/DuckDuckGo/Brave simultaneously. Returns deduplicated, ranked URL list with snippets. \
+Use when you need URL discovery only. \
+If you also need page content, prefer web_search_json (search + scrape in one call). \
+Always call memory_search first — the answer may already be cached.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -64,11 +65,12 @@ For initial research where you will also fetch content, strongly prefer web_sear
         },
         ToolCatalogEntry {
             name: "search_structured",
-            title: "Web Search (Top Results JSON)",
-            description: "Search + return top results as clean JSON (deduped, ranked). \
-✅ PREFERRED for initial research: combines search + pre-scraped content summaries in a single call — use this INSTEAD of web_search + separate web_fetch. \
-Defaults to direct/no-proxy mode; only retry with use_proxy=true after confirmed rate limits or IP blocks. \
-Note: still call memory_search first to avoid redundant fetches.",
+            title: "Web Search + Scrape (Single Call)",
+            description: "PREFERRED for research: searches the web AND fetches/summarises the top N pages in one call. \
+Returns structured JSON with title, URL, and content for each result. \
+More efficient than calling web_search then web_fetch separately. \
+Call memory_search first to avoid re-fetching already-cached results. \
+Use use_proxy=true only after confirmed 403/429/rate-limit errors.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -84,10 +86,11 @@ Note: still call memory_search first to avoid redundant fetches.",
         ToolCatalogEntry {
             name: "scrape_url",
             title: "Web Fetch (Token-Efficient)",
-            description: "PRIMARY page fetch for agents. Clean token-efficient text + key links; auto-escalates to native CDP rendering when needed. Prefer over IDE fetch. Use hitl_web_fetch only for heavy challenges (CAPTCHA/login). \
-✅ BEST PRACTICE — documentation / article pages: set output_format: clean_json + strict_relevance: true + a query string for maximum noise reduction and minimum token usage. \
-Default path is direct/no-proxy. ⚠️ PROXY RULE: if this tool returns a 403, 429, or any rate-limit / IP-block error, IMMEDIATELY call proxy_control with action: grab to rotate the IP, then retry this call with use_proxy: true. \
-🔒 AUTH-RISK FIELD: every response includes `auth_risk_score` (0.0–1.0). If score >= 0.4, STOP reading content and call `visual_scout` for visual confirmation before escalating to `human_auth_session`.",
+            description: "Fetch and clean a single web page. Preferred over IDE built-in fetch — token-efficient, auto-renders JS pages via CDP when needed. \
+Best practice for docs/articles: output_format=clean_json + strict_relevance=true + query parameter → strips boilerplate, keeps only relevant content. \
+On 403/429/rate-limit: call proxy_control with action=grab, then retry with use_proxy=true. \
+Response includes auth_risk_score (0.0–1.0): if >= 0.4, call visual_scout to confirm, then human_auth_session if login is required. \
+For CAPTCHA/anti-bot walls: use hitl_web_fetch instead.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -179,7 +182,9 @@ Default path is direct/no-proxy. ⚠️ PROXY RULE: if this tool returns a 403, 
         ToolCatalogEntry {
             name: "scrape_batch",
             title: "Batch Web Fetch",
-            description: "Fetch many URLs in parallel and return clean outputs for agents. Use for research runs and evidence capture. Defaults to direct/no-proxy mode unless use_proxy=true is explicitly requested.",
+            description: "Fetch multiple URLs in parallel and return clean text/JSON for each. Use for research runs when you have a known list of sources. \
+Note: results are returned in completion order (fastest first), not input order. \
+Use use_proxy=true if sites are rate-limiting.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -197,21 +202,10 @@ Default path is direct/no-proxy. ⚠️ PROXY RULE: if this tool returns a 403, 
         ToolCatalogEntry {
             name: "deep_research",
             title: "Deep Research",
-            description: "Multi-hop search + scrape + semantic-filter research pipeline. \
-Expands your query into sub-queries, searches multiple engines, reranks results by relevance, \
-batch-scrapes the top sources, applies semantic filtering to keep only relevant content, \
-then optionally follows links from those pages for deeper coverage. \
-Results are logged to research_history for later recall. \
-Defaults to direct/no-proxy mode. Use proxy: true only after confirmed 403/429/rate-limit/IP-block conditions or during large research runs that require proxy rotation.\
-\n\
-🧠 LLM Synthesis: Automatically enabled when OPENAI_API_KEY is set. \
-For fully LOCAL / offline synthesis set OPENAI_BASE_URL to an OpenAI-compatible endpoint \
-(e.g. Ollama: http://localhost:11434/v1  |  LM Studio: http://localhost:1234/v1) \
-and set OPENAI_API_KEY=local (any non-empty value). \
-Set DEEP_RESEARCH_LLM_MODEL to choose the model (default: gpt-4o-mini). \
-\
-On/Off: set DEEP_RESEARCH_ENABLED=0 to hide this tool from the catalog at runtime. \
-Strip from binary entirely: cargo build --no-default-features.",
+            description: "Full autonomous research pipeline: expands the query into sub-queries, searches multiple engines, reranks results, batch-scrapes top sources, applies semantic filtering, then optionally follows links for deeper coverage. \
+Results are automatically saved to memory_search history for future recall. \
+Use for complex research topics requiring multiple sources. Avoid for simple single-URL lookups — use web_fetch instead. \
+LLM synthesis is automatic when OPENAI_API_KEY is set (set DEEP_RESEARCH_ENABLED=0 to disable the tool).",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -270,10 +264,10 @@ Strip from binary entirely: cargo build --no-default-features.",
         },
         ToolCatalogEntry {
             name: "crawl_website",
-            title: "Crawl Website (Link Map)",
-            description: "Bounded crawl to map a site's link structure before targeted fetching. \
-Use this when you know a doc site's index URL and need to discover the right sub-page before fetching — do NOT assume a single web_fetch of the index is sufficient. \
-If the start URL returns NEED_HITL, the crawl aborts early with a structured error.",
+            title: "Crawl Website (Link Discovery)",
+            description: "BFS-crawl a website to discover its link structure and page content. Use when you have a site's root/index URL and need to find the right sub-pages before fetching. \
+Do NOT use for single-page fetching — use web_fetch instead. \
+Aborts early with a structured error if the start URL requires human login (NEED_HITL).",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -299,11 +293,10 @@ If the start URL returns NEED_HITL, the crawl aborts early with a structured err
         ToolCatalogEntry {
             name: "extract_structured",
             title: "Extract Structured Fields",
-            description: "Schema-driven extraction into JSON fields. Use after web_fetch when you need a JSON object rather than free text. \
-⛔ CONSTRAINT: use ONLY on structured HTML pages (official docs, articles, MDN-style pages). \
-Do NOT use on raw .md, .json, .txt, or .rst files — fields will return null and confidence will be low. \
-For raw Markdown sources, use web_fetch with output_format: clean_json instead. \
-⚠️ AUTO-WARN: if the URL is a raw markdown/text file, a raw_markdown_url warning is automatically injected into the response.",
+            description: "Fetch a URL and extract specific named fields into a JSON object using a schema. Use when you need structured data (price, title, author, etc.) from an HTML page. \
+Do NOT use on raw .md/.json/.txt files — use web_fetch with output_format=clean_json instead. \
+Note: confidence score indicates extraction quality; check warnings field for null fields. \
+For combined fetch+extract in one call, use fetch_then_extract.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -334,10 +327,11 @@ For raw Markdown sources, use web_fetch with output_format: clean_json instead. 
 
         ToolCatalogEntry {
             name: "fetch_then_extract",
-            title: "Fetch Then Extract (Single Call)",
-            description: "Fetch + extract in a single call to reduce latency and token usage. \
-Schema-first: provide `schema` (preferred) or a schema-like `prompt`. \
-When `strict=true`, output matches requested schema exactly (no schema drift).",
+            title: "Fetch + Extract (Single Call)",
+            description: "Fetch a URL and extract structured fields in a single call (lower latency than calling web_fetch + extract_fields separately). \
+Provide schema (preferred) or a prompt describing the fields to extract. \
+strict=true enforces schema shape exactly — missing fields become null/[]. \
+Best for well-structured HTML pages; less reliable on heavily JS-rendered or navigation-heavy pages.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -364,9 +358,11 @@ When `strict=true`, output matches requested schema exactly (no schema drift).",
         },
        ToolCatalogEntry {
         name: "research_history",
-        title: "Search Past Research", 
-        description: "Semantic research memory (LanceDB). Use to retrieve past searches/scrapes and avoid re-fetching the same sources. \
-⚠️ AGENT RULE: call this BEFORE any web_search or web_fetch — if similarity score >= 0.60 on a returned entry, use that cached result directly and skip the live fetch entirely.",
+        title: "Search Past Research (Memory)",
+        description: "Semantic memory search over past web searches and page scrapes (stored in LanceDB). \
+Call this BEFORE web_search or web_fetch — if any result has similarity >= 0.60, use it directly and skip the live request. \
+Past results from deep_research and web_search_json are saved automatically. \
+Use entry_type filter to search only past searches ('search') or past scrapes ('scrape').",
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -399,9 +395,9 @@ When `strict=true`, output matches requested schema exactly (no schema drift).",
         ToolCatalogEntry {
             name: "proxy_manager",
             title: "Proxy Control",
-            description: "Manage proxies (grab/list/status/switch/test). Use when a site rate-limits or blocks your IP. \
-⚠️ TRIGGER RULE: when web_fetch or web_search returns a 403, 429, or rate-limit error, call this tool with action: grab to rotate your IP, then immediately retry the failed call with use_proxy: true. \
-Do NOT wait for further failures — rotate on first block signal.",
+            description: "Manage proxy pool: grab a fresh proxy IP, list available proxies, check status, switch, or test connectivity. \
+Action=grab: rotate to a new proxy when web_fetch or web_search returns 403/429/rate-limit — then retry with use_proxy=true. \
+Action=status: check current proxy and pool health. Action=list: see all available proxies.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -424,8 +420,10 @@ Do NOT wait for further failures — rotate on first block signal.",
         },
         ToolCatalogEntry {
             name: "non_robot_search",
-            title: "Web Fetch (HITL Anti-Bot)", 
-            description: "LAST RESORT for heavy anti-bot (Cloudflare/LinkedIn/CAPTCHA/login). Opens a real browser on the host. Use web_fetch first; use this only when automation is blocked and a human can solve the challenge.",
+            title: "Web Fetch (HITL — Human Solves Anti-Bot)",
+            description: "LAST RESORT: opens a real visible browser window so a human can solve CAPTCHA, Cloudflare challenges, or login walls that block all automated fetching. \
+Always try web_fetch first; only use this when web_fetch returns an anti-bot/CAPTCHA block. \
+For login-walled pages where cookies should be saved for future use, prefer human_auth_session instead.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -449,10 +447,10 @@ Do NOT wait for further failures — rotate on first block signal.",
         ToolCatalogEntry {
             name: "visual_scout",
             title: "Visual Page Scout (Screenshot)",
-            description: "🔭 Take a headless screenshot of a URL and return it as a base64 PNG for Vision-AI analysis. \
-Use this in Step 2 of the Auth-Gatekeeper Protocol when `web_fetch` returns `auth_risk_score >= 0.4`. \
-Inspect the screenshot to confirm whether a login modal/gate is present before escalating to `human_auth_session`. \
-⚡ TOKEN TIP: when analysing the screenshot only look for login buttons, forms, and modals — do NOT describe the page aesthetics.",
+            description: "Take a headless screenshot of a URL. Returns the screenshot saved to a local temp file path (not base64-embedded). \
+Use this when web_fetch returns auth_risk_score >= 0.4 to visually confirm whether a login/CAPTCHA wall is present before escalating to human_auth_session. \
+The response contains screenshot_path (local file), page_title, and a hint about auth wall detection. \
+Does NOT return base64 image data inline — the PNG is stored at screenshot_path on disk.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -468,11 +466,11 @@ Inspect the screenshot to confirm whether a login modal/gate is present before e
         },
         ToolCatalogEntry {
             name: "human_auth_session",
-            title: "Auth Session (HITL Login + Session Save)",
-            description: "🔐 The Auth-Gatekeeper's escalation tool. Opens a real visible browser, shows the user a clear instruction card, waits for them to complete login, then scrapes the authenticated content. \
-After a successful auth flow, cookies are automatically persisted to `~/.cortex-scout/sessions/{domain}.json` so future requests to the same domain skip the HITL step entirely. \
-Use ONLY after `visual_scout` has confirmed AUTH_REQUIRED — never as a first attempt. \
-Send `instruction_message` to tell the user exactly what to log in to and why, e.g. *'Please log in to GitHub so I can read the private Discussions.'*",
+            title: "Auth Session (HITL Login + Cookie Persistence)",
+            description: "Opens a real visible browser, waits for user to log in, then scrapes the content using the authenticated session. \
+Cookies are saved to ~/.cortex-scout/sessions/{domain}.json — future web_fetch calls to the same domain auto-use these cookies without HITL. \
+Use ONLY after visual_scout confirms a login wall (AUTH_REQUIRED). Always try web_fetch first. \
+Set instruction_message to tell the user exactly what to do, e.g. 'Please log in to GitHub to access private Discussions.'",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -506,28 +504,12 @@ Send `instruction_message` to tell the user exactly what to log in to and why, e
     tools.push(ToolCatalogEntry {
         name: "browser_automate",
         title: "Browser Automate (Omni-Tool)",
-        description: "The ultimate browser automation + QA tool. Executes an ordered sequence of \
-actions in a stateful Brave browser session that persists between calls. \
-Runs silently in the background (--headless=new) using a dedicated isolated agent profile \
-(~/.cortex-scout/agent_profile) so it never disrupts the user's active desktop session. \
-Cookies and login state persist across close/reopen cycles. \
-The session stays open until scout_browser_close is called. \
-\n\
-Supported actions (steps array):\n\
-• navigate          — go to a URL and wait for network-idle (target=URL)\n\
-• click             — click a CSS selector (target=selector)\n\
-• type              — click + type text into a selector (target=selector, value=text)\n\
-• press_key         — dispatch a key event (key=\"Enter\"|\"Escape\"|\"Tab\"|\"ArrowDown\"|...)\n\
-• scroll            — scroll the viewport (direction=\"down\"|\"up\"|\"bottom\"|\"top\", pixels=500)\n\
-• evaluate          — run arbitrary JS, capture return value (value=script)\n\
-• wait_for_selector — poll until selector appears (target=selector, timeout_ms=10000)\n\
-• snapshot          — returns title/URL/headings/inputs/buttons/links/bodyText snapshot\n\
-• screenshot        — returns inline base64 PNG of current viewport\n\
-• assert            — fail-fast DOM assertion; HALTS the sequence on failure \
-(target=selector, value=expected_text, condition=\"contains_text\"|\"is_visible\"|\"is_hidden\")\n\
-• mock_api          — intercept fetch+XHR matching a glob URL pattern and return a fake JSON \
-response (url_pattern=\"*api/v1/users*\", response_json=\"{...}\", status_code=200); \
-active on current page AND all future navigations",
+        description: "Stateful headless browser automation. Executes an ordered sequence of steps in a persistent Brave browser session (~/.cortex-scout/agent_profile). \
+Runs headless — never disrupts the user desktop. Session stays open until scout_browser_close is called. \
+Cookies/login state persist across calls. \
+Steps: navigate (go to URL), click (CSS selector), type (selector + text), press_key, scroll (down/up/bottom/top), evaluate (run JS), wait_for_selector, snapshot (DOM summary), screenshot (base64 PNG of viewport), assert (fail-fast DOM check), mock_api (intercept network requests). \
+Use for web automation, form filling, scraping JS-rendered pages, and UI testing. \
+First-time login to a service: use scout_agent_profile_auth to authenticate the profile, then use this tool.",
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -603,8 +585,7 @@ active on current page AND all future navigations",
     tools.push(ToolCatalogEntry {
         name: "browser_close",
         title: "Browser Close (Cleanup)",
-        description: "Gracefully terminate the stateful Brave browser session started by \
-scout_browser_automate. Call this when you are done with all automation steps to free resources.",
+        description: "Close the persistent headless browser session started by scout_browser_automate. Call when done with all automation steps to free memory and release the browser process.",
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {}
@@ -616,19 +597,10 @@ scout_browser_automate. Call this when you are done with all automation steps to
     tools.push(ToolCatalogEntry {
         name: "agent_profile_auth",
         title: "Agent Auth Portal (HITL Login Bootstrap)",
-        description: "🔓 Launch the silent agent profile in a VISIBLE browser window so a human can \
-complete an initial login, OAuth flow, 2FA, or CAPTCHA challenge — in the agent's name. \
-\n\
-Use this ONLY when scout_browser_automate is blocked because the agent profile has no \
-authenticated session for a domain (e.g., first-time Google/AWS/GitHub login). \
-\n\
-Workflow:\n\
-1. Closes the headless automation session to release the SingletonLock.\n\
-2. Opens a VISIBLE Brave window pointing to the same ~/.cortex-scout/agent_profile.\n\
-3. Navigates to `url` and shows the window to the user.\n\
-4. Waits up to `timeout_secs` seconds (default 120) — the user completes the login.\n\
-5. Closes the window; cookies are flushed to the persistent profile.\n\
-6. Future scout_browser_automate calls will reuse those cookies silently.",
+        description: "Bootstrap the agent browser profile by showing a VISIBLE browser for a human to complete first-time login, OAuth, 2FA, or CAPTCHA. \
+Use ONLY when scout_browser_automate is blocked because the agent profile has no session for a domain. \
+This closes the headless session temporarily, opens a visible Brave window at `url`, waits for login (up to timeout_secs), then saves cookies back to the agent profile. \
+After this completes, scout_browser_automate can reuse those cookies silently.",
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {

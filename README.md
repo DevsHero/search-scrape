@@ -23,9 +23,9 @@
 
 ## Overview
 
-CortexScout provides a single, self-hostable Rust binary that exposes search and extraction capabilities over MCP (stdio) and an optional HTTP server. Output formats are structured and optimized for downstream LLM use.
+CortexScout provides a single, self-hostable Rust binary that exposes search, extraction, and **stateful browser automation** capabilities over MCP (stdio) and an optional HTTP server. Output formats are structured and optimized for downstream LLM use.
 
-It is built to handle the practical failure modes of web retrieval (rate limits, bot challenges, JavaScript-heavy pages) through progressive fallbacks: native retrieval → Chromium CDP rendering → HITL workflows.
+It is built to handle the practical failure modes of web retrieval (rate limits, bot challenges, JavaScript-heavy pages) through progressive fallbacks: native retrieval → Chromium CDP rendering → **Stateful E2E Testing** → HITL workflows.
 
 ---
 
@@ -34,20 +34,30 @@ It is built to handle the practical failure modes of web retrieval (rate limits,
 | Area | MCP Tools / Capabilities |
 |------|---------------------------|
 | Search | `web_search`, `web_search_json` (parallel meta-search + dedup/scoring) |
-| Fetch| `web_fetch`, `web_fetch_batch` (token-efficient clean output, optional semantic filtering) |
+| Fetch| `web_fetch`, `web_fetch_batch` (token-efficient clean output) |
 | Crawl | `web_crawl` (bounded discovery for doc sites / sub-pages) |
 | Extraction | `extract_fields`, `fetch_then_extract` (schema-driven extraction) |
+| Automation | `scout_browser_automate` (stateful omni-tool), `scout_agent_profile_auth` (HITL portal), `scout_browser_close` |
 | Anti-bot handling | CDP rendering, proxy rotation, block-aware retries |
-| HITL | `visual_scout` (screenshot for gate confirmation), `human_auth_session` (authenticated fetch with persisted sessions), `non_robot_search` (last resort rendering) |
+| HITL | `visual_scout`, `human_auth_session`, `non_robot_search` |
 | Memory | `memory_search` (LanceDB-backed research history) |
-| Deep research | `deep_research` (multi-hop search + scrape + synthesis via OpenAI-compatible APIs) |
-
+| Deep research | `deep_research` (multi-hop search + scrape + synthesis) |
 ---
 
 ## Ecosystem Integration
 
 While CortexScout runs as a standalone tool today, it is designed to integrate with CortexDB and CortexStudio for multi-agent scaling, shared retrieval artifacts, and centralized governance.
 
+---
+
+## 🎭 The "Playwright Killer" (Stateful Browser Automation)
+
+CortexScout includes a built-in, stateful CDP automation engine designed specifically for AI Agents, completely replacing heavy frameworks like Playwright or Cypress for E2E testing workflows.
+
+- **The Silent Omni-Tool (`scout_browser_automate`)**: Instead of calling dozens of tools, agents pass an array of `steps` (navigate, click, type, scroll, press_key, snapshot, screenshot). The entire sequence executes in a single LLM turn, saving massive amounts of context tokens.
+- **Persistent Agent Profile**: Automation runs silently in the background (`--headless=new`) using a dedicated isolated profile (`~/.cortex-scout/agent_profile`). It maintains cookies, localStorage, and session state across tool calls without causing `SingletonLock` collisions with your active desktop browser.
+- **QA Mock & Assert Engine**: Built for enterprise E2E testing. Agents can inject XHR/Fetch network interceptors (`mock_api`) and run fail-fast DOM assertions (`assert`) that immediately halt the sequence if a UI state is incorrect.
+- **The Agent Auth Portal (`scout_agent_profile_auth`)**: If the silent agent encounters a CAPTCHA or complex OAuth login (like Google/Microsoft) on a new domain, this tool launches the agent's profile in a **visible** window. You solve the CAPTCHA once, the cookies are saved, and the agent returns to silent automation forever.
 ---
 
 ## Anti-Bot Efficacy & Validation
@@ -271,7 +281,7 @@ Recommended operational flow:
 5. For auth-gated pages: `visual_scout` to confirm the gate type → `human_auth_session` to complete login (cookies persisted under `~/.cortex-scout/sessions/`).
 6. For deep research: `deep_research` handles multi-hop search + scrape + LLM synthesis automatically. Tune `depth` (1–3) and `max_sources` per run cost budget.
 7. For CAPTCHA or heavy JS pages that all other paths fail: `hitl_web_fetch` opens a visible Brave/Chrome window for human completion (requires `--all-features` build and a local desktop session).
-
+8. For UI Automation & E2E Testing: Use `scout_browser_automate` to pass a sequence of actions. If the sequence fails due to a login wall or CAPTCHA, call `scout_agent_profile_auth` to request human assistance, then resume your automated steps.
 ---
 
 ## FAQ

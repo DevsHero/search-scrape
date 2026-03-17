@@ -335,6 +335,14 @@ pub async fn crawl_website(
 fn normalize_url(url: &str) -> String {
     if let Ok(mut parsed) = Url::parse(url) {
         parsed.set_fragment(None);
+        // Strip query strings where every param has an empty value (e.g. "?search=")
+        // to prevent crawling duplicate pages that differ only by a vacuous query string.
+        if parsed.query().map(|q| q.split('&').all(|kv| {
+            let val = kv.splitn(2, '=').nth(1).unwrap_or("");
+            val.is_empty()
+        })).unwrap_or(false) {
+            parsed.set_query(None);
+        }
         let mut result = parsed.to_string();
         // Remove trailing slash for consistency
         if result.ends_with('/') && result.len() > 1 {

@@ -56,7 +56,6 @@ pub fn extract_from_scrape(
     let start_time = Instant::now();
     let mut extracted_data = serde_json::Map::new();
     let mut warnings = Vec::new();
-    let mut confidence: f64 = 0.8;
 
     let mut schema = schema;
     let mut prompt = prompt;
@@ -91,7 +90,6 @@ pub fn extract_from_scrape(
 
             if value.is_null() && field.required.unwrap_or(false) {
                 warnings.push(format!("Required field '{}' not found", field.name));
-                confidence -= 0.1;
             }
             extracted_data.insert(field.name.clone(), value);
         }
@@ -126,16 +124,122 @@ pub fn extract_from_scrape(
         }
     }
 
-    let null_count = extracted_data.values().filter(|v| v.is_null()).count();
+    // ── Phase 25: Hallucination-Proof Confidence Scoring ─────────────────────────
+    //
+    // Score = (NonNull_Ratio × 0.4) + (Source_Grounded_Ratio × 0.4) + (Type_Valid_Ratio × 0.2)
+    //
+    // • NonNull_Ratio        = non-null fields / total schema fields
+    // • Source_Grounded_Ratio = string values whose content can be found (exact or
+    //                           fuzzy word overlap) in the raw page text; non-string
+    //                           values are assumed grounded (they come from structure)
+    // • Type_Valid_Ratio     = fields whose JSON type matches schema `field_type`
+    //
+    // A placeholder-page override (confidence → 0.0) fires after the formula when
+    // the page is sparse AND almost all scalar fields are null/empty.
+
+    // ── NonNull_Ratio ─────────────────────────────────────────────────────────────
+    let schema_field_count = schema.as_ref().map(|s| s.len()).unwrap_or(0);
+    let (non_null_count, total_for_ratio) = if schema_field_count > 0 {
+        let nn = schema
+            .as_ref()
+            .map(|fields| {
+                fields
+                    .iter()
+                    .filter(|f| {
+                        extracted_data
+                            .get(&f.name)
+                            .map(|v| !v.is_null())
+                            .unwrap_or(false)
+                    })
+                    .count()
+            })
+            .unwrap_or(0);
+        (nn, schema_field_count)
+    } else {
+        let nn = extracted_data.values().filter(|v| !v.is_null()).count();
+        (nn, extracted_data.len().max(1))
+    };
+    let non_null_ratio = non_null_count as f64 / total_for_ratio as f64;
+
+    // Null-field summary warning.
+    let null_count = total_for_ratio - non_null_count;
     if null_count > 0 {
         warnings.push(format!(
             "Field not found warning: {} field(s) returned null (hallucination protection active)",
             null_count
         ));
-        confidence -= (null_count as f64 * 0.1).min(0.3);
     }
 
-    // Placeholder / unrendered page detection.
+    // ── Source Grounding + Type Validation ────────────────────────────────────────
+    let source_text = if !scrape_result.clean_content.is_empty() {
+        &scrape_result.clean_content
+    } else {
+        &scrape_result.content
+    };
+
+    let (grounded_count, grounded_of, type_valid_count, type_checked_count) =
+        if let Some(fields) = &schema {
+            let mut grounded = 0usize;
+            let mut grounded_denom = 0usize;
+            let mut tv = 0usize;
+            let mut tc = 0usize;
+            for field in fields {
+                let val = match extracted_data.get(&field.name) {
+                    Some(v) if !v.is_null() => v,
+                    _ => continue,
+                };
+                // Grounding: only string values are verified against source.
+                // Non-strings (numbers, arrays, booleans) are structurally derived
+                // and are assumed to be grounded.
+                if let Some(s) = val.as_str() {
+                    grounded_denom += 1;
+                    if is_grounded_in_source(s, source_text) {
+                        grounded += 1;
+                    } else {
+                        warnings.push(format!(
+                            "grounding_fail: '{}' value {:?} not found in source content",
+                            field.name,
+                            s.chars().take(60).collect::<String>()
+                        ));
+                    }
+                }
+                // Type validation.
+                if let Some(expected) = &field.field_type {
+                    tc += 1;
+                    if is_type_valid(val, expected) {
+                        tv += 1;
+                    } else {
+                        warnings.push(format!(
+                            "type_mismatch: field '{}' expected '{}' but got {}",
+                            field.name,
+                            expected,
+                            json_type_name(val)
+                        ));
+                    }
+                }
+            }
+            (grounded, grounded_denom, tv, tc)
+        } else {
+            (0, 0, 0, 0)
+        };
+
+    // No string values to ground-check → assume fully grounded.
+    let grounded_ratio = if grounded_of > 0 {
+        grounded_count as f64 / grounded_of as f64
+    } else {
+        1.0
+    };
+    // No typed fields to validate → full score.
+    let type_valid_ratio = if type_checked_count > 0 {
+        type_valid_count as f64 / type_checked_count as f64
+    } else {
+        1.0
+    };
+
+    let mut confidence =
+        (non_null_ratio * 0.4) + (grounded_ratio * 0.4) + (type_valid_ratio * 0.2);
+
+    // ── Placeholder / unrendered page detection ───────────────────────────────────
     //
     // A JS-only page (e.g. crates.io, npm) returns almost no text content.
     // Reporting confidence > 0.0 causes agents to trust empty/wrong extracted fields.
@@ -148,12 +252,8 @@ pub fn extract_from_scrape(
     //
     // Array fields are intentionally excluded from (b): an empty array is a valid
     // "no items found" response and must never be treated as a placeholder signal.
-    // This prevents false positives on docs.rs pages where some list fields (e.g.
-    // `modules: []`) are legitimately empty while others (`structs: [32 items]`) are
-    // populated.
     let word_threshold = placeholder_word_threshold.unwrap_or(10);
     let empty_ratio_threshold = placeholder_empty_ratio.unwrap_or(0.9);
-    let schema_field_count = schema.as_ref().map(|s| s.len()).unwrap_or(0);
     if schema_field_count > 0 {
         let sparse_content = scrape_result.word_count < word_threshold
             || scrape_result
@@ -163,8 +263,8 @@ pub fn extract_from_scrape(
                 .count()
                 <= 1;
 
-        // Only tally scalar (non-array) fields. Empty arrays are never a
-        // placeholder signal — they are a legitimate extraction result.
+        // Only tally scalar (non-array) fields. Empty arrays are never a placeholder
+        // signal — they are a legitimate "no items found" extraction result.
         let scalar_values: Vec<&serde_json::Value> = extracted_data
             .values()
             .filter(|v| !v.is_array())
@@ -176,8 +276,8 @@ pub fn extract_from_scrape(
             })
             .count();
         let scalar_count = scalar_values.len();
-        // `mostly_empty` is false when there are no scalar fields at all (pure-array
-        // schemas cannot be distinguished from real empty responses via this signal).
+        // `mostly_empty` is false when there are no scalar fields (pure-array schemas
+        // cannot be distinguished from real empty responses via this heuristic).
         let mostly_empty = scalar_count > 0 && {
             let empty_ratio = scalar_empty_count as f64 / scalar_count as f64;
             empty_ratio >= empty_ratio_threshold
@@ -1342,5 +1442,77 @@ mod tests {
             "must not emit placeholder_page warning for pure-array schema, warnings: {:?}",
             result.warnings
         );
+    }
+}
+
+// ── Phase 25 helpers ──────────────────────────────────────────────────────────
+
+/// Returns `true` if `value` can be found (exactly or by word-overlap) within
+/// `source_text`.
+///
+/// Algorithm:
+///  1. Skip values shorter than 4 characters — too generic to meaningfully verify.
+///  2. Fast path: case-insensitive exact substring search.
+///  3. Fuzzy path: tokenise the value into significant words (≥ 3 chars) and
+///     require that at least 70 % of those words appear in the normalised source.
+///     This handles collapsed whitespace, Unicode normalisation, and minor
+///     reformatting differences without needing an edit-distance loop.
+fn is_grounded_in_source(value: &str, source_text: &str) -> bool {
+    let v = value.trim();
+    // Very short strings are too generic to ground-check meaningfully.
+    if v.len() < 4 {
+        return true;
+    }
+    let v_lower = v.to_lowercase();
+    let s_lower = source_text.to_lowercase();
+
+    // Fast path: exact case-insensitive substring.
+    if s_lower.contains(&v_lower) {
+        return true;
+    }
+
+    // Fuzzy path: word-overlap.  Significant tokens are words of ≥ 3 chars.
+    let sig_words: Vec<&str> = v_lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() >= 3)
+        .collect();
+
+    if sig_words.is_empty() {
+        // No significant tokens (e.g. all punctuation) — assume grounded.
+        return true;
+    }
+
+    let found = sig_words.iter().filter(|w| s_lower.contains(*w)).count();
+    let overlap = found as f64 / sig_words.len() as f64;
+    overlap >= 0.70
+}
+
+/// Returns `true` if the JSON value's runtime type matches `expected_type`.
+///
+/// Recognised type strings (case-insensitive): `string`, `number`, `integer`,
+/// `int`, `float`, `double`, `boolean`, `bool`, `array`, `list`, `object`,
+/// `dict`, `map`.  Any unrecognised type is treated as `string` and only
+/// requires the value to be non-null.
+fn is_type_valid(value: &serde_json::Value, expected_type: &str) -> bool {
+    match expected_type.to_ascii_lowercase().as_str() {
+        "number" | "integer" | "int" | "float" | "double" => value.is_number(),
+        "boolean" | "bool" => value.is_boolean(),
+        "array" | "list" => value.is_array(),
+        "object" | "dict" | "map" => value.is_object(),
+        // "string" or any unrecognised type: just must be a string (or non-null).
+        _ => value.is_string() || !value.is_null(),
+    }
+}
+
+/// Returns a static, human-readable name for the JSON type of `value`,
+/// used in `type_mismatch` warning messages.
+fn json_type_name(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "boolean",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
     }
 }

@@ -260,6 +260,15 @@ impl rmcp::ServerHandler for McpService {
             "human_auth_session" => convert_http_handler_result(
                 handlers::human_auth_session::handle(Arc::clone(&self.state), &internal_args).await,
             ),
+            "browser_automate" => convert_http_handler_result(
+                handlers::automate::handle(Arc::clone(&self.state), &internal_args).await,
+            ),
+            "browser_close" => convert_http_handler_result(
+                handlers::automate::handle_close(Arc::clone(&self.state), &internal_args).await,
+            ),
+            "agent_profile_auth" => convert_http_handler_result(
+                handlers::automate::handle_profile_auth(Arc::clone(&self.state), &internal_args).await,
+            ),
             _ => Err(ErrorData::new(
                 ErrorCode::METHOD_NOT_FOUND,
                 format!("Unknown tool: {}", request.name),

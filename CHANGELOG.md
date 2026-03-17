@@ -4,6 +4,21 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
+## Unreleased
+
+### Added
+
+- **Phase 25: Hallucination-proof extraction scoring.** `extract_structured`/`fetch_then_extract` now computes confidence using a 3-factor score (non-null ratio, source grounding, type validation), with strict type checking and fuzzy grounding to ensure extracted strings actually appear in the source page.
+- **New grounding and type warnings.** Extraction now emits `grounding_fail` and `type_mismatch` warnings when values cannot be verified in the source or do not match the schema.
+
+### Changed
+
+- **Scoped extraction confidence calculation.** Confidence is no longer a fixed 0.8 baseline with per-null penalties; it is now a weighted score and still overrides to 0.0 for placeholder/JS-only pages.
+
+### Fixed
+
+- **`extract_fields` / `fetch_then_extract` hallucination risk.** Non-null but incorrect extracted values no longer automatically imply high confidence.
+
 ## v3.1.3 (2026-03-14)
 
 ### Fixed
