@@ -508,16 +508,23 @@ Send `instruction_message` to tell the user exactly what to log in to and why, e
         title: "Browser Automate (Omni-Tool)",
         description: "The ultimate browser automation tool. Executes an ordered sequence of \
 actions in a stateful Brave browser session that persists between calls. \
-Use this for E2E testing, form filling, clicking, typing, evaluating JS, and observing the DOM. \
-The browser stays open until scout_browser_close is called. \
+Runs silently in the background (--headless=new) using a dedicated isolated agent profile \
+(~/.cortex-scout/agent_profile) so it never disrupts the user's active desktop session. \
+Cookies and login state persist across close/reopen cycles. \
+Use this for E2E testing, form filling, clicking, typing, key presses, scrolling, \
+evaluating JS, taking screenshots, and observing the DOM. \
+The session stays open until scout_browser_close is called. \
 \n\
-Supported actions (passed as the `steps` array):\n\
-• navigate — go to a URL and wait for network-idle (target=URL)\n\
-• click    — click a CSS selector (target=selector)\n\
-• type     — click + type text into a CSS selector (target=selector, value=text)\n\
-• evaluate — run arbitrary JS and capture the return value (value=script)\n\
-• wait_for_selector — poll until a CSS selector appears (target=selector, timeout_ms=10000)\n\
-• snapshot — returns page title, URL, headings, interactive elements, and body text so the LLM can observe the current state",
+Supported actions (steps array):\n\
+• navigate         — go to a URL and wait for network-idle (target=URL)\n\
+• click            — click a CSS selector (target=selector)\n\
+• type             — click + type text into a selector (target=selector, value=text)\n\
+• press_key        — dispatch a key event (key=\"Enter\"|\"Escape\"|\"Tab\"|\"ArrowDown\"|...)\n\
+• scroll           — scroll the viewport (direction=\"down\"|\"up\"|\"bottom\"|\"top\", pixels=500)\n\
+• evaluate         — run arbitrary JS, capture return value (value=script)\n\
+• wait_for_selector — poll until selector appears (target=selector, timeout_ms=10000)\n\
+• snapshot         — returns title/URL/headings/inputs/buttons/links/bodyText snapshot\n\
+• screenshot       — returns inline base64 PNG of current viewport",
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -529,7 +536,8 @@ Supported actions (passed as the `steps` array):\n\
                         "properties": {
                             "action": {
                                 "type": "string",
-                                "enum": ["navigate", "click", "type", "evaluate", "wait_for_selector", "snapshot"],
+                                "enum": ["navigate", "click", "type", "press_key", "scroll",
+                                         "evaluate", "wait_for_selector", "snapshot", "screenshot"],
                                 "description": "The action to perform."
                             },
                             "target": {
@@ -539,6 +547,21 @@ Supported actions (passed as the `steps` array):\n\
                             "value": {
                                 "type": "string",
                                 "description": "Text to type (for type) or JS expression to evaluate (for evaluate)."
+                            },
+                            "key": {
+                                "type": "string",
+                                "description": "Key to press (for press_key). Examples: \"Enter\", \"Escape\", \"Tab\", \"ArrowDown\", \"Space\", \"Backspace\", \"F5\"."
+                            },
+                            "direction": {
+                                "type": "string",
+                                "enum": ["down", "up", "bottom", "top"],
+                                "default": "down",
+                                "description": "Scroll direction (for scroll). 'bottom'/'top' jump to the page edge; 'down'/'up' scroll by pixels."
+                            },
+                            "pixels": {
+                                "type": "integer",
+                                "default": 500,
+                                "description": "Pixels to scroll (for scroll with direction=down or up). Default 500."
                             },
                             "timeout_ms": {
                                 "type": "integer",

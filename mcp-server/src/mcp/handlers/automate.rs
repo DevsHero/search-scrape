@@ -1,10 +1,7 @@
-//! Phase 18 — Playwright Killer: `scout_browser_automate` + `scout_browser_close`.
+//! Phase 18/19 — Playwright Killer: `scout_browser_automate` + `scout_browser_close`.
 //!
-//! `scout_browser_automate` runs an ordered sequence of browser actions against
-//! a persistent stateful Brave/Chrome session, accumulating results into a JSON
-//! array that it returns to the LLM.
-//!
-//! `scout_browser_close` tears down the session when the LLM is done testing.
+//! Phase 18: navigate, click, type, evaluate, wait_for_selector, snapshot
+//! Phase 19: scroll, press_key, screenshot  +  --headless=new persistent session
 
 use crate::cdp::state;
 use crate::mcp::{McpCallResponse, McpContent};
@@ -75,7 +72,20 @@ async fn execute_step(page: &chromiumoxide::Page, step: &Value, idx: usize) -> V
             run_wait_for_selector(page, target, timeout_ms).await
         }
         "snapshot" => run_snapshot(page).await,
-        other => Err(anyhow!("Unknown action '{}'. Valid actions: navigate, click, type, evaluate, wait_for_selector, snapshot", other)),
+        "scroll" => {
+            let direction = step.get("direction").and_then(|v| v.as_str()).unwrap_or("down");
+            let pixels = step.get("pixels").and_then(|v| v.as_i64()).unwrap_or(500);
+            run_scroll(page, direction, pixels).await
+        }
+        "press_key" => {
+            let key = step.get("key").and_then(|v| v.as_str()).unwrap_or("");
+            run_press_key(page, key).await
+        }
+        "screenshot" => run_screenshot(page).await,
+        other => Err(anyhow!(
+            "Unknown action '{}'. Valid actions: navigate, click, type, evaluate, wait_for_selector, snapshot, scroll, press_key, screenshot",
+            other
+        )),
     };
 
     match result {
@@ -197,6 +207,117 @@ async fn run_snapshot(page: &chromiumoxide::Page) -> Result<Value> {
         return serde_json::from_str(s).map_err(|e| anyhow!("snapshot parse failed: {}", e));
     }
     Ok(raw)
+}
+
+// ── Phase 19: scroll ─────────────────────────────────────────────────────────
+
+async fn run_scroll(page: &chromiumoxide::Page, direction: &str, pixels: i64) -> Result<Value> {
+    debug!("🖱 scroll direction={} pixels={}", direction, pixels);
+    let script = match direction {
+        "bottom" => "window.scrollTo(0, document.body.scrollHeight)".to_string(),
+        "top"    => "window.scrollTo(0, 0)".to_string(),
+        "up"     => format!("window.scrollBy({{top: -{}, behavior: 'smooth'}})", pixels),
+        _        => format!("window.scrollBy({{top: {}, behavior: 'smooth'}})", pixels),
+    };
+    page.evaluate(script)
+        .await
+        .map_err(|e| anyhow!("scroll evaluate failed: {}", e))?;
+    // Brief pause to let smooth-scroll settle before the next step.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    Ok(json!({ "scrolled": direction, "pixels": pixels }))
+}
+
+// ── Phase 19: press_key ───────────────────────────────────────────────────────
+
+/// Map a human-readable key name to its Windows virtual key code.
+/// Required for reliable JS `keydown` / `keyup` event handling.
+fn virtual_key_code(key: &str) -> i64 {
+    match key {
+        "Backspace" => 8,
+        "Tab" => 9,
+        "Enter" | "Return" => 13,
+        "Shift" => 16,
+        "Control" | "Ctrl" => 17,
+        "Alt" => 18,
+        "Pause" => 19,
+        "CapsLock" => 20,
+        "Escape" | "Esc" => 27,
+        "Space" | " " => 32,
+        "PageUp" => 33,
+        "PageDown" => 34,
+        "End" => 35,
+        "Home" => 36,
+        "ArrowLeft" => 37,
+        "ArrowUp" => 38,
+        "ArrowRight" => 39,
+        "ArrowDown" => 40,
+        "Delete" => 46,
+        "F1" => 112, "F2" => 113, "F3" => 114, "F4" => 115,
+        "F5" => 116, "F6" => 117, "F7" => 118, "F8" => 119,
+        "F9" => 120, "F10" => 121, "F11" => 122, "F12" => 123,
+        // Single printable ASCII character
+        s if s.len() == 1 => s.chars().next().map(|c| c as i64).unwrap_or(0),
+        _ => 0,
+    }
+}
+
+async fn run_press_key(page: &chromiumoxide::Page, key: &str) -> Result<Value> {
+    use chromiumoxide::cdp::browser_protocol::input::{
+        DispatchKeyEventParams, DispatchKeyEventType,
+    };
+    if key.is_empty() {
+        return Err(anyhow!("press_key: 'key' parameter is required"));
+    }
+    debug!("⌨ press_key: {}", key);
+    let vk = virtual_key_code(key);
+    // Normalise "Esc" / "Return" aliases to canonical W3C names.
+    let canonical = match key { "Esc" => "Escape", "Return" => "Enter", other => other };
+
+    let key_down = DispatchKeyEventParams::builder()
+        .r#type(DispatchKeyEventType::KeyDown)
+        .key(canonical)
+        .windows_virtual_key_code(vk)
+        .build()
+        .map_err(|e| anyhow!("press_key: build keydown params failed: {}", e))?;
+    let key_up = DispatchKeyEventParams::builder()
+        .r#type(DispatchKeyEventType::KeyUp)
+        .key(canonical)
+        .windows_virtual_key_code(vk)
+        .build()
+        .map_err(|e| anyhow!("press_key: build keyup params failed: {}", e))?;
+
+    page.execute(key_down)
+        .await
+        .map_err(|e| anyhow!("press_key: keyDown dispatch failed: {}", e))?;
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    page.execute(key_up)
+        .await
+        .map_err(|e| anyhow!("press_key: keyUp dispatch failed: {}", e))?;
+
+    Ok(json!({ "pressed": canonical }))
+}
+
+// ── Phase 19: screenshot ──────────────────────────────────────────────────────
+
+async fn run_screenshot(page: &chromiumoxide::Page) -> Result<Value> {
+    use chromiumoxide::cdp::browser_protocol::page::{
+        CaptureScreenshotFormat, CaptureScreenshotParams,
+    };
+    debug!("📷 screenshot");
+    let params = CaptureScreenshotParams::builder()
+        .format(CaptureScreenshotFormat::Png)
+        .build();
+    let result = page
+        .execute(params)
+        .await
+        .map_err(|e| anyhow!("screenshot: capture failed: {}", e))?;
+    // CDP returns the image already base64-encoded.
+    let b64 = &result.result.data;
+    Ok(json!({
+        "format": "png",
+        "encoding": "base64",
+        "data": b64
+    }))
 }
 
 // ── scout_browser_automate handler ───────────────────────────────────────────
