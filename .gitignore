@@ -21,8 +21,7 @@ scrapy-service/webspider/.scrapy/
 # Local vector DB data (LanceDB)
 lancedb/
 .lancedb/
-mcp-server/.mcpregistry_github_token
-mcp-server/.mcpregistry_registry_token
+
 # Secrets / registry auth
 .mcpregistry_*
 *.token
@@ -35,7 +34,6 @@ ip.txt
 # Release build artifacts (tarballs, zips)
 dist/
 advice.txt
-.smithery
 scripts/release.sh
 # Local-only release / CI / publish helpers (keep out of the public repo)
 /publish/

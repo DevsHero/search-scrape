@@ -1,5 +1,5 @@
 # CortexScout (cortex-scout) — Search and Web Extraction Engine for AI Agents
-
+[![DevsHero/ShadowCrawl MCP server](https://glama.ai/mcp/servers/DevsHero/ShadowCrawl/badges/score.svg)](https://glama.ai/mcp/connectors/io.github.DevsHero/shadow-crawl)
 <div align="center">
 
 
