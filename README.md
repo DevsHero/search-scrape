@@ -12,7 +12,7 @@
     <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License" /></a>
     <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Built%20with-Rust-orange.svg" alt="Built with Rust" /></a>
     <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/Protocol-MCP-blue.svg" alt="MCP" /></a>
-    <a href="https://github.com/cortex-works/cortex-scout/actions/workflows/ci.yml"><img src="https://github.com/cortex-works/cortex-scout/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+
   </p>
 </div>
 
