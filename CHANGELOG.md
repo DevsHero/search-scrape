@@ -4,7 +4,7 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
-## Unreleased
+## v3.3.2 (2026-03-30)
 
 ### Added
 - Expanded `scout_browser_automate` with broader Playwright-style parity: `navigate_back`, `hover`, `wait_for`, `resize`, `tabs`, `file_upload`, `fill_form`, `handle_dialog`, `pdf_save`, coordinate mouse actions, route inspection/removal, network state toggling, cookie/localStorage/sessionStorage CRUD, and verification helpers (`generate_locator`, `verify_*`).
