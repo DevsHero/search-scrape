@@ -6,7 +6,7 @@ The Safety Kill Switch is a comprehensive browser process management system that
 
 ## Problem Statement
 
-During high-fidelity scraping (`non_robot_search`/`non_robot_search`), the browser process would sometimes fail to terminate after successful content extraction. This was particularly common on:
+During high-fidelity scraping (`hitl_web_fetch`, internal handler lineage: `non_robot_search`), the browser process would sometimes fail to terminate after successful content extraction. This was particularly common on:
 - Cloudflare-protected sites (nowsecure.nl)
 - DataDome-protected sites (Zillow, Airbnb)
 - LinkedIn job postings
@@ -159,7 +159,7 @@ async fn close(&mut self) {
 ## Execution Flow
 
 ```
-User calls non_robot_search
+User calls hitl_web_fetch
     ↓
 execute_non_robot_search_impl()
     ↓ (wrapped in tokio::time::timeout)
@@ -289,4 +289,3 @@ human_timeout_seconds = soft wait window (no forced browser close)
 
 - [Non-Robot Search Guide](NON_ROBOT_SEARCH.md)
 - [IDE Setup](IDE_SETUP.md)
-- [Binary Release Guide](DOCKER_DEPLOYMENT.md)

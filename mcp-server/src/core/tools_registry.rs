@@ -51,6 +51,14 @@ impl ToolRegistry {
         registry
             .public_to_internal
             .insert("web_fetch".to_string(), "scrape_url".to_string());
+        // Unified search: web_search now supports include_content=true.
+        // Keep legacy names mapping to the same internal handler.
+        registry
+            .public_to_internal
+            .insert("web_search_json".to_string(), "search_web".to_string());
+        registry
+            .public_to_internal
+            .insert("search_structured".to_string(), "search_structured".to_string());
         registry
             .public_to_internal
             .insert("fetch_url".to_string(), "scrape_url".to_string());
@@ -101,13 +109,27 @@ impl ToolRegistry {
 
         for internal in internal_catalog {
             let internal_name = internal.name.to_string();
+            // Hide grouped duplicate tools from public listing.
+            // They remain callable for backward compatibility via alias mapping.
+            if matches!(
+                internal_name.as_str(),
+                "search_structured"
+                    | "scrape_batch"
+                    | "crawl_website"
+                    | "human_auth_session"
+                    | "fetch_then_extract"
+            ) {
+                registry
+                    .public_to_internal
+                    .insert(internal_name.clone(), internal_name.clone());
+                continue;
+            }
             let icons = internal.icons.into_iter().map(|s| s.to_string()).collect();
 
             // Public-facing tool names are designed to be "agent-attractive" verbs.
             // Internal names remain stable for handler routing and for backwards compatibility.
             let public_name = match internal_name.as_str() {
                 "search_web" => "web_search".to_string(),
-                "search_structured" => "web_search_json".to_string(),
                 "scrape_url" => "web_fetch".to_string(),
                 "scrape_batch" => "web_fetch_batch".to_string(),
                 "crawl_website" => "web_crawl".to_string(),
@@ -277,4 +299,39 @@ fn rewrite_schema_enum_values(
     }
 
     schema
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ToolRegistry;
+
+    #[test]
+    fn unified_search_aliases_resolve_to_search_web() {
+        let registry = ToolRegistry::load();
+        assert_eq!(
+            registry.resolve_incoming_tool_name("web_search").as_deref(),
+            Some("search_web")
+        );
+        assert_eq!(
+            registry.resolve_incoming_tool_name("web_search_json").as_deref(),
+            Some("search_web")
+        );
+    }
+
+    #[test]
+    fn duplicate_search_structured_not_listed_publicly() {
+        let registry = ToolRegistry::load();
+        let names: Vec<String> = registry
+            .public_specs()
+            .into_iter()
+            .map(|s| s.public_name)
+            .collect();
+
+        assert!(names.iter().any(|n| n == "web_search"));
+        assert!(!names.iter().any(|n| n == "web_search_json"));
+        assert!(!names.iter().any(|n| n == "web_fetch_batch"));
+        assert!(!names.iter().any(|n| n == "web_crawl"));
+        assert!(!names.iter().any(|n| n == "human_auth_session"));
+        assert!(!names.iter().any(|n| n == "fetch_then_extract"));
+    }
 }

@@ -12,6 +12,18 @@ pub async fn handle(
     state: Arc<AppState>,
     arguments: &Value,
 ) -> Result<Json<McpCallResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let auth_mode = arguments
+        .get("auth_mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("challenge");
+
+    // Unified HITL modes:
+    // - challenge (default): bypass anti-bot/CAPTCHA, no guaranteed cookie persistence
+    // - auth: login-focused flow with cookie/session persistence
+    if auth_mode == "auth" {
+        return super::human_auth_session::handle(state, arguments).await;
+    }
+
     let url = arguments
         .get("url")
         .and_then(|v| v.as_str())
@@ -126,7 +138,7 @@ pub async fn handle(
             Err(e) => Ok(Json(McpCallResponse {
                 content: vec![McpContent {
                     content_type: "text".to_string(),
-                    text: format!("non_robot_search failed: {}", e),
+                    text: format!("hitl_web_fetch failed: {}", e),
                 }],
                 is_error: true,
             })),
@@ -148,7 +160,7 @@ pub async fn handle(
         Ok(Json(McpCallResponse {
             content: vec![McpContent {
                 content_type: "text".to_string(),
-                text: "non_robot_search is not enabled in this running binary (feature flag: `non_robot_search`). Rebuild and restart using a build with the `non_robot_search` feature, for example: `cd mcp-server && cargo build --release --features non_robot_search --bin cortex-scout --bin cortex-scout-mcp`. If you're using VS Code MCP stdio, restart the MCP server after rebuilding.".to_string(),
+                text: "hitl_web_fetch is not enabled in this running binary (feature flag: `non_robot_search`). Rebuild and restart using a build with all optional features, for example: `cd mcp-server && cargo build --release --all-features --bin cortex-scout --bin cortex-scout-mcp`. If you're using VS Code MCP stdio, restart the MCP server after rebuilding.".to_string(),
             }],
             is_error: true,
         }))

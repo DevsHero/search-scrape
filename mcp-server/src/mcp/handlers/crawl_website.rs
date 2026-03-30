@@ -111,7 +111,7 @@ pub async fn handle(
                     status: "NEED_HITL".to_string(),
                     reason: msg,
                     url: url.to_string(),
-                    suggested_action: "non_robot_search".to_string(),
+                    suggested_action: "hitl_web_fetch".to_string(),
                     github_raw_url: None,
                 };
                 let json_str = serde_json::to_string_pretty(&blocked)

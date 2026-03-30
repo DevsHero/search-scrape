@@ -165,8 +165,8 @@ pub async fn take_screenshot(
             || final_url.to_lowercase().contains("/login")
             || final_url.to_lowercase().contains("/signin")
         {
-            "🔒 AUTH_WALL likely — page title or URL indicates a login page. \
-             Escalate to human_auth_session."
+                "🔒 AUTH_WALL likely — page title or URL indicates a login page. \
+                 Escalate to hitl_web_fetch (auth_mode=auth)."
                 .to_string()
         } else {
             "✅ No obvious auth wall in title/URL. \

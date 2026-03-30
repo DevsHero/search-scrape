@@ -375,7 +375,7 @@ impl RustScraper {
 
         let domain = parsed_url.host_str().map(|h| h.to_string());
         let (auth_risk_score_val, detection_factors) =
-            self.compute_auth_risk_score(&html, &clean_content, url);
+            self.compute_auth_risk_score(html, &clean_content, url);
         let auth_risk_score = if auth_risk_score_val > 0.0 {
             Some(auth_risk_score_val)
         } else {

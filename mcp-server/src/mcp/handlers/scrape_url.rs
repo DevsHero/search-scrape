@@ -15,6 +15,32 @@ pub async fn handle(
     state: Arc<AppState>,
     arguments: &Value,
 ) -> Result<Json<McpCallResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let mode = arguments
+        .get("mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("single");
+
+    // Unified fetch modes:
+    // - single (default): original scrape_url behavior
+    // - batch: delegates to scrape_batch handler (requires `urls`)
+    // - crawl: delegates to crawl_website handler (requires `url`)
+    match mode {
+        "batch" => return super::scrape_batch::handle(state, arguments).await,
+        "crawl" => return super::crawl_website::handle(state, arguments).await,
+        "single" => {}
+        other => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!(
+                        "Invalid mode '{}'. Valid values: single, batch, crawl",
+                        other
+                    ),
+                }),
+            ));
+        }
+    }
+
     let url = arguments
         .get("url")
         .and_then(|v| v.as_str())
@@ -140,7 +166,7 @@ pub async fn handle(
             //   • word_count > 100 → content is accessible; auth form (e.g. login modal
             //     in nav) is incidental.  Prepend an advisory note and return content.
             //   • word_count ≤ 100 → page is genuinely empty/blocked.  Return NEED_HITL
-            //     so the agent can escalate to non_robot_search.
+            //     so the agent can escalate to hitl_web_fetch.
             //
             // This prevents false positives on forums (Discourse, Reddit) and any site
             // that embeds a login form in the header while serving full public content.
@@ -157,7 +183,7 @@ pub async fn handle(
                 let advisory = format!(
                     "⚠️ **Auth Signal (Advisory):** {reason}\n\
                      Content is accessible without login. \
-                     Use `non_robot_search` only if key sections appear missing.\n\n"
+                     Use `hitl_web_fetch` only if key sections appear missing.\n\n"
                 );
                 content.clean_content = advisory + &content.clean_content;
                 content.warnings.retain(|w| w != "content_restricted");
@@ -208,7 +234,7 @@ pub async fn handle(
                             "💬 **Agent Recommendation**\n\n",
                             "Found an auth-wall on `{url_short}`. ",
                             "Should I escalate to HITL (Human-In-The-Loop) to bypass this?\n\n",
-                            "• Use the `non_robot_search` tool to open a real browser and log in manually\n",
+                            "• Use the `hitl_web_fetch` tool (auth_mode=challenge|auth) to open a real browser and log in manually\n",
                             "• Set credentials via environment variables (e.g. `GITHUB_TOKEN` for GitHub)\n",
                             "• Retry with `use_proxy: true` if the site geo-blocks your IP\n",
                             "• For GitHub private repos: authenticate via SSH or a Personal Access Token"
@@ -234,7 +260,7 @@ pub async fn handle(
                         status: "NEED_HITL".to_string(),
                         reason,
                         url: url.to_string(),
-                        suggested_action: "non_robot_search".to_string(),
+                        suggested_action: "hitl_web_fetch".to_string(),
                         github_raw_url,
                     };
                     let json_str = serde_json::to_string_pretty(&blocked).unwrap_or_else(|e| {
@@ -492,7 +518,7 @@ pub async fn handle(
                     • Page is JavaScript-heavy (requires browser execution)\n\
                     • Content is behind authentication/paywall\n\
                     • Site blocks automated access\n\n\
-                    **Suggestion:** For JS-heavy sites, install Brave/Chrome/Chromium and set `CHROME_EXECUTABLE` if auto-discovery fails. For bot walls, use `non_robot_search` (HITL) and retry with `use_proxy: true` if needed."
+                    **Suggestion:** For JS-heavy sites, install Brave/Chrome/Chromium and set `CHROME_EXECUTABLE` if auto-discovery fails. For bot walls, use `hitl_web_fetch` (HITL) and retry with `use_proxy: true` if needed."
                         .to_string()
                 } else if content.word_count < 10 {
                     format!(

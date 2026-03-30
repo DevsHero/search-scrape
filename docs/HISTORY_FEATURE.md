@@ -96,7 +96,7 @@ Parameters:
 - `threshold` (optional, default: 0.6)
 
 Best practice:
-- Always call `memory_search` before `web_search` / `web_search_json`.
+- Always call `memory_search` before `web_search` or `web_search(include_content=true)`.
 - If you get a hit with similarity >= 0.60, use the cached result and skip live fetching.
 
 ---

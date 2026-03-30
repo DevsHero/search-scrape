@@ -40,5 +40,5 @@ Optional (HITL / visible browser):
 
 ```bash
 cd mcp-server
-cargo build --release --features non_robot_search --bin cortex-scout --bin cortex-scout-mcp
+cargo build --release --all-features --bin cortex-scout --bin cortex-scout-mcp
 ```

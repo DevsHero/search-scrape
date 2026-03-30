@@ -64,10 +64,12 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    let mut config = DeepResearchConfig::default();
-    config.use_proxy = std::env::var("DEEP_RESEARCH_USE_PROXY")
-        .ok()
-        .is_some_and(|v| v.trim() == "1" || v.trim().eq_ignore_ascii_case("true"));
+    let mut config = DeepResearchConfig {
+        use_proxy: std::env::var("DEEP_RESEARCH_USE_PROXY")
+            .ok()
+            .is_some_and(|v| v.trim() == "1" || v.trim().eq_ignore_ascii_case("true")),
+        ..Default::default()
+    };
 
     if let Ok(v) = std::env::var("DEEP_RESEARCH_DEPTH") {
         if let Ok(n) = v.parse::<u8>() {

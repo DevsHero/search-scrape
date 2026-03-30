@@ -146,7 +146,6 @@ impl Default for DeepResearchConfig {
 
 fn normalize_query_for_dedupe(value: &str) -> String {
     value
-        .trim()
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
@@ -551,7 +550,7 @@ pub async fn deep_research(
             let top = reranker.rerank_top(results, config.max_sources_per_hop);
             let mut top = top;
             // Domain-based tie-breaker to prefer docs/repos.
-            top.sort_by(|a, b| domain_priority(&b.url).cmp(&domain_priority(&a.url)));
+            top.sort_by_key(|b| std::cmp::Reverse(domain_priority(&b.url)));
 
             for r in top {
                 if !r.url.is_empty() {
@@ -584,7 +583,7 @@ pub async fn deep_research(
             config.max_concurrent,
             Some(config.max_chars_per_source),
             config.use_proxy,
-            config.quality_mode.clone(),
+            config.quality_mode,
         )
         .await
         {
@@ -720,7 +719,7 @@ pub async fn deep_research(
     // Sort findings: most-content first acts as a rough relevance proxy when
     // the embedding model is absent; with shaving enabled the ordering already
     // reflects semantic density.
-    all_findings.sort_by(|a, b| b.word_count.cmp(&a.word_count));
+    all_findings.sort_by_key(|b| std::cmp::Reverse(b.word_count));
 
     let all_urls: Vec<String> = all_urls_seen.into_iter().collect();
     let sources_discovered = all_urls.len();

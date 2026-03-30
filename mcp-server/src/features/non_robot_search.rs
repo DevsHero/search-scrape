@@ -296,7 +296,7 @@ async fn save_session_cookies_checked(
 ) -> Result<CookieHealth, NonRobotSearchError> {
     let domain_key = url::Url::parse(url)
         .ok()
-        .and_then(|u| u.host_str().map(|h| h.replace('.', "_").replace(':', "_")))
+        .and_then(|u| u.host_str().map(|h| h.replace(['.', ':'], "_")))
         .unwrap_or_else(|| "unknown_domain".to_string());
 
     let cookies = page.get_cookies().await.map_err(|e| {

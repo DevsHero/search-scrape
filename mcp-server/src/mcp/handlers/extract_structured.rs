@@ -163,7 +163,7 @@ fn parse_schema_from_prompt(prompt: &str) -> Option<Vec<ExtractField>> {
         if end > start {
             let inside = &candidate[start + 1..end];
             let mut out = Vec::new();
-            for raw in inside.split(|c: char| c == ',' || c == '\n' || c == '\t') {
+            for raw in inside.split([',', '\n', '\t']) {
                 let name = raw.trim().trim_matches('"').trim_matches('`');
                 if name.is_empty() {
                     continue;

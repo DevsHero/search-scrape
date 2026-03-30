@@ -1,6 +1,6 @@
-# Cortex Scout on Ubuntu Desktop — `non_robot_search` / HITL
+# Cortex Scout on Ubuntu Desktop — `hitl_web_fetch` / HITL
 
-This document focuses on running Cortex Scout’s **visible-browser HITL** mode (`non_robot_search`) on **Ubuntu Desktop** (GNOME/KDE).
+This document focuses on running Cortex Scout’s **visible-browser HITL** mode (`hitl_web_fetch`) on **Ubuntu Desktop** (GNOME/KDE).
 
 ## What works today (current repo state)
 
@@ -48,7 +48,7 @@ If unavailable, HITL still works; you just may not see toast notifications.
 
 ## Permissions: `/dev/input` access (kill switch / input locking)
 
-`non_robot_search` relies on global input hooks. On Linux, a common failure mode is lack of read access to `/dev/input/event*`.
+`hitl_web_fetch` (backed by the `non_robot_search` feature) relies on global input hooks. On Linux, a common failure mode is lack of read access to `/dev/input/event*`.
 
 Recommended fixes:
 

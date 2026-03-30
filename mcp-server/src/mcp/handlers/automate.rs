@@ -59,17 +59,18 @@ async fn execute_step(page: &chromiumoxide::Page, step: &Value, idx: usize) -> V
     let action = step.get("action").and_then(|v| v.as_str()).unwrap_or("");
     let target = step.get("target").and_then(|v| v.as_str()).unwrap_or("");
     let value = step.get("value").and_then(|v| v.as_str()).unwrap_or("");
+    let timeout_ms = step
+        .get("timeout_ms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(10_000);
 
     let result = match action {
+        "run_flow" => run_flow(page, step).await,
         "navigate" => run_navigate(page, target).await,
-        "click" => run_click(page, target).await,
-        "type" => run_type(page, target, value).await,
+        "click" => run_click(page, target, timeout_ms).await,
+        "type" => run_type(page, target, value, timeout_ms).await,
         "evaluate" => run_evaluate(page, value).await,
         "wait_for_selector" => {
-            let timeout_ms = step
-                .get("timeout_ms")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(10_000);
             run_wait_for_selector(page, target, timeout_ms).await
         }
         "snapshot" => run_snapshot(page).await,
@@ -83,10 +84,12 @@ async fn execute_step(page: &chromiumoxide::Page, step: &Value, idx: usize) -> V
             run_press_key(page, key).await
         }
         "screenshot" => run_screenshot(page).await,
+        "select_option" => run_select_option(page, target, value, timeout_ms).await,
+        "drag_drop" => run_drag_drop(page, target, value, timeout_ms).await,
         // ── Phase 21 ───────────────────────────────────────────────────────────
         "assert" => {
             let condition = step.get("condition").and_then(|v| v.as_str()).unwrap_or("contains_text");
-            run_assert(page, target, value, condition).await
+            run_assert(page, target, value, condition, timeout_ms).await
         }
         "mock_api" => {
             let url_pattern = step.get("url_pattern").and_then(|v| v.as_str()).unwrap_or("");
@@ -94,8 +97,13 @@ async fn execute_step(page: &chromiumoxide::Page, step: &Value, idx: usize) -> V
             let status_code = step.get("status_code").and_then(|v| v.as_u64()).unwrap_or(200) as u16;
             run_mock_api(page, url_pattern, response_json, status_code).await
         }
+        "console_tap" => run_console_tap(page).await,
+        "console_dump" => run_console_dump(page).await,
+        "storage_clear" => run_storage_clear(page, target).await,
+        "storage_state_export" => run_storage_state_export(page).await,
+        "storage_state_import" => run_storage_state_import(page, value).await,
         other => Err(anyhow!(
-            "Unknown action '{}'. Valid actions: navigate, click, type, evaluate, wait_for_selector, snapshot, scroll, press_key, screenshot, assert, mock_api",
+            "Unknown action '{}'. Valid actions: run_flow, navigate, click, type, evaluate, wait_for_selector, snapshot, scroll, press_key, screenshot, select_option, drag_drop, assert, mock_api, console_tap, console_dump, storage_clear, storage_state_export, storage_state_import",
             other
         )),
     };
@@ -108,6 +116,42 @@ async fn execute_step(page: &chromiumoxide::Page, step: &Value, idx: usize) -> V
             json!({ "step": idx, "action": action, "status": "error", "error": e.to_string(), "halt": halt })
         }
     }
+}
+
+async fn run_flow(page: &chromiumoxide::Page, step: &Value) -> Result<Value> {
+    let nested_steps: Vec<Value> = if let Some(arr) = step.get("steps").and_then(|v| v.as_array()) {
+        arr.clone()
+    } else if let Some(raw) = step.get("value").and_then(|v| v.as_str()) {
+        serde_json::from_str::<Vec<Value>>(raw)
+            .map_err(|e| anyhow!("run_flow: invalid JSON array in value: {}", e))?
+    } else {
+        return Err(anyhow!(
+            "run_flow: provide nested steps via 'steps' array or JSON array in 'value'"
+        ));
+    };
+
+    if nested_steps.is_empty() {
+        return Err(anyhow!("run_flow: nested steps cannot be empty"));
+    }
+
+    let mut results = Vec::with_capacity(nested_steps.len());
+    for (idx, nested) in nested_steps.iter().enumerate() {
+        let sub_result = Box::pin(execute_step(page, nested, idx)).await;
+        let is_error = sub_result.get("status").and_then(|v| v.as_str()) == Some("error");
+        let should_halt = sub_result
+            .get("halt")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        results.push(sub_result);
+        if is_error && should_halt {
+            break;
+        }
+    }
+
+    Ok(json!({
+        "flow_steps": nested_steps.len(),
+        "results": results
+    }))
 }
 
 // ── Individual action implementations ────────────────────────────────────────
@@ -127,10 +171,11 @@ async fn run_navigate(page: &chromiumoxide::Page, url: &str) -> Result<Value> {
     Ok(json!({ "navigated_to": url }))
 }
 
-async fn run_click(page: &chromiumoxide::Page, selector: &str) -> Result<Value> {
+async fn run_click(page: &chromiumoxide::Page, selector: &str, timeout_ms: u64) -> Result<Value> {
     if selector.is_empty() {
         return Err(anyhow!("click: 'target' (CSS selector) is required"));
     }
+    run_wait_for_selector(page, selector, timeout_ms).await?;
     debug!("🖱️ click → {}", selector);
     let elem = page
         .find_element(selector)
@@ -146,6 +191,7 @@ async fn run_type(
     page: &chromiumoxide::Page,
     selector: &str,
     text: &str,
+    timeout_ms: u64,
 ) -> Result<Value> {
     if selector.is_empty() {
         return Err(anyhow!("type: 'target' (CSS selector) is required"));
@@ -153,6 +199,7 @@ async fn run_type(
     if text.is_empty() {
         return Err(anyhow!("type: 'value' (text to type) is required"));
     }
+    run_wait_for_selector(page, selector, timeout_ms).await?;
     debug!("⌨️ type '{}' → {}", text, selector);
     let elem = page
         .find_element(selector)
@@ -336,6 +383,104 @@ async fn run_screenshot(page: &chromiumoxide::Page) -> Result<Value> {
     }))
 }
 
+async fn run_select_option(
+    page: &chromiumoxide::Page,
+    selector: &str,
+    option_value: &str,
+    timeout_ms: u64,
+) -> Result<Value> {
+    if selector.is_empty() {
+        return Err(anyhow!("select_option: 'target' (select CSS selector) is required"));
+    }
+    if option_value.is_empty() {
+        return Err(anyhow!("select_option: 'value' (option value/text) is required"));
+    }
+    run_wait_for_selector(page, selector, timeout_ms).await?;
+
+    let sel_js = serde_json::to_string(selector).unwrap_or_default();
+    let val_js = serde_json::to_string(option_value).unwrap_or_default();
+    let script = format!(
+        r#"(function() {{
+  var el = document.querySelector({selector});
+  if (!el) return {{ ok: false, reason: 'element not found' }};
+  if (el.tagName.toLowerCase() !== 'select') return {{ ok: false, reason: 'target is not <select>' }};
+  var wanted = {value};
+  var matched = false;
+  for (var i = 0; i < el.options.length; i++) {{
+    var opt = el.options[i];
+    if (opt.value === wanted || (opt.textContent || '').trim() === wanted) {{
+      el.selectedIndex = i;
+      matched = true;
+      break;
+    }}
+  }}
+  if (!matched) return {{ ok: false, reason: 'option not found' }};
+  el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+  el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+  return {{ ok: true, selected: el.value }};
+}})()"#,
+        selector = sel_js,
+        value = val_js
+    );
+
+    let remote = page
+        .evaluate(script)
+        .await
+        .map_err(|e| anyhow!("select_option: evaluate failed: {}", e))?;
+    let result = remote.into_value::<Value>().unwrap_or(Value::Null);
+    if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+        Ok(json!({ "selected_on": selector, "value": option_value }))
+    } else {
+        Err(anyhow!("select_option failed: {}", result))
+    }
+}
+
+async fn run_drag_drop(
+    page: &chromiumoxide::Page,
+    source_selector: &str,
+    target_selector: &str,
+    timeout_ms: u64,
+) -> Result<Value> {
+    if source_selector.is_empty() {
+        return Err(anyhow!("drag_drop: 'target' (source CSS selector) is required"));
+    }
+    if target_selector.is_empty() {
+        return Err(anyhow!("drag_drop: 'value' (destination CSS selector) is required"));
+    }
+    run_wait_for_selector(page, source_selector, timeout_ms).await?;
+    run_wait_for_selector(page, target_selector, timeout_ms).await?;
+
+    let src_js = serde_json::to_string(source_selector).unwrap_or_default();
+    let dst_js = serde_json::to_string(target_selector).unwrap_or_default();
+    let script = format!(
+        r#"(function() {{
+  var src = document.querySelector({src});
+  var dst = document.querySelector({dst});
+  if (!src || !dst) return {{ ok: false, reason: 'source/target not found' }};
+  var dt = new DataTransfer();
+  src.dispatchEvent(new DragEvent('dragstart', {{ bubbles: true, cancelable: true, dataTransfer: dt }}));
+  dst.dispatchEvent(new DragEvent('dragenter', {{ bubbles: true, cancelable: true, dataTransfer: dt }}));
+  dst.dispatchEvent(new DragEvent('dragover', {{ bubbles: true, cancelable: true, dataTransfer: dt }}));
+  dst.dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: dt }}));
+  src.dispatchEvent(new DragEvent('dragend', {{ bubbles: true, cancelable: true, dataTransfer: dt }}));
+  return {{ ok: true }};
+}})()"#,
+        src = src_js,
+        dst = dst_js
+    );
+
+    let remote = page
+        .evaluate(script)
+        .await
+        .map_err(|e| anyhow!("drag_drop: evaluate failed: {}", e))?;
+    let result = remote.into_value::<Value>().unwrap_or(Value::Null);
+    if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+        Ok(json!({ "dragged": source_selector, "dropped_on": target_selector }))
+    } else {
+        Err(anyhow!("drag_drop failed: {}", result))
+    }
+}
+
 // ── Phase 21: assert ─────────────────────────────────────────────────────────
 
 /// Convert a glob pattern (using `*` and `?`) to a JS-safe regex source string.
@@ -363,6 +508,7 @@ async fn run_assert(
     selector: &str,
     expected_value: &str,
     condition: &str,
+    timeout_ms: u64,
 ) -> Result<Value> {
     if selector.is_empty() {
         return Err(anyhow!("assert: 'target' (CSS selector) is required"));
@@ -392,26 +538,223 @@ async fn run_assert(
         }
     };
 
-    debug!("🔍 assert '{}' {} '{}'", selector, condition, expected_value);
-    let remote = page
-        .evaluate(script)
-        .await
-        .map_err(|e| anyhow!("assert: evaluate failed: {}", e))?;
-    let result = remote.into_value::<Value>().unwrap_or(Value::Null);
+        debug!(
+                "🔍 assert '{}' {} '{}' ({}ms timeout)",
+                selector, condition, expected_value, timeout_ms
+        );
 
-    let ok = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
-    if ok {
-        Ok(json!({
-            "asserted": condition,
-            "selector": selector,
-            "passed": true
-        }))
-    } else {
-        Err(anyhow!(
-            "Assertion failed: '{}' {} '{}'. Details: {}",
-            selector, condition, expected_value, result
-        ))
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut last_result: Value;
+        loop {
+                let remote = page
+                        .evaluate(script.clone())
+                        .await
+                        .map_err(|e| anyhow!("assert: evaluate failed: {}", e))?;
+                let result = remote.into_value::<Value>().unwrap_or(Value::Null);
+                let ok = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+                if ok {
+                        return Ok(json!({
+                                "asserted": condition,
+                                "selector": selector,
+                                "passed": true,
+                                "timeout_ms": timeout_ms
+                        }));
+                }
+
+                last_result = result;
+                if Instant::now() >= deadline {
+                        return Err(anyhow!(
+                                "Assertion failed after {}ms: '{}' {} '{}'. Last details: {}",
+                                timeout_ms,
+                                selector,
+                                condition,
+                                expected_value,
+                                last_result
+                        ));
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
     }
+}
+
+// ── Runtime console + storage actions (Playwright-like diagnostics/setup) ───
+
+async fn run_console_tap(page: &chromiumoxide::Page) -> Result<Value> {
+        let script = r#"
+(function() {
+    if (window.__cortexConsoleTapInstalled) {
+        return { status: 'already_installed' };
+    }
+    window.__cortexConsoleTapInstalled = true;
+    window.__cortexConsoleEvents = window.__cortexConsoleEvents || [];
+    var maxEvents = 200;
+
+    function pushEvent(level, args) {
+        try {
+            var text = Array.prototype.slice.call(args)
+                .map(function(v) {
+                    if (typeof v === 'string') return v;
+                    try { return JSON.stringify(v); } catch (_) { return String(v); }
+                })
+                .join(' ')
+                .slice(0, 1000);
+            window.__cortexConsoleEvents.push({
+                ts: new Date().toISOString(),
+                level: level,
+                text: text
+            });
+            if (window.__cortexConsoleEvents.length > maxEvents) {
+                window.__cortexConsoleEvents.splice(0, window.__cortexConsoleEvents.length - maxEvents);
+            }
+        } catch (_) {}
+    }
+
+    ['log', 'info', 'warn', 'error', 'debug'].forEach(function(level) {
+        var orig = console[level] ? console[level].bind(console) : null;
+        console[level] = function() {
+            pushEvent(level, arguments);
+            if (orig) return orig.apply(console, arguments);
+        };
+    });
+
+    window.addEventListener('error', function(e) {
+        pushEvent('error', [e.message || 'window.error']);
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+        var reason = e && e.reason ? e.reason : 'unhandledrejection';
+        pushEvent('error', [reason]);
+    });
+
+    return { status: 'installed' };
+})()
+"#;
+
+        page.evaluate(script)
+                .await
+                .map_err(|e| anyhow!("console_tap: evaluate failed: {}", e))?;
+        Ok(json!({ "console_tap": "installed" }))
+}
+
+async fn run_console_dump(page: &chromiumoxide::Page) -> Result<Value> {
+        let script = r#"
+(function() {
+    var events = window.__cortexConsoleEvents || [];
+    var errorCount = events.filter(function(e) { return e.level === 'error'; }).length;
+    var warnCount = events.filter(function(e) { return e.level === 'warn'; }).length;
+    return { total: events.length, errors: errorCount, warnings: warnCount, events: events };
+})()
+"#;
+
+        let remote = page
+                .evaluate(script)
+                .await
+                .map_err(|e| anyhow!("console_dump: evaluate failed: {}", e))?;
+        Ok(remote.into_value::<Value>().unwrap_or(Value::Null))
+}
+
+async fn run_storage_clear(page: &chromiumoxide::Page, scope: &str) -> Result<Value> {
+        let scope = if scope.is_empty() { "all" } else { scope };
+        let script = match scope {
+                "local" => "(function(){ localStorage.clear(); return { cleared: 'local' }; })()",
+                "session" => "(function(){ sessionStorage.clear(); return { cleared: 'session' }; })()",
+                "cookies" => r#"(function(){
+                        document.cookie.split(';').forEach(function(c){
+                            var name = c.split('=')[0].trim();
+                            if (name) {
+                                document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+                            }
+                        });
+                        return { cleared: 'cookies' };
+                    })()"#,
+                "all" => r#"(function(){
+                        localStorage.clear();
+                        sessionStorage.clear();
+                        document.cookie.split(';').forEach(function(c){
+                            var name = c.split('=')[0].trim();
+                            if (name) {
+                                document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+                            }
+                        });
+                        return { cleared: 'all' };
+                    })()"#,
+                other => {
+                        return Err(anyhow!(
+                                "storage_clear: unknown scope '{}'. Valid: all, local, session, cookies",
+                                other
+                        ))
+                }
+        };
+
+        let remote = page
+                .evaluate(script)
+                .await
+                .map_err(|e| anyhow!("storage_clear: evaluate failed: {}", e))?;
+        Ok(remote.into_value::<Value>().unwrap_or(Value::Null))
+}
+
+async fn run_storage_state_export(page: &chromiumoxide::Page) -> Result<Value> {
+        let script = r#"
+(function() {
+    var local = {};
+    var session = {};
+    for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        local[k] = localStorage.getItem(k);
+    }
+    for (var j = 0; j < sessionStorage.length; j++) {
+        var s = sessionStorage.key(j);
+        session[s] = sessionStorage.getItem(s);
+    }
+    return {
+        url: location.href,
+        localStorage: local,
+        sessionStorage: session,
+        cookies: document.cookie || ''
+    };
+})()
+"#;
+
+        let remote = page
+                .evaluate(script)
+                .await
+                .map_err(|e| anyhow!("storage_state_export: evaluate failed: {}", e))?;
+        Ok(remote.into_value::<Value>().unwrap_or(Value::Null))
+}
+
+async fn run_storage_state_import(page: &chromiumoxide::Page, raw_state: &str) -> Result<Value> {
+        if raw_state.is_empty() {
+                return Err(anyhow!("storage_state_import: 'value' JSON is required"));
+        }
+        let state_value: Value = serde_json::from_str(raw_state)
+                .map_err(|e| anyhow!("storage_state_import: invalid JSON in 'value': {}", e))?;
+        let state_json = serde_json::to_string(&state_value)
+                .map_err(|e| anyhow!("storage_state_import: serialize failed: {}", e))?;
+        let state_js = serde_json::to_string(&state_json).unwrap_or_else(|_| "\"{}\"".to_string());
+        let script = format!(
+                r#"(function() {{
+    var state = JSON.parse({state_js});
+    var local = state.localStorage || {{}};
+    var session = state.sessionStorage || {{}};
+    Object.keys(local).forEach(function(k) {{ localStorage.setItem(k, String(local[k])); }});
+    Object.keys(session).forEach(function(k) {{ sessionStorage.setItem(k, String(session[k])); }});
+    var appliedCookies = 0;
+    if (typeof state.cookies === 'string' && state.cookies.length > 0) {{
+        state.cookies.split(';').forEach(function(part) {{
+            var kv = part.trim();
+            if (!kv) return;
+            document.cookie = kv + '; path=/';
+            appliedCookies += 1;
+        }});
+    }}
+    return {{ applied_local: Object.keys(local).length, applied_session: Object.keys(session).length, applied_cookies: appliedCookies }};
+}})()"#,
+                state_js = state_js
+        );
+
+        let remote = page
+                .evaluate(script)
+                .await
+                .map_err(|e| anyhow!("storage_state_import: evaluate failed: {}", e))?;
+        Ok(remote.into_value::<Value>().unwrap_or(Value::Null))
 }
 
 // ── Phase 21: mock_api ────────────────────────────────────────────────────────
@@ -661,8 +1004,7 @@ pub async fn handle_profile_auth(
         .get("timeout_secs")
         .and_then(|v| v.as_u64())
         .unwrap_or(120)
-        .max(10)
-        .min(600); // clamp: 10s–10min
+        .clamp(10, 600); // clamp: 10s–10min
 
     // Step 1: release the headless SingletonLock on the profile.
     if let Err(e) = state::close_session().await {

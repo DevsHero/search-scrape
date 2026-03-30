@@ -97,21 +97,18 @@ After editing any MCP config, **restart VS Code** (Cmd+Q / Alt+F4) to reload the
 
 | Tool | Purpose |
 |------|---------|
-| `web_search` | Multi-engine web search, returns ranked snippets |
-| `web_search_json` | Same as `web_search` but returns structured JSON |
-| `web_fetch` | Fetch and extract text from a single URL |
-| `web_fetch_batch` | Parallel fetch of multiple URLs |
-| `web_crawl` | Crawl a site up to N pages deep |
+| `web_search` | Multi-engine search. Use `include_content=true` for search+scrape in one call |
+| `web_fetch` | Unified fetch family. Use `mode="single"|"batch"|"crawl"` |
 | `deep_research` | Multi-step research: search + fetch + optional LLM synthesis |
-| `extract_fields` | Extract structured fields from text with a schema/prompt |
-| `fetch_then_extract` | One-shot: fetch URL then extract fields |
+| `extract_fields` | Primary structured field extraction from a URL |
 | `memory_search` | Semantic recall from past research sessions (LanceDB) |
 | `proxy_control` | Rotate / list / test outbound proxies |
 | `visual_scout` | Headless screenshot (confirm auth gates) |
-| `hitl_web_fetch` | Visible browser fetch for CAPTCHA/login bypass |
-| `human_auth_session` | Full human-in-the-loop browser session |
+| `hitl_web_fetch` | Unified visible-browser HITL. Use `auth_mode="challenge"|"auth"` |
 
-> `hitl_web_fetch` and `human_auth_session` require the binary built with `--all-features`.
+Legacy names (`web_search_json`, `web_fetch_batch`, `web_crawl`, `fetch_then_extract`, `human_auth_session`) remain callable as compatibility aliases.
+
+> `hitl_web_fetch` requires the binary built with `--all-features`.
 
 ---
 

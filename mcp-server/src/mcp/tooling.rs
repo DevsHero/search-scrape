@@ -39,7 +39,7 @@ pub fn tool_catalog() -> Vec<ToolCatalogEntry> {
             title: "Web Search (Multi-Engine)",
             description: "Search the web across Google/Bing/DuckDuckGo/Brave simultaneously. Returns deduplicated, ranked URL list with snippets. \
 Use when you need URL discovery only. \
-If you also need page content, prefer web_search_json (search + scrape in one call). \
+Set include_content=true to also scrape top results in the same call (search + scrape mode; replaces web_search_json). \
 Always call memory_search first — the answer may already be cached.",
             input_schema: serde_json::json!({
                 "type": "object",
@@ -57,6 +57,28 @@ Always call memory_search first — the answer may already be cached.",
                         "minimum": 20,
                         "maximum": 1000,
                         "description": "Max chars of each result's content snippet. Default: 120 (NeuroSiphon) / 200 (standard). Increase for deep research; decrease for token-constrained tasks."
+                    },
+                    "include_content": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "When true, also scrape top URLs and return page content previews in this same call."
+                    },
+                    "top_n": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "default": 3,
+                        "description": "Used when include_content=true: number of top URLs to scrape."
+                    },
+                    "use_proxy": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Used when include_content=true: scrape via proxy (use only after block/rate-limit)."
+                    },
+                    "quality_mode": {
+                        "type": "string",
+                        "enum": ["balanced", "aggressive"],
+                        "default": "balanced",
+                        "description": "Used when include_content=true: scraper quality mode."
                     }
                 },
                 "required": ["query"]
@@ -86,15 +108,38 @@ Use use_proxy=true only after confirmed 403/429/rate-limit errors.",
         ToolCatalogEntry {
             name: "scrape_url",
             title: "Web Fetch (Token-Efficient)",
-            description: "Fetch and clean a single web page. Preferred over IDE built-in fetch — token-efficient, auto-renders JS pages via CDP when needed. \
+            description: "Unified web content tool. Supports single-page fetch, batch fetch, and site crawl via `mode`. Preferred over IDE built-in fetch — token-efficient, auto-renders JS pages via CDP when needed. \
+Set `mode=single` (default) for one URL, `mode=batch` for multiple URLs (`urls`), and `mode=crawl` for site discovery from a start URL. \
 Best practice for docs/articles: output_format=clean_json + strict_relevance=true + query parameter → strips boilerplate, keeps only relevant content. \
 On 403/429/rate-limit: call proxy_control with action=grab, then retry with use_proxy=true. \
-Response includes auth_risk_score (0.0–1.0): if >= 0.4, call visual_scout to confirm, then human_auth_session if login is required. \
+Response includes auth_risk_score (0.0–1.0): if >= 0.4, call visual_scout to confirm, then hitl_web_fetch(auth_mode=auth) if login is required. \
 For CAPTCHA/anti-bot walls: use hitl_web_fetch instead.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
+                    "mode": {
+                        "type": "string",
+                        "enum": ["single", "batch", "crawl"],
+                        "default": "single",
+                        "description": "Fetch mode: single URL fetch, batch URL fetch, or site crawl."
+                    },
                     "url": {"type": "string"},
+                    "urls": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Used when mode=batch: list of URLs to fetch in parallel."
+                    },
+                    "max_concurrent": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Used when mode=batch or mode=crawl: maximum parallel workers."
+                    },
+                    "max_depth": {"type": "integer", "minimum": 0, "description": "Used when mode=crawl."},
+                    "max_pages": {"type": "integer", "minimum": 1, "description": "Used when mode=crawl."},
+                    "same_domain_only": {"type": "boolean", "description": "Used when mode=crawl."},
+                    "include_patterns": {"type": "array", "items": {"type": "string"}, "description": "Used when mode=crawl."},
+                    "exclude_patterns": {"type": "array", "items": {"type": "string"}, "description": "Used when mode=crawl."},
+                    "max_chars_per_page": {"type": "integer", "minimum": 1, "description": "Used when mode=crawl."},
                     "query": {
                         "type": "string",
                         "description": "Optional query for Semantic Shaving. When strict_relevance=true, keeps only query-relevant paragraphs (major token savings on long pages)."
@@ -164,7 +209,7 @@ For CAPTCHA/anti-bot walls: use hitl_web_fetch instead.",
                         "type": "string",
                         "enum": ["text", "json", "clean_json"],
                         "default": "text",
-                        "description": "Output format. 'text' = readable prose (default). 'json' = full ScrapeResponse JSON. 'clean_json' = Sniper Mode: lean token-optimised JSON with only title, key paragraphs, code blocks and metadata — strips 100% of nav/footer/boilerplate noise."
+                        "description": "Output format. single mode: text/json/clean_json. batch/crawl modes: text/json (clean_json not applied)."
                     },
                     "include_raw_html": {"type": "boolean", "default": false, "description": "Include raw HTML in JSON responses. Note: in NeuroSiphon or aggressive mode this is force-disabled to prevent token leaks."},
                     "use_proxy": {"type": "boolean", "default": false},
@@ -175,14 +220,14 @@ For CAPTCHA/anti-bot walls: use hitl_web_fetch instead.",
                         "description": "Force-return embedded SPA hydration JSON (Next/Nuxt/Remix). When true and state exists, this becomes the ONLY content (DOM extras are dropped) for maximum token efficiency."
                     }
                 },
-                "required": ["url"]
+                "required": []
             }),
             icons: vec![CORTEX_SCOUT_ICON],
         },
         ToolCatalogEntry {
             name: "scrape_batch",
             title: "Batch Web Fetch",
-            description: "Fetch multiple URLs in parallel and return clean text/JSON for each. Use for research runs when you have a known list of sources. \
+            description: "Legacy alias for `web_fetch` with `mode=batch`. Fetch multiple URLs in parallel and return clean text/JSON for each. \
 Note: results are returned in completion order (fastest first), not input order. \
 Use use_proxy=true if sites are rate-limiting.",
             input_schema: serde_json::json!({
@@ -265,7 +310,7 @@ LLM synthesis is automatic when OPENAI_API_KEY is set (set DEEP_RESEARCH_ENABLED
         ToolCatalogEntry {
             name: "crawl_website",
             title: "Crawl Website (Link Discovery)",
-            description: "BFS-crawl a website to discover its link structure and page content. Use when you have a site's root/index URL and need to find the right sub-pages before fetching. \
+            description: "Legacy alias for `web_fetch` with `mode=crawl`. BFS-crawl a website to discover its link structure and page content. \
 Do NOT use for single-page fetching — use web_fetch instead. \
 Aborts early with a structured error if the start URL requires human login (NEED_HITL).",
             input_schema: serde_json::json!({
@@ -293,10 +338,10 @@ Aborts early with a structured error if the start URL requires human login (NEED
         ToolCatalogEntry {
             name: "extract_structured",
             title: "Extract Structured Fields",
-            description: "Fetch a URL and extract specific named fields into a JSON object using a schema. Use when you need structured data (price, title, author, etc.) from an HTML page. \
+            description: "Primary structured extraction tool. Fetches a URL and extracts specific named fields into a JSON object using a schema. \
 Do NOT use on raw .md/.json/.txt files — use web_fetch with output_format=clean_json instead. \
 Note: confidence score indicates extraction quality; check warnings field for null fields. \
-For combined fetch+extract in one call, use fetch_then_extract.",
+`fetch_then_extract` is a legacy alias/variant for compatibility.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -328,7 +373,8 @@ For combined fetch+extract in one call, use fetch_then_extract.",
         ToolCatalogEntry {
             name: "fetch_then_extract",
             title: "Fetch + Extract (Single Call)",
-            description: "Fetch a URL and extract structured fields in a single call (lower latency than calling web_fetch + extract_fields separately). \
+            description: "Legacy alias/variant of structured extraction. Prefer `extract_fields` as the primary extraction interface. \
+Fetch a URL and extract structured fields in a single call (lower latency than calling web_fetch + extract_fields separately). \
 Provide schema (preferred) or a prompt describing the fields to extract. \
 strict=true enforces schema shape exactly — missing fields become null/[]. \
 Best for well-structured HTML pages; less reliable on heavily JS-rendered or navigation-heavy pages.",
@@ -361,7 +407,7 @@ Best for well-structured HTML pages; less reliable on heavily JS-rendered or nav
         title: "Search Past Research (Memory)",
         description: "Semantic memory search over past web searches and page scrapes (stored in LanceDB). \
 Call this BEFORE web_search or web_fetch — if any result has similarity >= 0.60, use it directly and skip the live request. \
-Past results from deep_research and web_search_json are saved automatically. \
+    Past results from deep_research and web_search(include_content=true) are saved automatically. \
 Use entry_type filter to search only past searches ('search') or past scrapes ('scrape').",
         input_schema: serde_json::json!({
             "type": "object",
@@ -421,12 +467,18 @@ Action=status: check current proxy and pool health. Action=list: see all availab
         ToolCatalogEntry {
             name: "non_robot_search",
             title: "Web Fetch (HITL — Human Solves Anti-Bot)",
-            description: "LAST RESORT: opens a real visible browser window so a human can solve CAPTCHA, Cloudflare challenges, or login walls that block all automated fetching. \
-Always try web_fetch first; only use this when web_fetch returns an anti-bot/CAPTCHA block. \
-For login-walled pages where cookies should be saved for future use, prefer human_auth_session instead.",
+            description: "Unified HITL escalation tool. Use `auth_mode=challenge` (default) for CAPTCHA/Cloudflare bypass, or `auth_mode=auth` for login-focused session flow with cookie persistence. \
+LAST RESORT: opens a real visible browser window so a human can solve anti-bot or auth walls that block automated fetching. \
+Always try web_fetch first; only use this when web_fetch returns an anti-bot/CAPTCHA block.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
+                "auth_mode": {
+                    "type": "string",
+                    "enum": ["challenge", "auth"],
+                    "default": "challenge",
+                    "description": "challenge: anti-bot/CAPTCHA solving. auth: login-focused flow with session persistence."
+                },
                 "url": {"type": "string", "description": "The URL that is blocking standard bot access."},
                 "output_format": {"type": "string", "enum": ["text", "json"], "default": "json"},
                 "max_chars": {"type": "integer", "minimum": 1, "default": 10000},
@@ -448,7 +500,7 @@ For login-walled pages where cookies should be saved for future use, prefer huma
             name: "visual_scout",
             title: "Visual Page Scout (Screenshot)",
             description: "Take a headless screenshot of a URL. Returns the screenshot saved to a local temp file path (not base64-embedded). \
-Use this when web_fetch returns auth_risk_score >= 0.4 to visually confirm whether a login/CAPTCHA wall is present before escalating to human_auth_session. \
+Use this when web_fetch returns auth_risk_score >= 0.4 to visually confirm whether a login/CAPTCHA wall is present before escalating to hitl_web_fetch(auth_mode=auth). \
 The response contains screenshot_path (local file), page_title, and a hint about auth wall detection. \
 Does NOT return base64 image data inline — the PNG is stored at screenshot_path on disk.",
             input_schema: serde_json::json!({
@@ -467,7 +519,7 @@ Does NOT return base64 image data inline — the PNG is stored at screenshot_pat
         ToolCatalogEntry {
             name: "human_auth_session",
             title: "Auth Session (HITL Login + Cookie Persistence)",
-            description: "Opens a real visible browser, waits for user to log in, then scrapes the content using the authenticated session. \
+            description: "Legacy auth-focused alias of HITL flow. Equivalent to `hitl_web_fetch` with `auth_mode=auth`. Opens a real visible browser, waits for user to log in, then scrapes the content using the authenticated session. \
 Cookies are saved to ~/.cortex-scout/sessions/{domain}.json — future web_fetch calls to the same domain auto-use these cookies without HITL. \
 Use ONLY after visual_scout confirms a login wall (AUTH_REQUIRED). Always try web_fetch first. \
 Set instruction_message to tell the user exactly what to do, e.g. 'Please log in to GitHub to access private Discussions.'",
@@ -507,8 +559,10 @@ Set instruction_message to tell the user exactly what to do, e.g. 'Please log in
         description: "Stateful headless browser automation. Executes an ordered sequence of steps in a persistent Brave browser session (~/.cortex-scout/agent_profile). \
 Runs headless — never disrupts the user desktop. Session stays open until scout_browser_close is called. \
 Cookies/login state persist across calls. \
-Steps: navigate (go to URL), click (CSS selector), type (selector + text), press_key, scroll (down/up/bottom/top), evaluate (run JS), wait_for_selector, snapshot (DOM summary), screenshot (base64 PNG of viewport), assert (fail-fast DOM check), mock_api (intercept network requests). \
-Use for web automation, form filling, scraping JS-rendered pages, and UI testing. \
+Steps: navigate (go to URL), click/type/assert with auto-wait timeout, press_key, scroll, evaluate, wait_for_selector, snapshot (DOM summary), screenshot (base64 PNG), mock_api (network mocking), console_tap+console_dump (runtime log capture), and storage_state_export/import/clear (fixture-like state setup). \
+Also supports select_option and drag_drop for richer UI interactions. \
+run_flow can execute a nested flow in one step for reusable scenario blocks. \
+Use for web automation, form filling, scraping JS-rendered pages, smoke validation, and CI-friendly debugging artifacts. \
 First-time login to a service: use scout_agent_profile_auth to authenticate the profile, then use this tool.",
         input_schema: serde_json::json!({
             "type": "object",
@@ -522,22 +576,30 @@ First-time login to a service: use scout_agent_profile_auth to authenticate the 
                             "action": {
                                 "type": "string",
                                 "enum": ["navigate", "click", "type", "press_key", "scroll",
+                                         "run_flow",
                                          "evaluate", "wait_for_selector", "snapshot", "screenshot",
-                                         "assert", "mock_api"],
+                                         "select_option", "drag_drop",
+                                         "assert", "mock_api", "console_tap", "console_dump",
+                                         "storage_clear", "storage_state_export", "storage_state_import"],
                                 "description": "The action to perform."
+                            },
+                            "steps": {
+                                "type": "array",
+                                "items": {"type": "object"},
+                                "description": "Used by run_flow: nested action objects executed sequentially."
                             },
                             "target": {
                                 "type": "string",
-                                "description": "URL (for navigate) or CSS selector (for click, type, wait_for_selector, assert)."
+                                "description": "URL (navigate), CSS selector (click/type/wait_for_selector/assert/select_option), source selector (drag_drop), or storage scope (storage_clear: all|local|session|cookies)."
                             },
                             "value": {
                                 "type": "string",
-                                "description": "Text to type (for type), JS expression (for evaluate), or expected text/state (for assert)."
+                                "description": "Text to type (type), JS expression (evaluate), expected text/state (assert), option value/text (select_option), destination selector (drag_drop), or JSON payload (storage_state_import)."
                             },
                             "condition": {
                                 "type": "string",
                                 "enum": ["contains_text", "is_visible", "is_hidden"],
-                                "description": "Assertion condition (for assert). Default: contains_text."
+                                "description": "Assertion condition (for assert). Default: contains_text. assert auto-retries until timeout_ms."
                             },
                             "url_pattern": {
                                 "type": "string",
@@ -570,7 +632,7 @@ First-time login to a service: use scout_agent_profile_auth to authenticate the 
                             "timeout_ms": {
                                 "type": "integer",
                                 "default": 10000,
-                                "description": "Timeout for wait_for_selector in milliseconds (default 10000)."
+                                "description": "Timeout for wait_for_selector, click, type, and assert auto-wait retries in milliseconds (default 10000)."
                             }
                         },
                         "required": ["action"]
@@ -656,5 +718,43 @@ pub fn format_proxy_display(url: &str) -> String {
         format!("{}://{}{}{}", parsed.scheme(), user_segment, host, port)
     } else {
         url.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tool_catalog;
+    use serde_json::Value;
+
+    fn assert_arrays_have_items(node: &Value, path: &str) {
+        match node {
+            Value::Object(map) => {
+                if map.get("type").and_then(|v| v.as_str()) == Some("array") {
+                    assert!(
+                        map.contains_key("items"),
+                        "array schema missing items at {}",
+                        path
+                    );
+                }
+                for (k, v) in map {
+                    let child_path = format!("{}.{}", path, k);
+                    assert_arrays_have_items(v, &child_path);
+                }
+            }
+            Value::Array(arr) => {
+                for (idx, v) in arr.iter().enumerate() {
+                    let child_path = format!("{}[{}]", path, idx);
+                    assert_arrays_have_items(v, &child_path);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn all_tool_array_schemas_define_items() {
+        for tool in tool_catalog() {
+            assert_arrays_have_items(&tool.input_schema, tool.name);
+        }
     }
 }

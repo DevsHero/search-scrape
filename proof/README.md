@@ -43,7 +43,7 @@ The **Manual Return Button** is a powerful user control feature that prevents br
 
 ### How It Works
 
-When `non_robot_search` is called (feature flag: `non_robot_search`):
+When `hitl_web_fetch` is called (runtime path provided by feature `non_robot_search`):
 
 1. **Automatic Injection**: A floating button is injected at page load
    ```
@@ -216,7 +216,7 @@ Return JSON Evidence
 
 ## 📝 Changelog
 
-We don't just claim to bypass—we provide the receipts. All evidence below was captured using `non_robot_search` (feature flag: `non_robot_search`) with the Safety Kill Switch enabled (2026-02-14).
+We don't just claim to bypass—we provide the receipts. All evidence below was captured using the HITL path now exposed as `hitl_web_fetch` (feature lineage: `non_robot_search`) with the Safety Kill Switch enabled (2026-02-14).
 
 ### 2026-02-14 - Boss-Level Evidence Collection
 -   ✅ LinkedIn: Job postings with embedded JSON-LD

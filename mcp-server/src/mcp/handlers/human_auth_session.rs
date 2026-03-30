@@ -160,7 +160,7 @@ pub async fn handle(
         Ok(Json(McpCallResponse {
             content: vec![McpContent {
                 content_type: "text".to_string(),
-                text: "human_auth_session is not enabled in this running binary (feature flag: `non_robot_search`). Rebuild and restart using a build with the `non_robot_search` feature, for example: `cd mcp-server && cargo build --release --features non_robot_search --bin cortex-scout --bin cortex-scout-mcp`. If you're using VS Code MCP stdio, restart the MCP server after rebuilding.".to_string(),
+                text: "human_auth_session is not enabled in this running binary (feature flag: `non_robot_search`). Rebuild and restart using a build with all optional features, for example: `cd mcp-server && cargo build --release --all-features --bin cortex-scout --bin cortex-scout-mcp`. If you're using VS Code MCP stdio, restart the MCP server after rebuilding.".to_string(),
             }],
             is_error: true,
         }))

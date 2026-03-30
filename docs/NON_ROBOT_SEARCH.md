@@ -1,6 +1,9 @@
 # Non-Robot Search (HITL / High-Fidelity Renderer) — v2.0.0-rc
 
-`non_robot_search` (internal feature/handler name: `non_robot_search`) is the “nuclear option” tool for targets that are:
+Primary public tool: `hitl_web_fetch` with `auth_mode="challenge"|"auth"`.
+`non_robot_search` and `human_auth_session` are retained as compatibility aliases.
+
+`hitl_web_fetch(auth_mode="challenge")` (internal feature/handler lineage: `non_robot_search`) is the “nuclear option” for targets that are:
 
 - heavily JavaScript-driven (content appears only after client-side hydration)
 - protected by anti-bot / verification gates (captcha, interstitials)
@@ -16,7 +19,7 @@ This tool is intentionally interactive (HITL = Human-In-The-Loop). It is **not**
   - Ubuntu Desktop notes: docs/ubuntu_setup.md
   - Windows notes: docs/window_setup.md
 
-`non_robot_search` launches a **local GUI browser** (Brave/Chrome). Run it in a local desktop session.
+`hitl_web_fetch` launches a **local GUI browser** (Brave/Chrome). Run it in a local desktop session.
 
 ## What it does (at a high level)
 
@@ -27,9 +30,9 @@ This tool is intentionally interactive (HITL = Human-In-The-Loop). It is **not**
 5. If a verification gate is detected, it asks you to complete it
 6. Extracts HTML → cleaned markdown/text/JSON (same output model as other scrapers)
 
-## Related tool: human_auth_session (strict manual login)
+## Related mode: hitl_web_fetch(auth_mode="auth") (strict manual login)
 
-For login/session bootstrapping (GitHub, LinkedIn, etc.) prefer `human_auth_session` first:
+For login/session bootstrapping (GitHub, LinkedIn, etc.) prefer `hitl_web_fetch(auth_mode="auth")` first:
 
 - It opens a real browser and waits for you to click **FINISH & RETURN**.
 - It does **not** auto-close based on navigation events (strict manual-only flow).
@@ -39,8 +42,8 @@ Recommended escalation order:
 
 1) `web_fetch` (try normal/proxy)
 2) `visual_scout` if `auth_risk_score >= 0.4`
-3) `human_auth_session` for authenticated scraping
-4) `non_robot_search` for CAPTCHA / complex gates (full HITL)
+3) `hitl_web_fetch(auth_mode="auth")` for authenticated scraping
+4) `hitl_web_fetch(auth_mode="challenge")` for CAPTCHA / complex gates
 
 ## Safety / Interactivity model (must read)
 
@@ -58,7 +61,7 @@ Build the binaries (native macOS):
 
 ```bash
 cd mcp-server
-cargo build --release --features non_robot_search --bin cortex-scout --bin cortex-scout-mcp
+cargo build --release --all-features --bin cortex-scout --bin cortex-scout-mcp
 ```
 
 ## Run recommendations (macOS)
@@ -75,7 +78,7 @@ RUST_LOG=info \
 ```
 
 Notes:
-- `non_robot_search` requires a native desktop session (GUI browser).
+- `hitl_web_fetch` requires a native desktop session (GUI browser).
 
 ### Option B: run HTTP server locally
 
@@ -84,7 +87,7 @@ cd mcp-server
 RUST_LOG=info ./target/release/cortex-scout
 ```
 
-Then call `POST /mcp/call` with `tool=non_robot_search`.
+Then call `POST /mcp/call` with `tool=hitl_web_fetch`.
 
 ## Brave / Chrome configuration
 
@@ -138,7 +141,7 @@ If your MCP client runs without a TTY, Cortex Scout will use a dialog by default
 
 ## Tool arguments (MCP)
 
-`non_robot_search` accepts:
+`hitl_web_fetch` accepts:
 
 - `url` (required)
 - `output_format`: `json` (default) or `text`
@@ -154,7 +157,7 @@ Example MCP call payload (HTTP transport):
 
 ```json
 {
-  "tool": "non_robot_search",
+  "tool": "hitl_web_fetch",
   "arguments": {
     "url": "https://www.linkedin.com/jobs/view/1234567890",
     "quality_mode": "high",

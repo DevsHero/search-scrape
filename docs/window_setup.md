@@ -16,7 +16,7 @@ For macOS/Linux see [docs/ubuntu_setup.md](ubuntu_setup.md) and the main [README
 
 3. **Install a Chromium-based browser** (Brave, Chrome, or Edge) if you plan to use
    CDP-based anti-bot bypass (`SEARCH_CDP_FALLBACK=true`) or the HITL visible-browser
-   tools (`hitl_web_fetch`, `human_auth_session`).
+  tools (`hitl_web_fetch`).
 
 ---
 
@@ -31,7 +31,7 @@ cd cortex-scout\mcp-server
 # Basic build (search, scrape, deep research, memory)
 cargo build --release --bin cortex-scout-mcp
 
-# Full build (adds hitl_web_fetch / human_auth_session)
+# Full build (adds hitl_web_fetch and other optional HITL features)
 cargo build --release --all-features --bin cortex-scout-mcp
 ```
 
@@ -110,7 +110,7 @@ These clients use the `"mcpServers"` top-level key (not `"servers"`).
 | Deep research + LLM synthesis | Supported |
 | Proxy rotation | Supported |
 | CDP anti-bot (`SEARCH_CDP_FALLBACK`) | Supported (requires Brave/Chrome installed) |
-| `hitl_web_fetch` / `human_auth_session` | Supported — build with `--all-features` |
+| `hitl_web_fetch` (`auth_mode=challenge|auth`) | Supported — build with `--all-features` |
 | `visual_scout` (headless screenshot) | Supported |
 | Semantic memory (LanceDB) | Supported |
 
@@ -125,3 +125,5 @@ These clients use the `"mcpServers"` top-level key (not `"servers"`).
 | Tools time out immediately | Set `RUST_LOG=warn` (not `info`) |
 | CDP fetch fails | Ensure Brave/Chrome is installed and discoverable |
 | `hitl_web_fetch` not listed | Rebuild with `--all-features` |
+
+Legacy compatibility alias note: `human_auth_session` remains callable but maps to `hitl_web_fetch(auth_mode="auth")`.

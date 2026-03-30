@@ -310,14 +310,14 @@ fn to_raw_url(url: &str) -> String {
                     let owner = segments.next();
                     let repo = segments.next();
                     let blob = segments.next();
-                    if owner.is_some() && repo.is_some() && blob == Some("blob") {
+                    if let (Some(owner), Some(repo), Some("blob")) = (owner, repo, blob) {
                         let branch = segments.next();
                         let path: String = segments.collect::<Vec<_>>().join("/");
                         if let Some(branch) = branch {
                             return format!(
                                 "https://raw.githubusercontent.com/{}/{}/{}/{}",
-                                owner.unwrap(),
-                                repo.unwrap(),
+                                owner,
+                                repo,
                                 branch,
                                 path
                             );

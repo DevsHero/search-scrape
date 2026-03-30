@@ -1,6 +1,6 @@
 //! Session cookie persistence — shared load/inject helpers.
 //!
-//! After a successful `human_auth_session` / `non_robot_search` HITL flow the
+//! After a successful `hitl_web_fetch` (`auth_mode=challenge|auth`) HITL flow the
 //! browser cookies are saved to `~/.cortex-scout/sessions/{domain_key}.json`.
 //! This module provides companion helpers to *load* those cookies and *inject*
 //! them into any CDP page so future scrapes of the same domain are
@@ -18,7 +18,7 @@ use tracing::{info, warn};
 
 /// Filesystem-safe key derived from a bare hostname string.
 fn host_to_key(host: &str) -> String {
-    host.replace('.', "_").replace(':', "_")
+    host.replace(['.', ':'], "_")
 }
 
 /// Derive the filesystem-safe key used as the session filename from a URL.
@@ -163,7 +163,7 @@ fn load_raw_by_key(key: &str) -> Option<Vec<serde_json::Value>> {
 ///
 /// **Subdomain fallback:** if no session file exists for the full hostname
 /// (e.g. `gist.github.com`), tries the parent domain (`github.com`) before
-/// returning `None`.  A single `human_auth_session` on github.com will
+/// returning `None`.  A single `hitl_web_fetch(auth_mode=auth)` on github.com will
 /// therefore satisfy scrapes of any `*.github.com` subdomain automatically.
 ///
 /// Returns `None` when no session file can be found for this domain or its

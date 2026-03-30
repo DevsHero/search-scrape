@@ -34,7 +34,7 @@ use tracing::{info, warn};
 /// Authentication metadata for a single domain.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DomainRecord {
-    /// Set to `true` as soon as a successful `human_auth_session` HITL flow
+    /// Set to `true` as soon as a successful `hitl_web_fetch(auth_mode=auth)` HITL flow
     /// completes for this domain.
     pub needs_auth: bool,
 

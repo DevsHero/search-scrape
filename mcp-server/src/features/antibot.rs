@@ -54,7 +54,7 @@ pub fn get_random_user_agent() -> &'static str {
 pub fn get_random_browser_profile() -> BrowserProfile {
     use rand::prelude::*;
     let mut rng = rand::rng();
-    let profiles = vec![
+    let profiles = [
         // Chrome 131 on Windows 10
         BrowserProfile {
             user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36".to_string(),

@@ -3,7 +3,7 @@ use scraper::{Html, Selector};
 use tracing::info;
 
 impl RustScraper {
-    fn utf8_prefix_chars<'a>(value: &'a str, max_chars: usize) -> &'a str {
+    fn utf8_prefix_chars(value: &str, max_chars: usize) -> &str {
         if value.len() <= max_chars {
             return value;
         }
@@ -197,13 +197,13 @@ impl RustScraper {
             Some(concat!(
                 "Content restricted by Auth-Wall (GitHub login page detected). ",
                 "Try the raw URL (raw.githubusercontent.com) or append ?plain=1 for Markdown files. ",
-                "Recommendation: Use HITL (non_robot_search) to login manually.",
+                "Recommendation: Use HITL (hitl_web_fetch) to login manually.",
             ).to_string())
         } else {
             Some(
                 concat!(
                     "Content restricted by Auth-Wall (login/sign-in page detected). ",
-                    "Recommendation: Use HITL (non_robot_search) to login manually.",
+                    "Recommendation: Use HITL (hitl_web_fetch) to login manually.",
                 )
                 .to_string(),
             )
@@ -245,7 +245,7 @@ impl RustScraper {
 
         // ─ Pre-check: page title and URL for corroborating signals ───────────────
         let is_auth_title = if let Ok(title_sel) = Selector::parse("title") {
-            document.select(&title_sel).next().map_or(false, |el| {
+            document.select(&title_sel).next().is_some_and(|el| {
                 let t = el.text().collect::<String>();
                 let tl = t.trim().to_lowercase();
                 tl.starts_with("sign in")
@@ -293,13 +293,13 @@ impl RustScraper {
                             "GitHub Auth-Wall detected (DOM: {label}). \
                              This repo is private or your session has expired. \
                              /blob/ pages are already auto-retried via raw.githubusercontent.com. \
-                             Recommendation: Use HITL (non_robot_search) to login manually."
+                             Recommendation: Use HITL (hitl_web_fetch) to login manually."
                         ))
                     } else {
                         Some(format!(
                             "Auth-Wall detected (DOM selector matched: {label}). \
                              This page requires authentication before content is served. \
-                             Recommendation: Use HITL (non_robot_search) to login manually."
+                             Recommendation: Use HITL (hitl_web_fetch) to login manually."
                         ))
                     };
                 }
@@ -327,13 +327,13 @@ impl RustScraper {
                                 "GitHub Auth-Wall detected (DOM: {label}). \
                                  This repo is private or your session has expired. \
                                  /blob/ pages are already auto-retried via raw.githubusercontent.com. \
-                                 Recommendation: Use HITL (non_robot_search) to login manually."
+                                 Recommendation: Use HITL (hitl_web_fetch) to login manually."
                             ))
                         } else {
                             Some(format!(
                                 "Auth-Wall detected (DOM selector matched: {label}). \
                                  This page requires authentication before content is served. \
-                                 Recommendation: Use HITL (non_robot_search) to login manually."
+                                 Recommendation: Use HITL (hitl_web_fetch) to login manually."
                             ))
                         };
                     }
@@ -376,7 +376,7 @@ impl RustScraper {
                     if strict_match || (loose_match && (is_auth_title || is_auth_url)) {
                         return Some(format!(
                             "Auth-Wall detected (login form: action=\"{action}\"). \
-                             Recommendation: Use HITL (non_robot_search) to login manually."
+                             Recommendation: Use HITL (hitl_web_fetch) to login manually."
                         ));
                     }
                 }
@@ -392,7 +392,7 @@ impl RustScraper {
                     let t = el.text().collect::<String>();
                     return Some(format!(
                         "Auth-Wall detected (page title: \"{}\"). \
-                         Recommendation: Use HITL (non_robot_search) to login manually.",
+                         Recommendation: Use HITL (hitl_web_fetch) to login manually.",
                         t.trim()
                     ));
                 }

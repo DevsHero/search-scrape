@@ -11,6 +11,16 @@ pub async fn handle(
     state: Arc<AppState>,
     arguments: &Value,
 ) -> Result<Json<McpCallResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Unified mode: when include_content=true, behave like the historical
+    // web_search_json/search_structured tool (search + scrape top N URLs).
+    if arguments
+        .get("include_content")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return super::search_structured::handle(state, arguments).await;
+    }
+
     let query = arguments
         .get("query")
         .and_then(|v| v.as_str())

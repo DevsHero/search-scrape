@@ -30,15 +30,16 @@ It is built to handle the practical failure modes of web retrieval (rate limits,
 
 | Area | MCP Tools / Capabilities |
 |------|---------------------------|
-| Search | `web_search`, `web_search_json` (parallel meta-search + dedup/scoring) |
-| Fetch| `web_fetch`, `web_fetch_batch` (token-efficient clean output) |
-| Crawl | `web_crawl` (bounded discovery for doc sites / sub-pages) |
-| Extraction | `extract_fields`, `fetch_then_extract` (schema-driven extraction) |
+| Search | `web_search` (URL discovery) or `web_search(include_content=true)` (search+content in one call) |
+| Fetch and Crawl | `web_fetch(mode="single"|"batch"|"crawl")` (unified fetch family) |
+| Extraction | `extract_fields` (primary structured extraction) |
 | Automation | `scout_browser_automate` (stateful omni-tool), `scout_agent_profile_auth` (HITL portal), `scout_browser_close` |
 | Anti-bot handling | CDP rendering, proxy rotation, block-aware retries |
-| HITL | `visual_scout`, `human_auth_session`, `non_robot_search` |
+| HITL | `visual_scout`, `hitl_web_fetch(auth_mode="challenge"|"auth")` |
 | Memory | `memory_search` (LanceDB-backed research history) |
 | Deep research | `deep_research` (multi-hop search + scrape + synthesis) |
+
+Legacy names remain callable as compatibility aliases (`web_search_json`, `web_fetch_batch`, `web_crawl`, `fetch_then_extract`, `human_auth_session`). Agents should prefer the unified primary tools above.
 ---
 
 ## Ecosystem Integration
@@ -280,13 +281,12 @@ Create `cortex-scout.json` in the same directory as the binary (or repository ro
 Recommended operational flow:
 
 1. Call `memory_search` before any new research run — skip live fetching if similarity ≥ 0.60 and `skip_live_fetch` is `true`.
-2. For initial topic discovery use `web_search_json` (returns structured snippets, lower token cost than full scrape).
-3. For known URLs use `web_fetch` with `output_format="clean_json"`, set `query` + `strict_relevance=true` to truncate irrelevant content.
+2. For topic discovery use `web_search` for URL-only discovery, or `web_search(include_content=true)` to search and scrape top results in one round-trip.
+3. For known URLs use `web_fetch(mode="single")` with `output_format="clean_json"`, and set `query` + `strict_relevance=true` to keep only relevant sections.
 4. On 403/429: call `proxy_control` with `action:"grab"` to refresh the proxy list, then retry with `use_proxy:true`.
-5. For auth-gated pages: `visual_scout` to confirm the gate type → `human_auth_session` to complete login (cookies persisted under `~/.cortex-scout/sessions/`).
+5. For auth-gated pages: run `visual_scout` when `auth_risk_score >= 0.4`, then use `hitl_web_fetch(auth_mode="challenge")` for CAPTCHA walls or `hitl_web_fetch(auth_mode="auth")` for login walls.
 6. For deep research: `deep_research` handles multi-hop search + scrape + LLM synthesis automatically. Tune `depth` (1–3) and `max_sources` per run cost budget.
-7. For CAPTCHA or heavy JS pages that all other paths fail: `hitl_web_fetch` opens a visible Brave/Chrome window for human completion (requires `--all-features` build and a local desktop session).
-8. For UI Automation & E2E Testing: Use `scout_browser_automate` to pass a sequence of actions. If the sequence fails due to a login wall or CAPTCHA, call `scout_agent_profile_auth` to request human assistance, then resume your automated steps.
+7. For UI automation and E2E testing: use `scout_browser_automate` with step arrays. If blocked by first-time login/CAPTCHA, call `scout_agent_profile_auth`, then resume automation.
 ---
 
 ## FAQ
@@ -307,7 +307,7 @@ If you still see slow or unstable synthesis, reduce `synthesis_max_sources` befo
 
 ### Why do I see Chromium profile lock errors?
 
-Each headless request uses a unique temporary profile, so normal scraping and deep_research are safe from profile lock races. Only HITL flows (like non_robot_search) using a real browser profile can hit a lock if you run them concurrently or have Brave/Chrome open on the same profile. To avoid: run HITL calls one at a time, and close all browser windows before reusing a profile.
+Each headless request uses a unique temporary profile, so normal scraping and deep_research are safe from profile lock races. Only HITL flows (like `hitl_web_fetch`) using a real browser profile can hit a lock if you run them concurrently or have Brave/Chrome open on the same profile. To avoid: run HITL calls one at a time, and close all browser windows before reusing a profile.
 
 Checklist:
 1. Use a recent build (2026-03-05 or newer)
