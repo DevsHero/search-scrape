@@ -4,6 +4,20 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
+## Unreleased
+
+### Added
+- Unified the public MCP tool surface around grouped calls: `web_search(include_content=true)`, `web_fetch(mode="single"|"batch"|"crawl")`, and `hitl_web_fetch(auth_mode="challenge"|"auth")`.
+- Expanded browser automation to behave more like a compact Playwright replacement, including nested flows, console capture, storage state helpers, and stronger auto-wait assertions.
+
+### Changed
+- Refreshed usage docs, setup guides, and smoke coverage so the repository points agents at the current grouped tools instead of legacy tool names.
+- Updated release/version metadata in lockstep for the next minor release.
+
+### Fixed
+- Hardened schema validation and tool descriptions to remove stale or hallucination-prone references from the current tool catalog.
+- Cleaned up several small clippy warnings and codepaths discovered during the release-prep scan.
+
 ## v3.2.0 (2026-03-17)
 
 ### Added
