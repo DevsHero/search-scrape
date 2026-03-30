@@ -4,6 +4,18 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
+## Unreleased
+
+### Added
+- Expanded `scout_browser_automate` with parity-focused actions: locator-driven operations (`click_locator`, `type_locator`, `wait_for_locator`, `assert_locator`), trace lifecycle (`trace_start`, `trace_stop`, `trace_export`), network diagnostics (`network_tap`, `network_dump`), and storage fixtures (`storage_checkpoint`, `storage_rollback`).
+- Added richer `mock_api` controls with method matching, custom response headers, delay simulation, and one-shot interception mode.
+
+### Changed
+- Updated automation tool schema metadata so new actions and parameters are discoverable by MCP clients and agents.
+
+### Fixed
+- Hardened MCP tool-name routing compatibility so both public `scout_*` names and internal `browser_*` names resolve correctly for call dispatch.
+
 ## v3.3.0 (2026-03-30)
 
 ### Added

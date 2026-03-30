@@ -11,8 +11,12 @@ use crate::types::ErrorResponse;
 use anyhow::{anyhow, Result};
 use axum::http::StatusCode;
 use axum::response::Json;
+use chrono::Utc;
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tracing::{debug, info};
 
@@ -53,6 +57,28 @@ JSON.stringify({
 })
 "#;
 
+static STORAGE_FIXTURES: LazyLock<Mutex<HashMap<String, Value>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+#[derive(Default)]
+struct TraceState {
+    enabled: bool,
+    run_id: Option<String>,
+    started_at: Option<String>,
+    events: Vec<Value>,
+}
+
+static TRACE_STATE: LazyLock<Mutex<TraceState>> =
+    LazyLock::new(|| Mutex::new(TraceState::default()));
+
+fn trace_record(event: Value) {
+    if let Ok(mut st) = TRACE_STATE.lock() {
+        if st.enabled {
+            st.events.push(event);
+        }
+    }
+}
+
 // ── Step execution ────────────────────────────────────────────────────────────
 
 async fn execute_step(page: &chromiumoxide::Page, step: &Value, idx: usize) -> Value {
@@ -66,13 +92,19 @@ async fn execute_step(page: &chromiumoxide::Page, step: &Value, idx: usize) -> V
 
     let result = match action {
         "run_flow" => run_flow(page, step).await,
+        "trace_start" => run_trace_start(step).await,
+        "trace_stop" => run_trace_stop().await,
+        "trace_export" => run_trace_export(step).await,
         "navigate" => run_navigate(page, target).await,
         "click" => run_click(page, target, timeout_ms).await,
+        "click_locator" => run_click_locator(page, step, timeout_ms).await,
         "type" => run_type(page, target, value, timeout_ms).await,
+        "type_locator" => run_type_locator(page, step, timeout_ms).await,
         "evaluate" => run_evaluate(page, value).await,
         "wait_for_selector" => {
             run_wait_for_selector(page, target, timeout_ms).await
         }
+        "wait_for_locator" => run_wait_for_locator(page, step, timeout_ms).await,
         "snapshot" => run_snapshot(page).await,
         "scroll" => {
             let direction = step.get("direction").and_then(|v| v.as_str()).unwrap_or("down");
@@ -91,29 +123,76 @@ async fn execute_step(page: &chromiumoxide::Page, step: &Value, idx: usize) -> V
             let condition = step.get("condition").and_then(|v| v.as_str()).unwrap_or("contains_text");
             run_assert(page, target, value, condition, timeout_ms).await
         }
+        "assert_locator" => {
+            let condition = step
+                .get("condition")
+                .and_then(|v| v.as_str())
+                .unwrap_or("contains_text");
+            run_assert_locator(page, step, condition, timeout_ms).await
+        }
         "mock_api" => {
             let url_pattern = step.get("url_pattern").and_then(|v| v.as_str()).unwrap_or("");
             let response_json = step.get("response_json").and_then(|v| v.as_str()).unwrap_or("{}");
             let status_code = step.get("status_code").and_then(|v| v.as_u64()).unwrap_or(200) as u16;
-            run_mock_api(page, url_pattern, response_json, status_code).await
+            let method = step.get("method").and_then(|v| v.as_str());
+            let response_headers = step
+                .get("response_headers")
+                .and_then(|v| v.as_str())
+                .unwrap_or("{}");
+            let delay_ms = step.get("delay_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+            let once = step.get("once").and_then(|v| v.as_bool()).unwrap_or(false);
+            run_mock_api(
+                page,
+                url_pattern,
+                response_json,
+                status_code,
+                method,
+                response_headers,
+                delay_ms,
+                once,
+            )
+            .await
         }
+        "network_tap" => run_network_tap(page).await,
+        "network_dump" => run_network_dump(page).await,
         "console_tap" => run_console_tap(page).await,
         "console_dump" => run_console_dump(page).await,
         "storage_clear" => run_storage_clear(page, target).await,
         "storage_state_export" => run_storage_state_export(page).await,
         "storage_state_import" => run_storage_state_import(page, value).await,
+        "storage_checkpoint" => run_storage_checkpoint(page, target).await,
+        "storage_rollback" => run_storage_rollback(page, target).await,
         other => Err(anyhow!(
-            "Unknown action '{}'. Valid actions: run_flow, navigate, click, type, evaluate, wait_for_selector, snapshot, scroll, press_key, screenshot, select_option, drag_drop, assert, mock_api, console_tap, console_dump, storage_clear, storage_state_export, storage_state_import",
+            "Unknown action '{}'. Valid actions: run_flow, trace_start, trace_stop, trace_export, navigate, click, click_locator, type, type_locator, evaluate, wait_for_selector, wait_for_locator, snapshot, scroll, press_key, screenshot, select_option, drag_drop, assert, assert_locator, mock_api, network_tap, network_dump, console_tap, console_dump, storage_clear, storage_state_export, storage_state_import, storage_checkpoint, storage_rollback",
             other
         )),
     };
 
     match result {
-        Ok(r) => json!({ "step": idx, "action": action, "status": "ok", "result": r }),
+        Ok(r) => {
+            let event = json!({
+                "ts": Utc::now().to_rfc3339(),
+                "step": idx,
+                "action": action,
+                "status": "ok",
+                "result": r
+            });
+            trace_record(event.clone());
+            event
+        }
         Err(e) => {
             // assert failures set halt=true to stop the sequence immediately.
             let halt = action == "assert";
-            json!({ "step": idx, "action": action, "status": "error", "error": e.to_string(), "halt": halt })
+            let event = json!({
+                "ts": Utc::now().to_rfc3339(),
+                "step": idx,
+                "action": action,
+                "status": "error",
+                "error": e.to_string(),
+                "halt": halt
+            });
+            trace_record(event.clone());
+            event
         }
     }
 }
@@ -152,6 +231,177 @@ async fn run_flow(page: &chromiumoxide::Page, step: &Value) -> Result<Value> {
         "flow_steps": nested_steps.len(),
         "results": results
     }))
+}
+
+async fn run_trace_start(step: &Value) -> Result<Value> {
+        let run_id = step
+                .get("target")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+        let mut st = TRACE_STATE
+                .lock()
+                .map_err(|_| anyhow!("trace_start: trace state lock poisoned"))?;
+        st.enabled = true;
+        st.events.clear();
+        st.run_id = run_id.clone();
+        st.started_at = Some(Utc::now().to_rfc3339());
+        Ok(json!({
+                "trace": "started",
+                "run_id": run_id
+        }))
+}
+
+async fn run_trace_stop() -> Result<Value> {
+        let mut st = TRACE_STATE
+                .lock()
+                .map_err(|_| anyhow!("trace_stop: trace state lock poisoned"))?;
+        st.enabled = false;
+        Ok(json!({
+                "trace": "stopped",
+                "run_id": st.run_id,
+                "events": st.events.len(),
+                "started_at": st.started_at,
+                "stopped_at": Utc::now().to_rfc3339()
+        }))
+}
+
+async fn run_trace_export(step: &Value) -> Result<Value> {
+        let output_path = step.get("target").and_then(|v| v.as_str()).unwrap_or("");
+        let st = TRACE_STATE
+                .lock()
+                .map_err(|_| anyhow!("trace_export: trace state lock poisoned"))?;
+        let payload = json!({
+                "run_id": st.run_id,
+                "started_at": st.started_at,
+                "exported_at": Utc::now().to_rfc3339(),
+                "events": st.events
+        });
+
+        if output_path.is_empty() {
+                return Ok(payload);
+        }
+
+        let path = PathBuf::from(output_path);
+        let data = serde_json::to_vec_pretty(&payload)
+                .map_err(|e| anyhow!("trace_export: serialize failed: {}", e))?;
+        std::fs::write(&path, data)
+                .map_err(|e| anyhow!("trace_export: write failed for '{}': {}", path.display(), e))?;
+
+        Ok(json!({
+                "trace": "exported",
+                "path": path.display().to_string(),
+                "events": st.events.len()
+        }))
+}
+
+fn locator_field<'a>(step: &'a Value, key: &str) -> Option<&'a str> {
+        step.get(key).and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+}
+
+fn build_locator_js(step: &Value) -> (String, String, Option<String>, bool, Option<String>) {
+        let strategy = locator_field(step, "locator_strategy")
+                .unwrap_or("css")
+                .to_string();
+        let locator_value = locator_field(step, "target").unwrap_or("").to_string();
+        let locator_name = locator_field(step, "locator_name").map(|s| s.to_string());
+        let exact = step
+                .get("locator_exact")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+        let scope = locator_field(step, "locator_scope").map(|s| s.to_string());
+        (strategy, locator_value, locator_name, exact, scope)
+}
+
+fn locator_resolve_script(
+        strategy: &str,
+        value: &str,
+        name: Option<&str>,
+        exact: bool,
+        scope: Option<&str>,
+) -> String {
+        let strategy_js = serde_json::to_string(strategy).unwrap_or_else(|_| "\"css\"".to_string());
+        let value_js = serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string());
+        let name_js = serde_json::to_string(name.unwrap_or(""))
+                .unwrap_or_else(|_| "\"\"".to_string());
+        let scope_js = serde_json::to_string(scope.unwrap_or(""))
+                .unwrap_or_else(|_| "\"\"".to_string());
+        format!(
+                r#"(function() {{
+    var strategy = {strategy};
+    var value = {value};
+    var roleName = {name};
+    var exact = {exact};
+    var scopeSel = {scope};
+    var root = scopeSel ? document.querySelector(scopeSel) : document;
+    if (!root) return {{ ok:false, reason:'locator scope not found' }};
+    function norm(s) {{ return (s || '').replace(/\s+/g, ' ').trim(); }}
+    function matchText(actual, wanted) {{
+        if (!wanted) return false;
+        var a = norm(actual).toLowerCase();
+        var w = norm(wanted).toLowerCase();
+        return exact ? a === w : a.indexOf(w) !== -1;
+    }}
+    function visible(el) {{
+        if (!el) return false;
+        var st = window.getComputedStyle(el);
+        var r = el.getBoundingClientRect();
+        return st.display !== 'none' && st.visibility !== 'hidden' && st.opacity !== '0' && r.width > 0 && r.height > 0;
+    }}
+    function firstVisible(list) {{
+        for (var i = 0; i < list.length; i++) if (visible(list[i])) return list[i];
+        return list[0] || null;
+    }}
+
+    var el = null;
+    if (strategy === 'css') {{
+        el = root.querySelector(value);
+    }} else if (strategy === 'text') {{
+        var candidates = root.querySelectorAll('button,a,[role],label,div,span,p,h1,h2,h3,h4,h5,h6,li');
+        var out = [];
+        for (var i = 0; i < candidates.length; i++) if (matchText(candidates[i].innerText || candidates[i].textContent, value)) out.push(candidates[i]);
+        el = firstVisible(out);
+    }} else if (strategy === 'role') {{
+        var roleSel = '[role="' + value + '"]';
+        var roleCands = Array.prototype.slice.call(root.querySelectorAll(roleSel));
+        if (value === 'button') roleCands = roleCands.concat(Array.prototype.slice.call(root.querySelectorAll('button,input[type="button"],input[type="submit"]')));
+        if (value === 'textbox') roleCands = roleCands.concat(Array.prototype.slice.call(root.querySelectorAll('input[type="text"],textarea,input:not([type])')));
+        if (roleName) roleCands = roleCands.filter(function(n) {{ return matchText(n.innerText || n.textContent || n.getAttribute('aria-label'), roleName); }});
+        el = firstVisible(roleCands);
+    }} else if (strategy === 'label') {{
+        var labels = root.querySelectorAll('label');
+        for (var j = 0; j < labels.length; j++) {{
+            var lb = labels[j];
+            if (!matchText(lb.innerText || lb.textContent, value)) continue;
+            var forId = lb.getAttribute('for');
+            if (forId) {{
+                el = document.getElementById(forId);
+            }} else {{
+                el = lb.querySelector('input,textarea,select');
+            }}
+            if (el) break;
+        }}
+    }} else if (strategy === 'placeholder') {{
+        var inputs = root.querySelectorAll('input[placeholder],textarea[placeholder]');
+        for (var k = 0; k < inputs.length; k++) {{
+            if (matchText(inputs[k].getAttribute('placeholder'), value)) {{ el = inputs[k]; break; }}
+        }}
+    }} else if (strategy === 'testid') {{
+        var tid = value.replace(/"/g, '\\"');
+        el = root.querySelector('[data-testid="' + tid + '"]');
+    }} else {{
+        return {{ ok:false, reason:'unknown locator strategy: ' + strategy }};
+    }}
+
+    if (!el) return {{ ok:false, reason:'locator did not match any element' }};
+    return {{ ok:true, strategy:strategy, tag:(el.tagName || '').toLowerCase() }};
+}})()"#,
+                strategy = strategy_js,
+                value = value_js,
+                name = name_js,
+                exact = if exact { "true" } else { "false" },
+                scope = scope_js
+        )
 }
 
 // ── Individual action implementations ────────────────────────────────────────
@@ -213,6 +463,484 @@ async fn run_type(
         .await
         .map_err(|e| anyhow!("type: dispatch failed: {}", e))?;
     Ok(json!({ "typed": text, "into": selector }))
+}
+
+async fn run_click_locator(page: &chromiumoxide::Page, step: &Value, timeout_ms: u64) -> Result<Value> {
+        let (strategy, value, name, exact, scope) = build_locator_js(step);
+        if value.is_empty() {
+                return Err(anyhow!("click_locator: 'target' locator value is required"));
+        }
+        let script = format!(
+                r#"(function() {{
+    var found = {resolve};
+    if (!found.ok) return found;
+    var strategy = {strategy};
+    var value = {value};
+    var roleName = {name};
+    var exact = {exact};
+    var scopeSel = {scope};
+    var root = scopeSel ? document.querySelector(scopeSel) : document;
+    if (!root) return {{ ok:false, reason:'locator scope not found' }};
+    function norm(s) {{ return (s || '').replace(/\s+/g, ' ').trim(); }}
+    function matchText(actual, wanted) {{
+        if (!wanted) return false;
+        var a = norm(actual).toLowerCase();
+        var w = norm(wanted).toLowerCase();
+        return exact ? a === w : a.indexOf(w) !== -1;
+    }}
+    function visible(el) {{
+        if (!el) return false;
+        var st = window.getComputedStyle(el);
+        var r = el.getBoundingClientRect();
+        return st.display !== 'none' && st.visibility !== 'hidden' && st.opacity !== '0' && r.width > 0 && r.height > 0;
+    }}
+    function firstVisible(list) {{
+        for (var i = 0; i < list.length; i++) if (visible(list[i])) return list[i];
+        return list[0] || null;
+    }}
+    function find() {{
+        var el = null;
+        if (strategy === 'css') el = root.querySelector(value);
+        else if (strategy === 'text') {{
+            var c = root.querySelectorAll('button,a,[role],label,div,span,p,h1,h2,h3,h4,h5,h6,li');
+            var out = [];
+            for (var i = 0; i < c.length; i++) if (matchText(c[i].innerText || c[i].textContent, value)) out.push(c[i]);
+            el = firstVisible(out);
+        }} else if (strategy === 'role') {{
+            var roleSel = '[role="' + value + '"]';
+            var roleCands = Array.prototype.slice.call(root.querySelectorAll(roleSel));
+            if (value === 'button') roleCands = roleCands.concat(Array.prototype.slice.call(root.querySelectorAll('button,input[type="button"],input[type="submit"]')));
+            if (value === 'textbox') roleCands = roleCands.concat(Array.prototype.slice.call(root.querySelectorAll('input[type="text"],textarea,input:not([type])')));
+            if (roleName) roleCands = roleCands.filter(function(n) {{ return matchText(n.innerText || n.textContent || n.getAttribute('aria-label'), roleName); }});
+            el = firstVisible(roleCands);
+        }} else if (strategy === 'label') {{
+            var labels = root.querySelectorAll('label');
+            for (var j = 0; j < labels.length; j++) {{
+                var lb = labels[j];
+                if (!matchText(lb.innerText || lb.textContent, value)) continue;
+                var forId = lb.getAttribute('for');
+                if (forId) el = document.getElementById(forId);
+                else el = lb.querySelector('input,textarea,select');
+                if (el) break;
+            }}
+        }} else if (strategy === 'placeholder') {{
+            var inputs = root.querySelectorAll('input[placeholder],textarea[placeholder]');
+            for (var k = 0; k < inputs.length; k++) if (matchText(inputs[k].getAttribute('placeholder'), value)) {{ el = inputs[k]; break; }}
+        }} else if (strategy === 'testid') {{
+            var tid = value.replace(/"/g, '\\"');
+            el = root.querySelector('[data-testid="' + tid + '"]');
+        }}
+        return el;
+    }}
+    var el = find();
+    if (!el) return {{ ok:false, reason:'locator did not match any element' }};
+    el.click();
+    return {{ ok:true, strategy:strategy, clicked:value, tag:(el.tagName || '').toLowerCase() }};
+}})()"#,
+                resolve = locator_resolve_script(&strategy, &value, name.as_deref(), exact, scope.as_deref()),
+                strategy = serde_json::to_string(&strategy).unwrap_or_else(|_| "\"css\"".to_string()),
+                value = serde_json::to_string(&value).unwrap_or_else(|_| "\"\"".to_string()),
+                name = serde_json::to_string(name.as_deref().unwrap_or(""))
+                        .unwrap_or_else(|_| "\"\"".to_string()),
+                exact = if exact { "true" } else { "false" },
+                scope = serde_json::to_string(scope.as_deref().unwrap_or(""))
+                        .unwrap_or_else(|_| "\"\"".to_string())
+        );
+
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut last = Value::Null;
+        loop {
+                let remote = page
+                        .evaluate(script.clone())
+                        .await
+                        .map_err(|e| anyhow!("click_locator: evaluate failed: {}", e))?;
+                let result = remote.into_value::<Value>().unwrap_or(Value::Null);
+                if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+                        return Ok(result);
+                }
+                last = result;
+                if Instant::now() >= deadline {
+                        return Err(anyhow!("click_locator timed out after {}ms: {}", timeout_ms, last));
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+}
+
+async fn run_type_locator(page: &chromiumoxide::Page, step: &Value, timeout_ms: u64) -> Result<Value> {
+        let (strategy, value, name, exact, scope) = build_locator_js(step);
+        let text = step.get("value").and_then(|v| v.as_str()).unwrap_or("");
+        if value.is_empty() {
+                return Err(anyhow!("type_locator: 'target' locator value is required"));
+        }
+        if text.is_empty() {
+                return Err(anyhow!("type_locator: 'value' text is required"));
+        }
+        let text_js = serde_json::to_string(text).unwrap_or_else(|_| "\"\"".to_string());
+        let script = format!(
+                r#"(function() {{
+    var strategy = {strategy};
+    var value = {value};
+    var roleName = {name};
+    var exact = {exact};
+    var scopeSel = {scope};
+    var txt = {text};
+    var root = scopeSel ? document.querySelector(scopeSel) : document;
+    if (!root) return {{ ok:false, reason:'locator scope not found' }};
+    function norm(s) {{ return (s || '').replace(/\s+/g, ' ').trim(); }}
+    function matchText(actual, wanted) {{
+        if (!wanted) return false;
+        var a = norm(actual).toLowerCase();
+        var w = norm(wanted).toLowerCase();
+        return exact ? a === w : a.indexOf(w) !== -1;
+    }}
+    function firstVisible(list) {{
+        for (var i = 0; i < list.length; i++) {{
+            var el = list[i];
+            var st = window.getComputedStyle(el);
+            var r = el.getBoundingClientRect();
+            if (st.display !== 'none' && st.visibility !== 'hidden' && st.opacity !== '0' && r.width > 0 && r.height > 0) return el;
+        }}
+        return list[0] || null;
+    }}
+    var el = null;
+    if (strategy === 'css') el = root.querySelector(value);
+    else if (strategy === 'label') {{
+        var labels = root.querySelectorAll('label');
+        for (var j = 0; j < labels.length; j++) {{
+            var lb = labels[j];
+            if (!matchText(lb.innerText || lb.textContent, value)) continue;
+            var forId = lb.getAttribute('for');
+            if (forId) el = document.getElementById(forId);
+            else el = lb.querySelector('input,textarea,select');
+            if (el) break;
+        }}
+    }} else if (strategy === 'placeholder') {{
+        var inputs = root.querySelectorAll('input[placeholder],textarea[placeholder]');
+        for (var k = 0; k < inputs.length; k++) if (matchText(inputs[k].getAttribute('placeholder'), value)) {{ el = inputs[k]; break; }}
+    }} else if (strategy === 'testid') {{
+        var tid = value.replace(/"/g, '\\"');
+        el = root.querySelector('[data-testid="' + tid + '"]');
+    }} else if (strategy === 'text') {{
+        var c = root.querySelectorAll('input,textarea,[contenteditable="true"]');
+        var out = [];
+        for (var i = 0; i < c.length; i++) {{
+            var n = c[i];
+            if (matchText(n.getAttribute('aria-label') || n.placeholder || n.name || n.id, value)) out.push(n);
+        }}
+        el = firstVisible(out);
+    }} else if (strategy === 'role') {{
+        var roleSel = '[role="' + value + '"]';
+        var roleCands = Array.prototype.slice.call(root.querySelectorAll(roleSel));
+        if (value === 'textbox') roleCands = roleCands.concat(Array.prototype.slice.call(root.querySelectorAll('input[type="text"],textarea,input:not([type])')));
+        if (roleName) roleCands = roleCands.filter(function(n) {{ return matchText(n.innerText || n.textContent || n.getAttribute('aria-label'), roleName); }});
+        el = firstVisible(roleCands);
+    }}
+    if (!el) return {{ ok:false, reason:'locator did not match any input-like element' }};
+    el.focus();
+    if ('value' in el) el.value = txt;
+    else el.textContent = txt;
+    el.dispatchEvent(new Event('input', {{ bubbles:true }}));
+    el.dispatchEvent(new Event('change', {{ bubbles:true }}));
+    return {{ ok:true, strategy:strategy, typed:txt, tag:(el.tagName || '').toLowerCase() }};
+}})()"#,
+                strategy = serde_json::to_string(&strategy).unwrap_or_else(|_| "\"css\"".to_string()),
+                value = serde_json::to_string(&value).unwrap_or_else(|_| "\"\"".to_string()),
+                name = serde_json::to_string(name.as_deref().unwrap_or(""))
+                        .unwrap_or_else(|_| "\"\"".to_string()),
+                exact = if exact { "true" } else { "false" },
+                scope = serde_json::to_string(scope.as_deref().unwrap_or(""))
+                        .unwrap_or_else(|_| "\"\"".to_string()),
+                text = text_js
+        );
+
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut last = Value::Null;
+        loop {
+                let remote = page
+                        .evaluate(script.clone())
+                        .await
+                        .map_err(|e| anyhow!("type_locator: evaluate failed: {}", e))?;
+                let result = remote.into_value::<Value>().unwrap_or(Value::Null);
+                if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+                        return Ok(result);
+                }
+                last = result;
+                if Instant::now() >= deadline {
+                        return Err(anyhow!("type_locator timed out after {}ms: {}", timeout_ms, last));
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+}
+
+async fn run_wait_for_locator(page: &chromiumoxide::Page, step: &Value, timeout_ms: u64) -> Result<Value> {
+        let (strategy, value, name, exact, scope) = build_locator_js(step);
+        if value.is_empty() {
+                return Err(anyhow!("wait_for_locator: 'target' locator value is required"));
+        }
+        let script = locator_resolve_script(&strategy, &value, name.as_deref(), exact, scope.as_deref());
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut last = Value::Null;
+        loop {
+                let remote = page
+                        .evaluate(script.clone())
+                        .await
+                        .map_err(|e| anyhow!("wait_for_locator: evaluate failed: {}", e))?;
+                let result = remote.into_value::<Value>().unwrap_or(Value::Null);
+                if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+                        return Ok(json!({ "found": value, "strategy": strategy }));
+                }
+                last = result;
+                if Instant::now() >= deadline {
+                        return Err(anyhow!("wait_for_locator timed out after {}ms: {}", timeout_ms, last));
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+}
+
+async fn run_assert_locator(
+        page: &chromiumoxide::Page,
+        step: &Value,
+        condition: &str,
+        timeout_ms: u64,
+) -> Result<Value> {
+        let (strategy, value, name, exact, scope) = build_locator_js(step);
+        if value.is_empty() {
+                return Err(anyhow!("assert_locator: 'target' locator value is required"));
+        }
+        let expected_value = step.get("value").and_then(|v| v.as_str()).unwrap_or("");
+        let resolve = locator_resolve_script(&strategy, &value, name.as_deref(), exact, scope.as_deref());
+        let expected_js = serde_json::to_string(expected_value).unwrap_or_else(|_| "\"\"".to_string());
+        let condition_js = serde_json::to_string(condition).unwrap_or_else(|_| "\"contains_text\"".to_string());
+
+        let script = format!(
+                r#"(function() {{
+    var cond = {condition};
+    var expected = {expected};
+    var resolved = {resolve};
+    if (!resolved.ok) {{
+        return cond === 'is_hidden' ? {{ ok:true, reason:'not found counts as hidden' }} : resolved;
+    }}
+    var strategy = {strategy};
+    var value = {value};
+    var roleName = {name};
+    var exact = {exact};
+    var scopeSel = {scope};
+    var root = scopeSel ? document.querySelector(scopeSel) : document;
+    function norm(s) {{ return (s || '').replace(/\s+/g, ' ').trim(); }}
+    function matchText(actual, wanted) {{
+        if (!wanted) return false;
+        var a = norm(actual).toLowerCase();
+        var w = norm(wanted).toLowerCase();
+        return exact ? a === w : a.indexOf(w) !== -1;
+    }}
+    function firstVisible(list) {{
+        for (var i = 0; i < list.length; i++) {{
+            var el = list[i];
+            var st = window.getComputedStyle(el);
+            var r = el.getBoundingClientRect();
+            if (st.display !== 'none' && st.visibility !== 'hidden' && st.opacity !== '0' && r.width > 0 && r.height > 0) return el;
+        }}
+        return list[0] || null;
+    }}
+    function find() {{
+        var el = null;
+        if (strategy === 'css') el = root.querySelector(value);
+        else if (strategy === 'text') {{
+            var c = root.querySelectorAll('button,a,[role],label,div,span,p,h1,h2,h3,h4,h5,h6,li');
+            var out = [];
+            for (var i = 0; i < c.length; i++) if (matchText(c[i].innerText || c[i].textContent, value)) out.push(c[i]);
+            el = firstVisible(out);
+        }} else if (strategy === 'role') {{
+            var roleSel = '[role="' + value + '"]';
+            var roleCands = Array.prototype.slice.call(root.querySelectorAll(roleSel));
+            if (value === 'button') roleCands = roleCands.concat(Array.prototype.slice.call(root.querySelectorAll('button,input[type="button"],input[type="submit"]')));
+            if (value === 'textbox') roleCands = roleCands.concat(Array.prototype.slice.call(root.querySelectorAll('input[type="text"],textarea,input:not([type])')));
+            if (roleName) roleCands = roleCands.filter(function(n) {{ return matchText(n.innerText || n.textContent || n.getAttribute('aria-label'), roleName); }});
+            el = firstVisible(roleCands);
+        }} else if (strategy === 'label') {{
+            var labels = root.querySelectorAll('label');
+            for (var j = 0; j < labels.length; j++) {{
+                var lb = labels[j];
+                if (!matchText(lb.innerText || lb.textContent, value)) continue;
+                var forId = lb.getAttribute('for');
+                if (forId) el = document.getElementById(forId);
+                else el = lb.querySelector('input,textarea,select');
+                if (el) break;
+            }}
+        }} else if (strategy === 'placeholder') {{
+            var inputs = root.querySelectorAll('input[placeholder],textarea[placeholder]');
+            for (var k = 0; k < inputs.length; k++) if (matchText(inputs[k].getAttribute('placeholder'), value)) {{ el = inputs[k]; break; }}
+        }} else if (strategy === 'testid') {{
+            var tid = value.replace(/"/g, '\\"');
+            el = root.querySelector('[data-testid="' + tid + '"]');
+        }}
+        return el;
+    }}
+    var el = find();
+    if (!el) return cond === 'is_hidden' ? {{ ok:true }} : {{ ok:false, reason:'locator element not found' }};
+    var st = window.getComputedStyle(el);
+    var r = el.getBoundingClientRect();
+    var visible = st.display !== 'none' && st.visibility !== 'hidden' && st.opacity !== '0' && r.width > 0 && r.height > 0;
+    if (cond === 'is_visible') return {{ ok:visible }};
+    if (cond === 'is_hidden') return {{ ok:!visible }};
+    var text = norm(el.innerText || el.textContent || el.value || '');
+    var exp = norm(expected);
+    return {{ ok: text.toLowerCase().indexOf(exp.toLowerCase()) !== -1, actual:text.slice(0,240) }};
+}})()"#,
+                condition = condition_js,
+                expected = expected_js,
+                resolve = resolve,
+                strategy = serde_json::to_string(&strategy).unwrap_or_else(|_| "\"css\"".to_string()),
+                value = serde_json::to_string(&value).unwrap_or_else(|_| "\"\"".to_string()),
+                name = serde_json::to_string(name.as_deref().unwrap_or(""))
+                        .unwrap_or_else(|_| "\"\"".to_string()),
+                exact = if exact { "true" } else { "false" },
+                scope = serde_json::to_string(scope.as_deref().unwrap_or(""))
+                        .unwrap_or_else(|_| "\"\"".to_string())
+        );
+
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut last = Value::Null;
+        loop {
+                let remote = page
+                        .evaluate(script.clone())
+                        .await
+                        .map_err(|e| anyhow!("assert_locator: evaluate failed: {}", e))?;
+                let result = remote.into_value::<Value>().unwrap_or(Value::Null);
+                if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+                        return Ok(json!({
+                                "asserted": condition,
+                                "locator_strategy": strategy,
+                                "target": value,
+                                "passed": true,
+                                "timeout_ms": timeout_ms
+                        }));
+                }
+                last = result;
+                if Instant::now() >= deadline {
+                        return Err(anyhow!(
+                                "assert_locator failed after {}ms (condition={}): {}",
+                                timeout_ms,
+                                condition,
+                                last
+                        ));
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+}
+
+async fn run_storage_checkpoint(page: &chromiumoxide::Page, key: &str) -> Result<Value> {
+        if key.is_empty() {
+                return Err(anyhow!("storage_checkpoint: 'target' key is required"));
+        }
+        let state = run_storage_state_export(page).await?;
+        let mut fixtures = STORAGE_FIXTURES
+                .lock()
+                .map_err(|_| anyhow!("storage_checkpoint: fixture state lock poisoned"))?;
+        fixtures.insert(key.to_string(), state.clone());
+        Ok(json!({ "checkpointed": key, "keys": fixtures.len() }))
+}
+
+async fn run_storage_rollback(page: &chromiumoxide::Page, key: &str) -> Result<Value> {
+        if key.is_empty() {
+                return Err(anyhow!("storage_rollback: 'target' key is required"));
+        }
+    let state = {
+        let fixtures = STORAGE_FIXTURES
+            .lock()
+            .map_err(|_| anyhow!("storage_rollback: fixture state lock poisoned"))?;
+        fixtures
+            .get(key)
+            .cloned()
+            .ok_or_else(|| anyhow!("storage_rollback: checkpoint '{}' not found", key))?
+    };
+        let raw = serde_json::to_string(&state)
+                .map_err(|e| anyhow!("storage_rollback: serialize failed: {}", e))?;
+        let result = run_storage_state_import(page, &raw).await?;
+        Ok(json!({ "rolled_back": key, "result": result }))
+}
+
+async fn run_network_tap(page: &chromiumoxide::Page) -> Result<Value> {
+        let script = r#"
+(function() {
+    if (window.__cortexNetworkTapInstalled) {
+        return { status: 'already_installed' };
+    }
+    window.__cortexNetworkTapInstalled = true;
+    window.__cortexNetworkEvents = window.__cortexNetworkEvents || [];
+    var maxEvents = 400;
+    function pushEvent(ev) {
+        try {
+            window.__cortexNetworkEvents.push(ev);
+            if (window.__cortexNetworkEvents.length > maxEvents) {
+                window.__cortexNetworkEvents.splice(0, window.__cortexNetworkEvents.length - maxEvents);
+            }
+        } catch (_) {}
+    }
+
+    var origFetch = window.fetch ? window.fetch.bind(window) : null;
+    if (origFetch) {
+        window.fetch = async function(resource, init) {
+            var url = typeof resource === 'string' ? resource : (resource && resource.url ? resource.url : String(resource));
+            var method = (init && init.method) || 'GET';
+            var start = Date.now();
+            try {
+                var res = await origFetch(resource, init);
+                pushEvent({ ts: new Date().toISOString(), transport:'fetch', method: method, url: url, status: res.status, ok: res.ok, duration_ms: Date.now() - start });
+                return res;
+            } catch (err) {
+                pushEvent({ ts: new Date().toISOString(), transport:'fetch', method: method, url: url, error: String(err), duration_ms: Date.now() - start });
+                throw err;
+            }
+        };
+    }
+
+    var OrigXHR = XMLHttpRequest;
+    XMLHttpRequest = function() {
+        var xhr = new OrigXHR();
+        var method = 'GET';
+        var url = '';
+        var start = 0;
+        var open = xhr.open;
+        xhr.open = function(m, u) {
+            method = m || 'GET';
+            url = u || '';
+            return open.apply(xhr, arguments);
+        };
+        var send = xhr.send;
+        xhr.send = function() {
+            start = Date.now();
+            xhr.addEventListener('loadend', function() {
+                pushEvent({ ts: new Date().toISOString(), transport:'xhr', method: method, url: url, status: xhr.status, ok: xhr.status >= 200 && xhr.status < 400, duration_ms: Date.now() - start });
+            });
+            return send.apply(xhr, arguments);
+        };
+        return xhr;
+    };
+
+    return { status: 'installed' };
+})();
+"#;
+
+        page.evaluate(script)
+                .await
+                .map_err(|e| anyhow!("network_tap: evaluate failed: {}", e))?;
+        Ok(json!({ "network_tap": "installed" }))
+}
+
+async fn run_network_dump(page: &chromiumoxide::Page) -> Result<Value> {
+        let script = r#"
+(function() {
+    var events = window.__cortexNetworkEvents || [];
+    var failed = events.filter(function(e) { return !!e.error || (typeof e.status === 'number' && e.status >= 400); }).length;
+    return { total: events.length, failed: failed, events: events };
+})();
+"#;
+        let remote = page
+                .evaluate(script)
+                .await
+                .map_err(|e| anyhow!("network_dump: evaluate failed: {}", e))?;
+        Ok(remote.into_value::<Value>().unwrap_or(Value::Null))
 }
 
 async fn run_evaluate(page: &chromiumoxide::Page, script: &str) -> Result<Value> {
@@ -767,6 +1495,10 @@ async fn run_mock_api(
     url_pattern: &str,
     response_json: &str,
     status_code: u16,
+    method: Option<&str>,
+    response_headers: &str,
+    delay_ms: u64,
+    once: bool,
 ) -> Result<Value> {
     use chromiumoxide::cdp::browser_protocol::page::AddScriptToEvaluateOnNewDocumentParams;
 
@@ -778,7 +1510,17 @@ async fn run_mock_api(
     let js_regex = glob_to_js_regex(url_pattern);
     let regex_js = serde_json::to_string(&js_regex).unwrap_or_default();
     let body_js = serde_json::to_string(response_json).unwrap_or_default();
+    let method_js = serde_json::to_string(
+        &method
+            .map(|m| m.trim().to_ascii_uppercase())
+            .filter(|m| !m.is_empty()),
+    )
+    .unwrap_or_else(|_| "null".to_string());
+    let headers_json: Value = serde_json::from_str(response_headers).unwrap_or_else(|_| json!({}));
+    let headers_js = serde_json::to_string(&headers_json).unwrap_or_else(|_| "{}".to_string());
     let status = status_code as u32;
+    let delay = delay_ms as u32;
+    let once_js = if once { "true" } else { "false" };
 
     let script = format!(
         r#"
@@ -786,18 +1528,38 @@ async fn run_mock_api(
   var _re = new RegExp({regex});
   var _body = {body};
   var _status = {status};
-  function _match(url) {{ return _re.test(url); }}
+    var _method = {method};
+    var _headers = {headers};
+    var _delay = {delay};
+    var _once = {once};
+    var _consumed = false;
+    function _methodMatch(m) {{
+        if (!_method) return true;
+        return String(m || 'GET').toUpperCase() === _method;
+    }}
+    function _match(url, method) {{
+        if (_once && _consumed) return false;
+        return _re.test(url) && _methodMatch(method);
+    }}
+    function _markConsumed() {{ if (_once) _consumed = true; }}
 
   /* ── fetch override ─────────────────────────── */
   var _origFetch = window.fetch ? window.fetch.bind(window) : null;
   window.fetch = function(resource, init) {{
     var url = typeof resource === 'string' ? resource
               : (resource && resource.url ? resource.url : String(resource));
-    if (_match(url)) {{
-      return Promise.resolve(new Response(_body, {{
-        status: _status,
-        headers: {{ 'Content-Type': 'application/json' }}
-      }}));
+        var reqMethod = (init && init.method) || (resource && resource.method) || 'GET';
+        if (_match(url, reqMethod)) {{
+            _markConsumed();
+            return new Promise(function(resolve) {{
+                setTimeout(function() {{
+                    var headers = Object.assign({{ 'Content-Type': 'application/json' }}, _headers || {{}});
+                    resolve(new Response(_body, {{
+                        status: _status,
+                        headers: headers
+                    }}));
+                }}, _delay);
+            }});
     }}
     return _origFetch ? _origFetch(resource, init) : Promise.reject(new Error('fetch unavailable'));
   }};
@@ -807,24 +1569,25 @@ async fn run_mock_api(
   function _MockXHR() {{
     var _xhr = new _OrigXHR();
     var _self = this;
-    var _url = '', _mocked = false;
+        var _url = '', _methodReq = 'GET', _mocked = false;
     this.readyState = 0; this.status = 0; this.statusText = '';
     this.responseText = ''; this.response = '';
     this.onreadystatechange = null; this.onload = null; this.onerror = null;
     this.timeout = 0; this.withCredentials = false;
 
     this.open = function(m, u) {{
-      _url = u; _mocked = _match(u);
+            _url = u; _methodReq = m || 'GET'; _mocked = _match(u, _methodReq);
       if (!_mocked) _xhr.open.apply(_xhr, arguments);
     }};
     this.send = function(body) {{
       if (_mocked) {{
+                _markConsumed();
         setTimeout(function() {{
           _self.readyState = 4; _self.status = _status; _self.statusText = 'OK';
           _self.responseText = _body; _self.response = _body;
           if (_self.onreadystatechange) _self.onreadystatechange();
           if (_self.onload) _self.onload({{ target: _self }});
-        }}, 0);
+                }}, _delay);
       }} else {{
         _xhr.onreadystatechange = function() {{
           _self.readyState = _xhr.readyState; _self.status = _xhr.status;
@@ -838,7 +1601,14 @@ async fn run_mock_api(
       }}
     }};
     this.setRequestHeader = function() {{ if (!_mocked) _xhr.setRequestHeader.apply(_xhr, arguments); }};
-    this.getResponseHeader = function(n) {{ return _mocked ? (n === 'Content-Type' ? 'application/json' : null) : _xhr.getResponseHeader(n); }};
+        this.getResponseHeader = function(n) {{
+            if (!_mocked) return _xhr.getResponseHeader(n);
+            if (!n) return null;
+            var key = String(n).toLowerCase();
+            if (key === 'content-type') return (_headers && _headers['Content-Type']) || (_headers && _headers['content-type']) || 'application/json';
+            var v = (_headers && (_headers[n] || _headers[key])) || null;
+            return v == null ? null : String(v);
+        }};
     this.abort = function() {{ if (!_mocked) _xhr.abort(); }};
     this.addEventListener = function(ev, cb) {{
       if (_mocked && ev === 'load') setTimeout(cb, 0);
@@ -850,10 +1620,21 @@ async fn run_mock_api(
 "#,
         regex = regex_js,
         body = body_js,
-        status = status
+        status = status,
+        method = method_js,
+        headers = headers_js,
+        delay = delay,
+        once = once_js
     );
 
-    debug!("🔀 mock_api pattern='{}' status={}", url_pattern, status_code);
+    debug!(
+        "🔀 mock_api pattern='{}' status={} method={:?} delay_ms={} once={}",
+        url_pattern,
+        status_code,
+        method,
+        delay_ms,
+        once
+    );
 
     // Persist mock across future page loads.
     page.execute(AddScriptToEvaluateOnNewDocumentParams::new(script.clone()))
@@ -868,6 +1649,9 @@ async fn run_mock_api(
     Ok(json!({
         "mocked": url_pattern,
         "status_code": status_code,
+        "method": method,
+        "delay_ms": delay_ms,
+        "once": once,
         "scope": "current page + all future navigations"
     }))
 }

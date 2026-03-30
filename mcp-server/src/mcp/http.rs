@@ -76,6 +76,12 @@ pub async fn call_tool_inner(
     let internal_name = state
         .tool_registry
         .resolve_incoming_tool_name(&request.name)
+        .or_else(|| match request.name.as_str() {
+            "scout_browser_automate" => Some("browser_automate".to_string()),
+            "scout_browser_close" => Some("browser_close".to_string()),
+            "scout_agent_profile_auth" => Some("agent_profile_auth".to_string()),
+            _ => None,
+        })
         .ok_or_else(|| {
             (
                 StatusCode::BAD_REQUEST,
@@ -103,9 +109,15 @@ pub async fn call_tool_inner(
         "non_robot_search" => handlers::non_robot_search::handle(state, &internal_args).await,
         "visual_scout" => handlers::visual_scout::handle(state, &internal_args).await,
         "human_auth_session" => handlers::human_auth_session::handle(state, &internal_args).await,
-        "browser_automate" => handlers::automate::handle(state, &internal_args).await,
-        "browser_close" => handlers::automate::handle_close(state, &internal_args).await,
-        "agent_profile_auth" => handlers::automate::handle_profile_auth(state, &internal_args).await,
+        "browser_automate" | "scout_browser_automate" => {
+            handlers::automate::handle(state, &internal_args).await
+        }
+        "browser_close" | "scout_browser_close" => {
+            handlers::automate::handle_close(state, &internal_args).await
+        }
+        "agent_profile_auth" | "scout_agent_profile_auth" => {
+            handlers::automate::handle_profile_auth(state, &internal_args).await
+        }
         _ => Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {

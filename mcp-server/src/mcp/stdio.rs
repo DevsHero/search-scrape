@@ -204,6 +204,12 @@ impl rmcp::ServerHandler for McpService {
             .state
             .tool_registry
             .resolve_incoming_tool_name(request.name.as_ref())
+            .or_else(|| match request.name.as_ref() {
+                "scout_browser_automate" => Some("browser_automate".to_string()),
+                "scout_browser_close" => Some("browser_close".to_string()),
+                "scout_agent_profile_auth" => Some("agent_profile_auth".to_string()),
+                _ => None,
+            })
             .ok_or_else(|| {
                 ErrorData::new(
                     ErrorCode::METHOD_NOT_FOUND,
@@ -260,13 +266,13 @@ impl rmcp::ServerHandler for McpService {
             "human_auth_session" => convert_http_handler_result(
                 handlers::human_auth_session::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "browser_automate" => convert_http_handler_result(
+            "browser_automate" | "scout_browser_automate" => convert_http_handler_result(
                 handlers::automate::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "browser_close" => convert_http_handler_result(
+            "browser_close" | "scout_browser_close" => convert_http_handler_result(
                 handlers::automate::handle_close(Arc::clone(&self.state), &internal_args).await,
             ),
-            "agent_profile_auth" => convert_http_handler_result(
+            "agent_profile_auth" | "scout_agent_profile_auth" => convert_http_handler_result(
                 handlers::automate::handle_profile_auth(Arc::clone(&self.state), &internal_args).await,
             ),
             _ => Err(ErrorData::new(

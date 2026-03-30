@@ -559,8 +559,7 @@ Set instruction_message to tell the user exactly what to do, e.g. 'Please log in
         description: "Stateful headless browser automation. Executes an ordered sequence of steps in a persistent Brave browser session (~/.cortex-scout/agent_profile). \
 Runs headless — never disrupts the user desktop. Session stays open until scout_browser_close is called. \
 Cookies/login state persist across calls. \
-Steps: navigate (go to URL), click/type/assert with auto-wait timeout, press_key, scroll, evaluate, wait_for_selector, snapshot (DOM summary), screenshot (base64 PNG), mock_api (network mocking), console_tap+console_dump (runtime log capture), and storage_state_export/import/clear (fixture-like state setup). \
-Also supports select_option and drag_drop for richer UI interactions. \
+    Steps: navigate (go to URL), click/type/assert with auto-wait timeout, press_key, scroll, evaluate, wait_for_selector, snapshot (DOM summary), screenshot (base64 PNG), select_option, drag_drop, locator-based actions (click_locator/type_locator/wait_for_locator/assert_locator), trace lifecycle (trace_start/trace_stop/trace_export), network capture (network_tap/network_dump), mock_api (with method/headers/delay/one-shot), and storage_state_export/import/clear plus storage_checkpoint/rollback (fixture-like state setup). \
 run_flow can execute a nested flow in one step for reusable scenario blocks. \
 Use for web automation, form filling, scraping JS-rendered pages, smoke validation, and CI-friendly debugging artifacts. \
 First-time login to a service: use scout_agent_profile_auth to authenticate the profile, then use this tool.",
@@ -579,8 +578,12 @@ First-time login to a service: use scout_agent_profile_auth to authenticate the 
                                          "run_flow",
                                          "evaluate", "wait_for_selector", "snapshot", "screenshot",
                                          "select_option", "drag_drop",
+                                         "click_locator", "type_locator", "wait_for_locator", "assert_locator",
+                                         "trace_start", "trace_stop", "trace_export",
+                                         "network_tap", "network_dump",
                                          "assert", "mock_api", "console_tap", "console_dump",
-                                         "storage_clear", "storage_state_export", "storage_state_import"],
+                                         "storage_clear", "storage_state_export", "storage_state_import",
+                                         "storage_checkpoint", "storage_rollback"],
                                 "description": "The action to perform."
                             },
                             "steps": {
@@ -590,29 +593,63 @@ First-time login to a service: use scout_agent_profile_auth to authenticate the 
                             },
                             "target": {
                                 "type": "string",
-                                "description": "URL (navigate), CSS selector (click/type/wait_for_selector/assert/select_option), source selector (drag_drop), or storage scope (storage_clear: all|local|session|cookies)."
+                                "description": "URL (navigate), CSS selector (click/type/wait_for_selector/assert/select_option), locator value (click_locator/type_locator/wait_for_locator/assert_locator), trace export path (trace_export), source selector (drag_drop), checkpoint key (storage_checkpoint/storage_rollback), or storage scope (storage_clear: all|local|session|cookies)."
                             },
                             "value": {
                                 "type": "string",
-                                "description": "Text to type (type), JS expression (evaluate), expected text/state (assert), option value/text (select_option), destination selector (drag_drop), or JSON payload (storage_state_import)."
+                                "description": "Text to type (type/type_locator), JS expression (evaluate), expected text/state (assert/assert_locator), option value/text (select_option), destination selector (drag_drop), JSON payload (storage_state_import), mock body (mock_api via response_json), or locator/trace metadata fields."
                             },
                             "condition": {
                                 "type": "string",
                                 "enum": ["contains_text", "is_visible", "is_hidden"],
-                                "description": "Assertion condition (for assert). Default: contains_text. assert auto-retries until timeout_ms."
+                                "description": "Assertion condition (for assert/assert_locator). Default: contains_text. Assertions auto-retry until timeout_ms."
+                            },
+                            "locator": {
+                                "type": "string",
+                                "enum": ["css", "text", "role", "label", "placeholder", "testid"],
+                                "description": "Locator strategy for *_locator actions. Default: css."
+                            },
+                            "name": {
+                                "type": "string",
+                                "description": "Optional accessible name for role locators (e.g., role=button + name=Submit)."
+                            },
+                            "exact": {
+                                "type": "boolean",
+                                "description": "Whether locator text matching should be exact. Default false (substring match)."
+                            },
+                            "scope": {
+                                "type": "string",
+                                "description": "Optional CSS selector scope used to limit locator search within a subtree."
                             },
                             "url_pattern": {
                                 "type": "string",
                                 "description": "Glob URL pattern to intercept (for mock_api). Supports * and ? wildcards. Example: '*api/v1/users*'."
                             },
+                            "method": {
+                                "type": "string",
+                                "description": "Optional HTTP method constraint for mock_api (e.g., GET, POST)."
+                            },
                             "response_json": {
                                 "type": "string",
                                 "description": "JSON string to return as the mocked API response body (for mock_api)."
+                            },
+                            "response_headers": {
+                                "type": "object",
+                                "description": "Optional response headers object for mock_api replies."
                             },
                             "status_code": {
                                 "type": "integer",
                                 "default": 200,
                                 "description": "HTTP status code for the mocked response (for mock_api). Default 200."
+                            },
+                            "delay_ms": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Optional delay (ms) before fulfilling a mocked response."
+                            },
+                            "once": {
+                                "type": "boolean",
+                                "description": "If true, mock_api applies only to the first matching request."
                             },
                             "key": {
                                 "type": "string",

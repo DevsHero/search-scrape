@@ -1,0 +1,160 @@
+{
+  "events": [
+    {
+      "action": "trace_start",
+      "result": {
+        "run_id": null,
+        "trace": "started"
+      },
+      "status": "ok",
+      "step": 1,
+      "ts": "2026-03-30T16:30:06.202427+00:00"
+    },
+    {
+      "action": "network_tap",
+      "result": {
+        "network_tap": "installed"
+      },
+      "status": "ok",
+      "step": 2,
+      "ts": "2026-03-30T16:30:06.203642+00:00"
+    },
+    {
+      "action": "wait_for_locator",
+      "result": {
+        "found": "h1",
+        "strategy": "css"
+      },
+      "status": "ok",
+      "step": 3,
+      "ts": "2026-03-30T16:30:06.204924+00:00"
+    },
+    {
+      "action": "assert_locator",
+      "result": {
+        "asserted": "contains_text",
+        "locator_strategy": "css",
+        "passed": true,
+        "target": "h1",
+        "timeout_ms": 10000
+      },
+      "status": "ok",
+      "step": 4,
+      "ts": "2026-03-30T16:30:06.207204+00:00"
+    },
+    {
+      "action": "evaluate",
+      "result": "ok",
+      "status": "ok",
+      "step": 5,
+      "ts": "2026-03-30T16:30:06.209048+00:00"
+    },
+    {
+      "action": "type_locator",
+      "result": {
+        "ok": true,
+        "strategy": "css",
+        "tag": "input",
+        "typed": "hello"
+      },
+      "status": "ok",
+      "step": 6,
+      "ts": "2026-03-30T16:30:06.213672+00:00"
+    },
+    {
+      "action": "click_locator",
+      "result": {
+        "clicked": "button[data-testid='tmp-btn']",
+        "ok": true,
+        "strategy": "css",
+        "tag": "button"
+      },
+      "status": "ok",
+      "step": 7,
+      "ts": "2026-03-30T16:30:06.215580+00:00"
+    },
+    {
+      "action": "evaluate",
+      "result": "1",
+      "status": "ok",
+      "step": 8,
+      "ts": "2026-03-30T16:30:06.216774+00:00"
+    },
+    {
+      "action": "storage_checkpoint",
+      "result": {
+        "checkpointed": "base",
+        "keys": 1
+      },
+      "status": "ok",
+      "step": 9,
+      "ts": "2026-03-30T16:30:08.942849+00:00"
+    },
+    {
+      "action": "evaluate",
+      "result": "1",
+      "status": "ok",
+      "step": 10,
+      "ts": "2026-03-30T16:30:08.944852+00:00"
+    },
+    {
+      "action": "storage_rollback",
+      "result": {
+        "result": {
+          "applied_cookies": 1,
+          "applied_local": 0,
+          "applied_session": 0
+        },
+        "rolled_back": "base"
+      },
+      "status": "ok",
+      "step": 11,
+      "ts": "2026-03-30T16:30:08.946176+00:00"
+    },
+    {
+      "action": "mock_api",
+      "result": {
+        "delay_ms": 20,
+        "method": "GET",
+        "mocked": "*example.com/__mock__*",
+        "once": true,
+        "scope": "current page + all future navigations",
+        "status_code": 200
+      },
+      "status": "ok",
+      "step": 12,
+      "ts": "2026-03-30T16:30:08.947467+00:00"
+    },
+    {
+      "action": "evaluate",
+      "result": "<!doctype html><html lang=\"en\"><head><title>Example Domain</title><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><style>body{background:#eee;width:60vw;margin:15vh auto;font-family:system-ui,sans-serif}h1{font-size:1.5em}div{opacity:0.8}a:link,a:visited{color:#348}</style></head><body><div><h1>Example Domain</h1><p>This domain is for use in documentation examples without needing permission. Avoid use in operations.</p><p><a href=\"https://iana.org/domains/example\">Learn more</a></p></div></body></html>\n",
+      "status": "ok",
+      "step": 13,
+      "ts": "2026-03-30T16:30:09.058015+00:00"
+    },
+    {
+      "action": "network_dump",
+      "result": {
+        "events": [
+          {
+            "duration_ms": 107,
+            "method": "GET",
+            "ok": false,
+            "status": 404,
+            "transport": "fetch",
+            "ts": "2026-03-30T16:30:09.054Z",
+            "url": "/__mock__"
+          }
+        ],
+        "failed": 1,
+        "total": 1
+      },
+      "status": "ok",
+      "step": 14,
+      "ts": "2026-03-30T16:30:09.058462+00:00"
+    }
+  ],
+  "exported_at": "2026-03-30T16:30:09.058492+00:00",
+  "run_id": null,
+  "started_at": "2026-03-30T16:30:06.202423+00:00"
+}
