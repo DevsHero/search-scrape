@@ -7,14 +7,18 @@ Policy:
 ## Unreleased
 
 ### Added
-- Expanded `scout_browser_automate` with parity-focused actions: locator-driven operations (`click_locator`, `type_locator`, `wait_for_locator`, `assert_locator`), trace lifecycle (`trace_start`, `trace_stop`, `trace_export`), network diagnostics (`network_tap`, `network_dump`), and storage fixtures (`storage_checkpoint`, `storage_rollback`).
-- Added richer `mock_api` controls with method matching, custom response headers, delay simulation, and one-shot interception mode.
+- Expanded `scout_browser_automate` with broader Playwright-style parity: `navigate_back`, `hover`, `wait_for`, `resize`, `tabs`, `file_upload`, `fill_form`, `handle_dialog`, `pdf_save`, coordinate mouse actions, route inspection/removal, network state toggling, cookie/localStorage/sessionStorage CRUD, and verification helpers (`generate_locator`, `verify_*`).
+- Added richer `mock_api` controls with persistent route registry, method matching, custom response headers, delay simulation, one-shot interception mode, and route listing/removal.
 
 ### Changed
-- Updated automation tool schema metadata so new actions and parameters are discoverable by MCP clients and agents.
+- Updated automation tool schema metadata so the new actions and parameters are discoverable by MCP clients and agents.
+- Refreshed README, VS Code setup docs, and agent instructions to teach the latest omni-tool browser workflow.
+- Tightened browser automation smoke coverage so release checks validate concrete outputs, mocked-header stripping, route teardown, and generated artifacts instead of only checking for step execution.
 
 ### Fixed
 - Hardened MCP tool-name routing compatibility so both public `scout_*` names and internal `browser_*` names resolve correctly for call dispatch.
+- Fixed the automation handler/session plumbing so tab switching and the expanded browser action surface execute through the same persistent session safely.
+- Fixed `mock_api.remove_headers` so stripped response headers are actually removed from mocked fetch/XHR replies, eliminating a browser-automation false positive in route mocking tests.
 
 ## v3.3.0 (2026-03-30)
 

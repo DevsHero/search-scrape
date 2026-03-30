@@ -33,7 +33,7 @@ It is built to handle the practical failure modes of web retrieval (rate limits,
 | Search | `web_search` (URL discovery) or `web_search(include_content=true)` (search+content in one call) |
 | Fetch and Crawl | `web_fetch(mode="single"|"batch"|"crawl")` (unified fetch family) |
 | Extraction | `extract_fields` (primary structured extraction) |
-| Automation | `scout_browser_automate` (stateful omni-tool), `scout_agent_profile_auth` (HITL portal), `scout_browser_close` |
+| Automation | `scout_browser_automate` / `browser_automate` (stateful omni-tool), `scout_agent_profile_auth`, `scout_browser_close` |
 | Anti-bot handling | CDP rendering, proxy rotation, block-aware retries |
 | HITL | `visual_scout`, `hitl_web_fetch(auth_mode="challenge"|"auth")` |
 | Memory | `memory_search` (LanceDB-backed research history) |
@@ -52,10 +52,23 @@ While CortexScout runs as a standalone tool today, it is designed to integrate w
 
 CortexScout includes a built-in, stateful CDP automation engine designed specifically for AI Agents, completely replacing heavy frameworks like Playwright or Cypress for E2E testing workflows.
 
-- **The Silent Omni-Tool (`scout_browser_automate`)**: Instead of calling dozens of tools, agents pass an array of `steps` (navigate, click, type, scroll, press_key, snapshot, screenshot). The entire sequence executes in a single LLM turn, saving massive amounts of context tokens.
+- **The Silent Omni-Tool (`scout_browser_automate`)**: Instead of calling dozens of browser tools, agents pass one array of `steps`. The runtime now covers Playwright-style action families in one call: navigation, hover/click/type/wait, locator-driven actions, assertions, tabs, screenshots/PDF, file upload, form fill, dialog policy, coordinate mouse actions, route mocking, console/network capture, and cookie/storage CRUD.
 - **Persistent Agent Profile**: Automation runs silently in the background (`--headless=new`) using a dedicated isolated profile (`~/.cortex-scout/agent_profile`). It maintains cookies, localStorage, and session state across tool calls without causing `SingletonLock` collisions with your active desktop browser.
-- **QA Mock & Assert Engine**: Built for enterprise E2E testing. Agents can inject XHR/Fetch network interceptors (`mock_api`) and run fail-fast DOM assertions (`assert`) that immediately halt the sequence if a UI state is incorrect.
+- **QA Mock, Trace, And Verification Engine**: Agents can install route mocks (`mock_api`, `route_list`, `unroute`) with response header overrides/stripping, trace flows (`trace_start`, `trace_stop`, `trace_export`), capture console/network logs, checkpoint browser state, and run both CSS and locator-based assertions plus Playwright-style verification helpers.
 - **The Agent Auth Portal (`scout_agent_profile_auth`)**: If the silent agent encounters a CAPTCHA or complex OAuth login (like Google/Microsoft) on a new domain, this tool launches the agent's profile in a **visible** window. You solve the CAPTCHA once, the cookies are saved, and the agent returns to silent automation forever.
+
+### Playwright-Style Coverage Map
+
+| Capability Area | Cortex Scout Actions |
+|-----------------|----------------------|
+| Navigation and input | `navigate`, `navigate_back`, `click`, `hover`, `type`, `press_key`, `scroll`, `wait_for`, `wait_for_selector`, `wait_for_locator` |
+| Locator and verification | `click_locator`, `type_locator`, `assert`, `assert_locator`, `generate_locator`, `verify_element_visible`, `verify_text_visible`, `verify_list_visible`, `verify_value` |
+| Tabs and media | `tabs`, `resize`, `screenshot`, `snapshot`, `pdf_save`, `file_upload`, `fill_form`, `handle_dialog` |
+| Network and mocks | `network_tap`, `network_dump`, `network_state_set`, `mock_api`, `route_list`, `unroute` |
+| Browser state | `storage_clear`, `storage_state_export`, `storage_state_import`, `storage_checkpoint`, `storage_rollback`, `cookie_*`, `localstorage_*`, `sessionstorage_*` |
+| Low-level pointer control | `mouse_click_xy`, `mouse_down`, `mouse_move_xy`, `mouse_drag_xy`, `mouse_up`, `mouse_wheel` |
+
+The main tradeoff versus raw Playwright MCP is packaging, not capability shape: Cortex Scout keeps the browser surface inside one stateful omni-tool so agents spend fewer turns and fewer tokens coordinating multi-step flows.
 ---
 
 ## Anti-Bot Efficacy & Validation
@@ -286,7 +299,7 @@ Recommended operational flow:
 4. On 403/429: call `proxy_control` with `action:"grab"` to refresh the proxy list, then retry with `use_proxy:true`.
 5. For auth-gated pages: run `visual_scout` when `auth_risk_score >= 0.4`, then use `hitl_web_fetch(auth_mode="challenge")` for CAPTCHA walls or `hitl_web_fetch(auth_mode="auth")` for login walls.
 6. For deep research: `deep_research` handles multi-hop search + scrape + LLM synthesis automatically. Tune `depth` (1–3) and `max_sources` per run cost budget.
-7. For UI automation and E2E testing: use `scout_browser_automate` with step arrays. If blocked by first-time login/CAPTCHA, call `scout_agent_profile_auth`, then resume automation.
+7. For UI automation and E2E testing: use `scout_browser_automate` with step arrays for tabs, locator assertions, screenshots/PDF, route mocks, file uploads, and browser-state setup. If blocked by first-time login/CAPTCHA, call `scout_agent_profile_auth`, then resume automation.
 ---
 
 ## FAQ

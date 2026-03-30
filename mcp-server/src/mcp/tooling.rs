@@ -557,11 +557,10 @@ Set instruction_message to tell the user exactly what to do, e.g. 'Please log in
         name: "browser_automate",
         title: "Browser Automate (Omni-Tool)",
         description: "Stateful headless browser automation. Executes an ordered sequence of steps in a persistent Brave browser session (~/.cortex-scout/agent_profile). \
-Runs headless — never disrupts the user desktop. Session stays open until scout_browser_close is called. \
-Cookies/login state persist across calls. \
-    Steps: navigate (go to URL), click/type/assert with auto-wait timeout, press_key, scroll, evaluate, wait_for_selector, snapshot (DOM summary), screenshot (base64 PNG), select_option, drag_drop, locator-based actions (click_locator/type_locator/wait_for_locator/assert_locator), trace lifecycle (trace_start/trace_stop/trace_export), network capture (network_tap/network_dump), mock_api (with method/headers/delay/one-shot), and storage_state_export/import/clear plus storage_checkpoint/rollback (fixture-like state setup). \
+Runs headless and keeps login/cookie state across calls until scout_browser_close is used. \
+Supports Playwright-style workflows inside one omni-tool: navigation, hover/click/type/wait, locator actions, assertions, tabs, resize, screenshots, PDF export, file upload, form fill, dialog policy, coordinate mouse actions, route mocking, console/network capture, storage checkpoints, cookie/localStorage/sessionStorage CRUD, and verification helpers. \
 run_flow can execute a nested flow in one step for reusable scenario blocks. \
-Use for web automation, form filling, scraping JS-rendered pages, smoke validation, and CI-friendly debugging artifacts. \
+Use for JS-rendered scraping, smoke validation, interactive debugging, and browser-state fixture setup. \
 First-time login to a service: use scout_agent_profile_auth to authenticate the profile, then use this tool.",
         input_schema: serde_json::json!({
             "type": "object",
@@ -574,16 +573,21 @@ First-time login to a service: use scout_agent_profile_auth to authenticate the 
                         "properties": {
                             "action": {
                                 "type": "string",
-                                "enum": ["navigate", "click", "type", "press_key", "scroll",
+                                "enum": ["navigate", "navigate_back", "click", "hover", "type", "press_key", "scroll",
                                          "run_flow",
-                                         "evaluate", "wait_for_selector", "snapshot", "screenshot",
-                                         "select_option", "drag_drop",
-                                         "click_locator", "type_locator", "wait_for_locator", "assert_locator",
-                                         "trace_start", "trace_stop", "trace_export",
-                                         "network_tap", "network_dump",
-                                         "assert", "mock_api", "console_tap", "console_dump",
-                                         "storage_clear", "storage_state_export", "storage_state_import",
-                                         "storage_checkpoint", "storage_rollback"],
+                                         "evaluate", "run_code", "wait_for_selector", "wait_for_locator", "wait_for", "snapshot", "screenshot", "take_screenshot", "resize",
+                                         "select_option", "drag_drop", "file_upload", "fill_form", "handle_dialog", "tabs", "pdf_save",
+                                         "mouse_click_xy", "mouse_down", "mouse_drag_xy", "mouse_move_xy", "mouse_up", "mouse_wheel",
+                                         "click_locator", "type_locator", "assert_locator",
+                                         "assert", "generate_locator", "verify_element_visible", "verify_list_visible", "verify_text_visible", "verify_value",
+                                         "trace_start", "start_tracing", "trace_stop", "stop_tracing", "trace_export",
+                                         "network_tap", "network_dump", "network_requests", "network_state_set",
+                                         "mock_api", "route", "route_list", "unroute", "console_tap", "console_dump", "console_messages",
+                                         "storage_clear", "storage_state_export", "storage_state", "storage_state_import", "set_storage_state",
+                                         "storage_checkpoint", "storage_rollback",
+                                         "cookie_clear", "cookie_delete", "cookie_get", "cookie_list", "cookie_set",
+                                         "localstorage_clear", "localstorage_delete", "localstorage_get", "localstorage_list", "localstorage_set",
+                                         "sessionstorage_clear", "sessionstorage_delete", "sessionstorage_get", "sessionstorage_list", "sessionstorage_set"],
                                 "description": "The action to perform."
                             },
                             "steps": {
@@ -593,16 +597,16 @@ First-time login to a service: use scout_agent_profile_auth to authenticate the 
                             },
                             "target": {
                                 "type": "string",
-                                "description": "URL (navigate), CSS selector (click/type/wait_for_selector/assert/select_option), locator value (click_locator/type_locator/wait_for_locator/assert_locator), trace export path (trace_export), source selector (drag_drop), checkpoint key (storage_checkpoint/storage_rollback), or storage scope (storage_clear: all|local|session|cookies)."
+                                "description": "URL (navigate), CSS selector, locator value, export path, route pattern, tab URL, checkpoint key, or storage scope depending on action."
                             },
                             "value": {
                                 "type": "string",
-                                "description": "Text to type (type/type_locator), JS expression (evaluate), expected text/state (assert/assert_locator), option value/text (select_option), destination selector (drag_drop), JSON payload (storage_state_import), mock body (mock_api via response_json), or locator/trace metadata fields."
+                                "description": "Typed text, JS expression, expected assertion text, select option, destination selector, nested JSON payload, tab sub-action, or mocked response body depending on action."
                             },
                             "condition": {
                                 "type": "string",
                                 "enum": ["contains_text", "is_visible", "is_hidden"],
-                                "description": "Assertion condition (for assert/assert_locator). Default: contains_text. Assertions auto-retry until timeout_ms."
+                                "description": "Assertion condition for assert/assert_locator. Default: contains_text. Assertions auto-retry until timeout_ms."
                             },
                             "locator": {
                                 "type": "string",
@@ -621,9 +625,33 @@ First-time login to a service: use scout_agent_profile_auth to authenticate the 
                                 "type": "string",
                                 "description": "Optional CSS selector scope used to limit locator search within a subtree."
                             },
+                            "filename": {
+                                "type": "string",
+                                "description": "Optional output path for snapshot/screenshot/pdf/console_dump/network_dump/storage_state_export."
+                            },
+                            "type": {
+                                "type": "string",
+                                "description": "Screenshot format (png/jpeg/webp), fill_form field type, or verify_value control type depending on action."
+                            },
+                            "fullPage": {
+                                "type": "boolean",
+                                "description": "When true, screenshot captures beyond the viewport."
+                            },
+                            "width": {
+                                "type": "integer",
+                                "description": "Viewport width for resize."
+                            },
+                            "height": {
+                                "type": "integer",
+                                "description": "Viewport height for resize."
+                            },
                             "url_pattern": {
                                 "type": "string",
                                 "description": "Glob URL pattern to intercept (for mock_api). Supports * and ? wildcards. Example: '*api/v1/users*'."
+                            },
+                            "pattern": {
+                                "type": "string",
+                                "description": "Alias for url_pattern or unroute target pattern."
                             },
                             "method": {
                                 "type": "string",
@@ -636,6 +664,11 @@ First-time login to a service: use scout_agent_profile_auth to authenticate the 
                             "response_headers": {
                                 "type": "object",
                                 "description": "Optional response headers object for mock_api replies."
+                            },
+                            "remove_headers": {
+                                  "type": "array",
+                                  "items": {"type": "string"},
+                                  "description": "Optional header names to strip when defining a mocked route."
                             },
                             "status_code": {
                                 "type": "integer",
@@ -650,6 +683,20 @@ First-time login to a service: use scout_agent_profile_auth to authenticate the 
                             "once": {
                                 "type": "boolean",
                                 "description": "If true, mock_api applies only to the first matching request."
+                            },
+                            "state": {
+                                "type": "string",
+                                "enum": ["online", "offline"],
+                                "description": "Network state for network_state_set."
+                            },
+                            "includeStatic": {
+                                "type": "boolean",
+                                "description": "Include successful resource timing entries in network_dump/network_requests."
+                            },
+                            "level": {
+                                "type": "string",
+                                "enum": ["error", "warning", "info", "debug"],
+                                "description": "Console severity filter for console_dump/console_messages."
                             },
                             "key": {
                                 "type": "string",
@@ -666,10 +713,163 @@ First-time login to a service: use scout_agent_profile_auth to authenticate the 
                                 "default": 500,
                                 "description": "Pixels to scroll (for scroll with direction=down or up). Default 500."
                             },
+                            "time": {
+                                "type": "number",
+                                "description": "Seconds to wait when using wait_for with time-based sleep."
+                            },
+                            "text": {
+                                "type": "string",
+                                "description": "Text to wait for or verify, depending on action."
+                            },
+                            "textGone": {
+                                "type": "string",
+                                "description": "Text that must disappear for wait_for."
+                            },
+                            "button": {
+                                "type": "string",
+                                "enum": ["left", "right", "middle", "back", "forward"],
+                                "description": "Mouse button for click/mouse actions."
+                            },
+                            "doubleClick": {
+                                "type": "boolean",
+                                "description": "When true, click behaves as a double-click."
+                            },
+                            "clickCount": {
+                                "type": "integer",
+                                "description": "Explicit mouse click count override."
+                            },
+                            "delay": {
+                                "type": "integer",
+                                "description": "Optional click delay in milliseconds."
+                            },
+                            "modifiers": {
+                                "type": "array",
+                                "items": {"type": "string", "enum": ["Alt", "Control", "Ctrl", "Meta", "Command", "ControlOrMeta", "Shift"]},
+                                "description": "Keyboard modifiers to hold during click or mouse actions."
+                            },
+                            "submit": {
+                                "type": "boolean",
+                                "description": "When true, type presses Enter after input."
+                            },
+                            "slowly": {
+                                "type": "boolean",
+                                "description": "When true, type enters text character-by-character."
+                            },
+                            "values": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Option list for select_option. First value is used."
+                            },
+                            "paths": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Absolute file paths to upload for file_upload."
+                            },
+                            "fields": {
+                                "type": "array",
+                                "description": "Field definitions for fill_form.",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "string"},
+                                        "selector": {"type": "string"},
+                                        "target": {"type": "string"},
+                                        "type": {"type": "string", "enum": ["textbox", "checkbox", "radio", "combobox", "slider"]},
+                                        "value": {}
+                                    }
+                                }
+                            },
+                            "accept": {
+                                "type": "boolean",
+                                "description": "Whether handle_dialog should accept dialogs."
+                            },
+                            "promptText": {
+                                "type": "string",
+                                "description": "Prompt text returned when handle_dialog accepts window.prompt."
+                            },
+                            "tab_action": {
+                                "type": "string",
+                                "enum": ["list", "new", "select", "close"],
+                                "description": "Optional explicit sub-action for tabs. Value can also be passed via 'value'."
+                            },
+                            "index": {
+                                "type": "integer",
+                                "description": "Tab index used by tabs select/close."
+                            },
+                            "x": {
+                                "type": "number",
+                                "description": "X coordinate for mouse actions."
+                            },
+                            "y": {
+                                "type": "number",
+                                "description": "Y coordinate for mouse actions."
+                            },
+                            "deltaX": {
+                                "type": "number",
+                                "description": "Horizontal wheel delta for mouse_wheel."
+                            },
+                            "deltaY": {
+                                "type": "number",
+                                "description": "Vertical wheel delta for mouse_wheel."
+                            },
+                            "startX": {
+                                "type": "number",
+                                "description": "Drag start X coordinate for mouse_drag_xy."
+                            },
+                            "startY": {
+                                "type": "number",
+                                "description": "Drag start Y coordinate for mouse_drag_xy."
+                            },
+                            "endX": {
+                                "type": "number",
+                                "description": "Drag end X coordinate for mouse_drag_xy."
+                            },
+                            "endY": {
+                                "type": "number",
+                                "description": "Drag end Y coordinate for mouse_drag_xy."
+                            },
+                            "role": {
+                                "type": "string",
+                                "description": "Accessible role used by verify_element_visible."
+                            },
+                            "accessibleName": {
+                                "type": "string",
+                                "description": "Accessible name used with verify_element_visible role matching."
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Expected visible list items for verify_list_visible."
+                            },
+                            "domain": {
+                                "type": "string",
+                                "description": "Cookie domain filter or set target."
+                            },
+                            "path": {
+                                "type": "string",
+                                "description": "Cookie path filter or set target."
+                            },
+                            "secure": {
+                                "type": "boolean",
+                                "description": "Cookie secure flag for cookie_set."
+                            },
+                            "httpOnly": {
+                                "type": "boolean",
+                                "description": "Cookie HttpOnly flag for cookie_set."
+                            },
+                            "sameSite": {
+                                "type": "string",
+                                "enum": ["Strict", "Lax", "None"],
+                                "description": "Cookie same-site mode for cookie_set."
+                            },
+                            "expires": {
+                                "type": "number",
+                                "description": "Cookie expiry as Unix epoch seconds for cookie_set."
+                            },
                             "timeout_ms": {
                                 "type": "integer",
                                 "default": 10000,
-                                "description": "Timeout for wait_for_selector, click, type, and assert auto-wait retries in milliseconds (default 10000)."
+                                "description": "Timeout for waits, actions, and assertions in milliseconds."
                             }
                         },
                         "required": ["action"]

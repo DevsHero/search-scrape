@@ -105,10 +105,19 @@ After editing any MCP config, **restart VS Code** (Cmd+Q / Alt+F4) to reload the
 | `proxy_control` | Rotate / list / test outbound proxies |
 | `visual_scout` | Headless screenshot (confirm auth gates) |
 | `hitl_web_fetch` | Unified visible-browser HITL. Use `auth_mode="challenge"|"auth"` |
+| `browser_automate` / `scout_browser_automate` | Stateful browser omni-tool for navigation, locators, tabs, screenshots/PDF, file upload, mocks, diagnostics, and browser-state setup |
+| `browser_close` / `scout_browser_close` | Close the persistent automation session |
+| `agent_profile_auth` / `scout_agent_profile_auth` | Visible login bootstrap for first-time auth, OAuth, 2FA, or CAPTCHA |
 
 Legacy names (`web_search_json`, `web_fetch_batch`, `web_crawl`, `fetch_then_extract`, `human_auth_session`) remain callable as compatibility aliases.
 
 > `hitl_web_fetch` requires the binary built with `--all-features`.
+
+### Browser automation notes
+
+- Prefer one `scout_browser_automate` call with a `steps` array instead of splitting a workflow across many tool turns.
+- The automation surface now includes Playwright-style families: `tabs`, locator actions (`click_locator`, `assert_locator`), `wait_for`, `handle_dialog`, `file_upload`, `fill_form`, `mock_api`/`route_list`/`unroute`, `console_dump`, `network_dump`, `storage_state_*`, `cookie_*`, `localstorage_*`, `sessionstorage_*`, and `pdf_save`.
+- If a domain needs an initial visible login, use `scout_agent_profile_auth` once, then return to headless automation.
 
 ---
 

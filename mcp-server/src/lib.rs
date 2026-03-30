@@ -1,3 +1,5 @@
+#![recursion_limit = "512"]
+
 pub mod cdp;
 pub mod core;
 pub mod features;

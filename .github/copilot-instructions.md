@@ -62,7 +62,15 @@ Unified HITL escalation tool via `auth_mode`:
 ### `scout_browser_automate`
 Stateful headless browser automation for workflows and smoke tests.
 - Use with `scout_browser_close` cleanup.
-- Supports assert auto-retries, mock API, console capture, and storage state import/export.
+- Prefer this over Playwright-style multi-tool sequences when the task is one browser workflow.
+- Core action families now include:
+- navigation/input: `navigate`, `navigate_back`, `hover`, `click`, `type`, `press_key`, `scroll`, `wait_for`, `wait_for_selector`, `wait_for_locator`
+- locator/assert helpers: `click_locator`, `type_locator`, `assert`, `assert_locator`, `generate_locator`, `verify_element_visible`, `verify_text_visible`, `verify_list_visible`, `verify_value`
+- browser/session control: `tabs`, `resize`, `handle_dialog`, `file_upload`, `fill_form`, `pdf_save`, `screenshot`, `snapshot`
+- diagnostics/state: `trace_start`/`trace_stop`/`trace_export`, `console_tap`/`console_dump`, `network_tap`/`network_dump`, `mock_api`/`route_list`/`unroute` (including header overrides/stripping), `storage_state_*`, `storage_checkpoint`/`storage_rollback`, `cookie_*`, `localstorage_*`, `sessionstorage_*`
+- Use output file parameters like `filename` when you need artifacts persisted to disk.
+- Use `tabs` instead of opening separate browser sessions for multi-page flows.
+- For first-time auth on a domain, stop and use `scout_agent_profile_auth`, then resume automation.
 
 ---
 
@@ -110,4 +118,4 @@ These remain callable for backward compatibility, but agents should prefer the u
 ## Browser Automation Scope
 
 - Use `scout_browser_automate` for exploratory workflows, smoke validation, environment checks, and live debugging.
-- Keep Playwright for full regression suites that need fixtures, parallel runners, rich traces/videos, and CI-native reporting.
+- Keep Playwright only for full regression suites that truly need its own test runner, fixture model, parallel worker orchestration, or richer CI reporting/video traces.
