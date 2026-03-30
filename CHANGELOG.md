@@ -4,7 +4,7 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
-## Unreleased
+## v3.3.0 (2026-03-30)
 
 ### Added
 - Unified the public MCP tool surface around grouped calls: `web_search(include_content=true)`, `web_fetch(mode="single"|"batch"|"crawl")`, and `hitl_web_fetch(auth_mode="challenge"|"auth")`.
