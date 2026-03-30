@@ -106,6 +106,8 @@ cd cortex-scout
 cargo build --release --manifest-path mcp-server/Cargo.toml --bin cortex-scout-mcp
 ```
 
+This works from the repository root because the manifest path is explicit.
+
 Full build (includes `hitl_web_fetch` / visible-browser HITL):
 
 ```bash

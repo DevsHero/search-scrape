@@ -1,0 +1,20 @@
+{
+  "servers": {
+    "cortex-scout": {
+      "type": "stdio",
+      "cwd": "${workspaceFolder}",
+      "command": "env",
+      "args": [
+        "RUST_LOG=warn",
+        "SEARCH_ENGINES=google,bing,duckduckgo,brave",
+        "LANCEDB_URI=./lancedb",
+        "HTTP_TIMEOUT_SECS=30",
+        "HTTP_CONNECT_TIMEOUT_SECS=10",
+        "MAX_CONTENT_CHARS=10000",
+        "IP_LIST_PATH=./ip.txt",
+        "PROXY_SOURCE_PATH=./proxy_source.json",
+        "./mcp-server/target/release/cortex-scout-mcp"
+      ]
+    }
+  }
+}
