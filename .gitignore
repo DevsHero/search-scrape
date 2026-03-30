@@ -8,7 +8,7 @@ mcp-server/target
 # (Optional) Local-only files
 # If you create a private proxies.yaml with credentials, keep it untracked.
 proxies.yaml
-
+.vscode/
 # Scrapy
 scrapy-service/webspider/httpcache/
 scrapy-service/webspider/.scrapy/

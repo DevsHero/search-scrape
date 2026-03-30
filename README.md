@@ -92,18 +92,24 @@ curl http://localhost:5000/health
 
 ### Option B — Build from source
 
+Install `protoc` first. `lance-encoding` uses Protocol Buffers during the release build, so `protoc` must be on your PATH.
+
+- macOS: `brew install protobuf`
+- Ubuntu/Debian: `sudo apt-get install -y protobuf-compiler`
+- Fedora: `sudo dnf install -y protobuf-compiler`
+
 Basic build (search, scrape, deep research, memory):
 
 ```bash
 git clone https://github.com/cortex-works/cortex-scout.git
-cd cortex-scout/mcp-server
-cargo build --release --bin cortex-scout-mcp
+cd cortex-scout
+cargo build --release --manifest-path mcp-server/Cargo.toml --bin cortex-scout-mcp
 ```
 
 Full build (includes `hitl_web_fetch` / visible-browser HITL):
 
 ```bash
-cargo build --release --all-features --bin cortex-scout-mcp
+cargo build --release --manifest-path mcp-server/Cargo.toml --all-features --bin cortex-scout-mcp
 ```
 
 If you also want the optional HTTP server binary, build it explicitly with `cargo build --release --bin cortex-scout`.
