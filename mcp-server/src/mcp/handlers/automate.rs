@@ -17,6 +17,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::{LazyLock, Mutex};
@@ -73,6 +74,37 @@ struct TraceState {
 
 static TRACE_STATE: LazyLock<Mutex<TraceState>> =
     LazyLock::new(|| Mutex::new(TraceState::default()));
+
+fn build_visible_auth_config(
+    exe: &str,
+    profile_dir: &Path,
+) -> Result<chromiumoxide::browser::BrowserConfig> {
+    use chromiumoxide::browser::BrowserConfig;
+    use chromiumoxide::handler::viewport::Viewport;
+
+    let ua = browser_manager::random_user_agent();
+
+    BrowserConfig::builder()
+        .chrome_executable(exe)
+        .with_head()
+        .no_sandbox()
+        .viewport(Viewport {
+            width: 1280,
+            height: 900,
+            device_scale_factor: Some(1.0),
+            emulating_mobile: false,
+            is_landscape: true,
+            has_touch: false,
+        })
+        .window_size(1280, 900)
+        .arg("--no-first-run")
+        .arg("--no-default-browser-check")
+        .arg("--disable-blink-features=AutomationControlled")
+        .arg(format!("--user-data-dir={}", profile_dir.display()))
+        .arg(format!("--user-agent={}", ua))
+        .build()
+        .map_err(|e| anyhow!("Failed to build visible auth browser config: {}", e))
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct MockRouteDefinition {
@@ -3147,8 +3179,6 @@ pub async fn handle_profile_auth(
     _state: Arc<AppState>,
     arguments: &Value,
 ) -> Result<Json<McpCallResponse>, (StatusCode, Json<ErrorResponse>)> {
-    use chromiumoxide::browser::BrowserConfig;
-    use chromiumoxide::handler::viewport::Viewport;
     use futures::StreamExt;
 
     let url = arguments
@@ -3194,29 +3224,9 @@ pub async fn handle_profile_auth(
     };
 
     let (profile_dir, _) = state::agent_profile_dir();
-    let ua = browser_manager::random_user_agent();
 
-    // Visible browser: omit --headless=new so the OS shows the window.
-    let config = match BrowserConfig::builder()
-        .chrome_executable(&exe)
-        .viewport(Viewport {
-            width: 1280,
-            height: 900,
-            device_scale_factor: Some(1.0),
-            emulating_mobile: false,
-            is_landscape: true,
-            has_touch: false,
-        })
-        .window_size(1280, 900)
-        .arg("--no-sandbox")
-        .arg("--disable-setuid-sandbox")
-        .arg("--no-first-run")
-        .arg("--no-default-browser-check")
-        .arg("--disable-blink-features=AutomationControlled")
-        .arg(format!("--user-data-dir={}", profile_dir.display()))
-        .arg(format!("--user-agent={}", ua))
-        .build()
-    {
+    // Visible browser: force headful mode so the human can complete auth.
+    let config = match build_visible_auth_config(&exe, &profile_dir) {
         Ok(c) => c,
         Err(e) => {
             return Ok(Json(McpCallResponse {
@@ -3316,4 +3326,20 @@ pub async fn handle_profile_auth(
         }],
         is_error: false,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn visible_auth_config_is_headful_and_disables_sandbox() {
+        let config =
+            build_visible_auth_config("/bin/echo", Path::new("/tmp/cortex-scout-test-profile"))
+                .expect("config");
+        let debug = format!("{:?}", config);
+
+        assert!(debug.contains("headless: False"), "{debug}");
+        assert!(debug.contains("sandbox: false"), "{debug}");
+    }
 }

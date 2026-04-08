@@ -10,25 +10,9 @@ use serde_json::Value;
 use std::sync::Arc;
 use tracing::error;
 
-pub async fn handle(
-    state: Arc<AppState>,
+fn parse_request(
     arguments: &Value,
-) -> Result<Json<McpCallResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Runtime gate (belt-and-suspenders: catalog already filters this entry when disabled,
-    // but direct HTTP calls bypass tool discovery).
-    if !deep_research_enabled() {
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(ErrorResponse {
-                error: "deep_research is disabled. \
-                    Set DEEP_RESEARCH_ENABLED=1 (or unset) to enable at runtime. \
-                    For a build without this tool: cargo build --no-default-features."
-                    .to_string(),
-            }),
-        ));
-    }
-
-    // ── Required parameter ────────────────────────────────────────────────
+) -> Result<(String, DeepResearchConfig), (StatusCode, Json<ErrorResponse>)> {
     let query = arguments
         .get("query")
         .and_then(|v| v.as_str())
@@ -51,7 +35,6 @@ pub async fn handle(
         ));
     }
 
-    // ── Optional parameters (with safe defaults) ──────────────────────────
     let depth = arguments
         .get("depth")
         .and_then(|v| v.as_u64())
@@ -67,7 +50,7 @@ pub async fn handle(
     let max_chars_per_source = arguments
         .get("max_chars_per_source")
         .and_then(|v| v.as_u64())
-        .map(|n| n as usize)
+        .map(|n| n.max(1) as usize)
         .unwrap_or(20_000);
 
     let max_concurrent = arguments
@@ -88,15 +71,39 @@ pub async fn handle(
 
     let quality_mode = parse_quality_mode(arguments)?;
 
-    let config = DeepResearchConfig {
-        depth,
-        max_sources_per_hop,
-        max_chars_per_source,
-        max_concurrent,
-        use_proxy,
-        quality_mode: Some(quality_mode),
-        relevance_threshold,
-    };
+    Ok((
+        query,
+        DeepResearchConfig {
+            depth,
+            max_sources_per_hop,
+            max_chars_per_source,
+            max_concurrent,
+            use_proxy,
+            quality_mode: Some(quality_mode),
+            relevance_threshold,
+        },
+    ))
+}
+
+pub async fn handle(
+    state: Arc<AppState>,
+    arguments: &Value,
+) -> Result<Json<McpCallResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Runtime gate (belt-and-suspenders: catalog already filters this entry when disabled,
+    // but direct HTTP calls bypass tool discovery).
+    if !deep_research_enabled() {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ErrorResponse {
+                error: "deep_research is disabled. \
+                    Set DEEP_RESEARCH_ENABLED=1 (or unset) to enable at runtime. \
+                    For a build without this tool: cargo build --no-default-features."
+                    .to_string(),
+            }),
+        ));
+    }
+
+    let (query, config) = parse_request(arguments)?;
 
     // ── Execute pipeline ──────────────────────────────────────────────────
     match deep_research(state, query, config).await {
@@ -123,5 +130,62 @@ pub async fn handle(
                 is_error: true,
             }))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parse_request_clamps_and_preserves_all_parameters() {
+        let (query, config) = parse_request(&json!({
+            "query": "rust model context protocol",
+            "depth": 99,
+            "max_sources": 999,
+            "max_chars_per_source": 0,
+            "max_concurrent": 999,
+            "use_proxy": true,
+            "relevance_threshold": 2.0,
+            "quality_mode": "aggressive"
+        }))
+        .expect("request should parse");
+
+        assert_eq!(query, "rust model context protocol");
+        assert_eq!(config.depth, 3);
+        assert_eq!(config.max_sources_per_hop, 20);
+        assert_eq!(config.max_chars_per_source, 1);
+        assert_eq!(config.max_concurrent, 10);
+        assert!(config.use_proxy);
+        assert_eq!(config.relevance_threshold, Some(1.0));
+        assert_eq!(config.quality_mode.map(|mode| mode.as_str()), Some("aggressive"));
+    }
+
+    #[test]
+    fn parse_request_rejects_empty_query() {
+        let err = match parse_request(&json!({"query": "   "})) {
+            Ok(_) => panic!("empty query should fail"),
+            Err(err) => err,
+        };
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+        assert_eq!(err.1.error, "query must not be empty");
+    }
+
+    #[test]
+    fn parse_request_rejects_invalid_quality_mode() {
+        let err = match parse_request(&json!({
+            "query": "rust model context protocol",
+            "quality_mode": "turbo"
+        })) {
+            Ok(_) => panic!("invalid quality mode should fail"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            err.1.error,
+            "Invalid quality_mode. Allowed values: balanced, aggressive, high"
+        );
     }
 }

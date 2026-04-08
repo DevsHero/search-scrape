@@ -4,6 +4,17 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
+## Unreleased
+
+### Added
+- Added `publish/ci/smoke_deep_research.py` to sweep `deep_research` over MCP with coverage for every public parameter, clamp behavior, and invalid input handling.
+- Added `effective_config` to `deep_research` responses so MCP clients and smoke tests can inspect the clamped execution parameters that were actually used.
+
+### Fixed
+- Fixed browser launches in root/restricted environments by applying explicit no-sandbox handling across automation sessions, visible auth sessions, and the raw non-robot browser spawns.
+- Fixed `deep_research.max_chars_per_source=0` so the handler clamps it to a safe minimum of `1` instead of silently allowing an empty-content configuration.
+- Fixed `quality_mode` contract drift by exposing `high` in MCP schemas and validation messages anywhere the runtime parser already supported it.
+
 ## v3.3.2 (2026-03-30)
 
 ### Added

@@ -2485,6 +2485,8 @@ impl BrowserSession {
             args.push(format!("--profile-directory={}", name));
         }
 
+        crate::scraping::browser_manager::append_root_no_sandbox_args(&mut args);
+
         info!("non_robot_search: launching browser with user profile (human-centric mode)");
         let _chrome_process = std::process::Command::new(&chrome_exe)
             .args(&args)
@@ -2696,6 +2698,8 @@ impl BrowserSession {
         if let Some(name) = self.profile_name.as_ref() {
             args.push(format!("--profile-directory={}", name));
         }
+
+        crate::scraping::browser_manager::append_root_no_sandbox_args(&mut args);
 
         info!("non_robot_search: relaunching browser with user profile (human-centric mode)");
         let _chrome_process = std::process::Command::new(&chrome_exe)

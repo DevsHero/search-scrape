@@ -91,6 +91,8 @@ fn build_agent_config(exe: &str) -> Result<(BrowserConfig, PathBuf, bool)> {
 
     let config = BrowserConfig::builder()
         .chrome_executable(exe)
+        .new_headless_mode()
+        .no_sandbox()
         .viewport(Viewport {
             width: 1280,
             height: 800,
@@ -100,12 +102,7 @@ fn build_agent_config(exe: &str) -> Result<(BrowserConfig, PathBuf, bool)> {
             has_touch: false,
         })
         .window_size(1280, 800)
-        // Modern headless — full rendering fidelity, no window shown.
-        // Overrides the default --headless that chromiumoxide injects.
-        .arg("--headless=new")
         .arg("--disable-gpu")
-        .arg("--no-sandbox")
-        .arg("--disable-setuid-sandbox")
         .arg("--disable-dev-shm-usage")
         .arg("--disable-extensions")
         .arg("--disable-background-networking")
@@ -115,8 +112,6 @@ fn build_agent_config(exe: &str) -> Result<(BrowserConfig, PathBuf, bool)> {
         .arg("--disable-breakpad")
         .arg("--no-first-run")
         .arg("--no-default-browser-check")
-        .arg("--hide-scrollbars")
-        .arg("--mute-audio")
         .arg("--disable-blink-features=AutomationControlled")
         // Persistent isolated profile — avoids SingletonLock conflicts with
         // the user's active browser while retaining cookies/session state.
@@ -213,4 +208,18 @@ pub async fn close_session() -> Result<()> {
         session.shutdown().await;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_config_uses_new_headless_and_disables_sandbox() {
+        let (config, _, _) = build_agent_config("/bin/echo").expect("config");
+        let debug = format!("{:?}", config);
+
+        assert!(debug.contains("headless: New"), "{debug}");
+        assert!(debug.contains("sandbox: false"), "{debug}");
+    }
 }

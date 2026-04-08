@@ -1332,7 +1332,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-scout"
-version = "3.3.2"
+version = "3.3.3"
 dependencies = [
  "accessibility-sys",
  "aho-corasick",

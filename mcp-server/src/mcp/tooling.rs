@@ -76,7 +76,7 @@ Always call memory_search first — the answer may already be cached.",
                     },
                     "quality_mode": {
                         "type": "string",
-                        "enum": ["balanced", "aggressive"],
+                        "enum": ["balanced", "aggressive", "high"],
                         "default": "balanced",
                         "description": "Used when include_content=true: scraper quality mode."
                     }
@@ -99,7 +99,7 @@ Use use_proxy=true only after confirmed 403/429/rate-limit errors.",
                     "query": {"type": "string"},
                     "top_n": {"type": "integer", "minimum": 1, "default": 3},
                     "use_proxy": {"type": "boolean", "default": false},
-                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive"], "default": "balanced"}
+                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive", "high"], "default": "balanced"}
                 },
                 "required": ["query"]
             }),
@@ -238,7 +238,7 @@ Use use_proxy=true if sites are rate-limiting.",
                     "max_chars": {"type": "integer"},
                     "output_format": {"type": "string", "enum": ["text", "json"], "default": "json"},
                     "use_proxy": {"type": "boolean", "default": false},
-                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive"], "default": "balanced"}
+                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive", "high"], "default": "balanced"}
                 },
                 "required": ["urls"]
             }),
@@ -274,6 +274,7 @@ LLM synthesis is automatic when OPENAI_API_KEY is set (set DEEP_RESEARCH_ENABLED
                     },
                     "max_chars_per_source": {
                         "type": "integer",
+                        "minimum": 1,
                         "default": 20000,
                         "description": "Maximum characters extracted from each source page."
                     },
@@ -298,7 +299,7 @@ LLM synthesis is automatic when OPENAI_API_KEY is set (set DEEP_RESEARCH_ENABLED
                     },
                     "quality_mode": {
                         "type": "string",
-                        "enum": ["balanced", "aggressive"],
+                        "enum": ["balanced", "aggressive", "high"],
                         "default": "balanced",
                         "description": "Scraper quality. Use aggressive for JS-heavy sites (slower but more thorough)."
                     }
@@ -329,7 +330,7 @@ Aborts early with a structured error if the start URL requires human login (NEED
                         "description": "Max total JSON output characters for the crawl result (default 10000). Increase when crawling many pages to avoid truncation."
                     },
                     "use_proxy": {"type": "boolean", "default": false},
-                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive"], "default": "balanced"}
+                    "quality_mode": {"type": "string", "enum": ["balanced", "aggressive", "high"], "default": "balanced"}
                 },
                 "required": ["url"]
             }),

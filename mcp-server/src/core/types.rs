@@ -421,6 +421,27 @@ pub struct DeepResearchSource {
 
 /// Full output from the `deep_research` tool.
 #[derive(Debug, Serialize, Deserialize)]
+pub struct DeepResearchEffectiveConfig {
+    /// Effective hop depth after handler-level clamping.
+    pub depth: u8,
+    /// Effective maximum sources scraped per hop.
+    pub max_sources: usize,
+    /// Effective maximum characters retained per source.
+    pub max_chars_per_source: usize,
+    /// Effective concurrency used for batch scraping.
+    pub max_concurrent: usize,
+    /// Whether proxy mode was requested for scraping.
+    pub use_proxy: bool,
+    /// Effective semantic shave threshold after handler-level clamping.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relevance_threshold: Option<f32>,
+    /// Effective scraper quality mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality_mode: Option<String>,
+}
+
+/// Full output from the `deep_research` tool.
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DeepResearchResult {
     /// The original research query.
     pub query: String,
@@ -453,6 +474,8 @@ pub struct DeepResearchResult {
     pub all_urls: Vec<String>,
     /// All sub-queries used across all hops.
     pub sub_queries: Vec<String>,
+    /// Effective execution parameters after request parsing and clamping.
+    pub effective_config: DeepResearchEffectiveConfig,
     /// Non-fatal warnings accumulated during the research run.
     pub warnings: Vec<String>,
     /// Total wall-clock time for the full research pipeline.

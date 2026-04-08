@@ -17,7 +17,7 @@ pub fn parse_quality_mode(
         None => Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: "Invalid quality_mode. Allowed values: balanced, aggressive".to_string(),
+                error: "Invalid quality_mode. Allowed values: balanced, aggressive, high".to_string(),
             }),
         )),
     }

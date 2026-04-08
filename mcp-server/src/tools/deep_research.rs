@@ -794,6 +794,15 @@ pub async fn deep_research(
         synthesis_endpoint,
         all_urls,
         sub_queries: all_sub_queries,
+        effective_config: crate::types::DeepResearchEffectiveConfig {
+            depth,
+            max_sources: config.max_sources_per_hop,
+            max_chars_per_source: config.max_chars_per_source,
+            max_concurrent: config.max_concurrent,
+            use_proxy: config.use_proxy,
+            relevance_threshold: config.relevance_threshold,
+            quality_mode: config.quality_mode.map(|mode| mode.as_str().to_string()),
+        },
         warnings,
         total_duration_ms: start.elapsed().as_millis() as u64,
     })

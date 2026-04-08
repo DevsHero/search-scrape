@@ -48,6 +48,44 @@ fn cleanup_chromiumoxide_runner_profile() {
     let _ = std::fs::remove_file(runner_dir.join("SingletonCookie"));
 }
 
+fn sandbox_args_for_user(is_root: bool) -> &'static [&'static str] {
+    if is_root {
+        &["--no-sandbox", "--disable-setuid-sandbox"]
+    } else {
+        &[]
+    }
+}
+
+fn running_as_root() -> bool {
+    #[cfg(unix)]
+    {
+        let output = match std::process::Command::new("id")
+            .arg("-u")
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+        {
+            Ok(output) => output,
+            Err(_) => return false,
+        };
+
+        output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "0"
+    }
+
+    #[cfg(not(unix))]
+    {
+        false
+    }
+}
+
+pub fn append_root_no_sandbox_args(args: &mut Vec<String>) {
+    args.extend(
+        sandbox_args_for_user(running_as_root())
+            .iter()
+            .map(|arg| (*arg).to_string()),
+    );
+}
+
 pub fn is_benign_cdp_disconnect(message: &str) -> bool {
     [
         "ResetWithoutClosingHandshake",
@@ -262,6 +300,8 @@ pub fn build_headless_config(
 
     let mut builder = BrowserConfig::builder()
         .chrome_executable(exe)
+        .new_headless_mode()
+        .no_sandbox()
         .viewport(Viewport {
             width,
             height,
@@ -273,8 +313,6 @@ pub fn build_headless_config(
         .window_size(width, height)
         // Headless flags compatible with both Chrome/Chromium and Brave
         .arg("--disable-gpu")
-        .arg("--no-sandbox") // often required in CI / restricted environments
-        .arg("--disable-setuid-sandbox")
         .arg("--disable-dev-shm-usage") // avoids /dev/shm OOM in constrained environments
         .arg("--disable-extensions")
         .arg("--disable-background-networking")
@@ -284,8 +322,6 @@ pub fn build_headless_config(
         .arg("--disable-breakpad")
         .arg("--no-first-run")
         .arg("--no-default-browser-check")
-        .arg("--hide-scrollbars")
-        .arg("--mute-audio")
         // Stealth: suppress CDP automation fingerprint
         .arg("--disable-blink-features=AutomationControlled")
         // Each launch gets a unique profile dir (fixes SingletonLock conflicts
@@ -646,6 +682,8 @@ pub async fn fetch_html_native_mobile(url: &str, wait_ms: Option<u32>) -> Result
 
     let config = BrowserConfig::builder()
         .chrome_executable(&exe)
+        .new_headless_mode()
+        .no_sandbox()
         .viewport(Viewport {
             width: 390,
             height: 844,
@@ -656,7 +694,6 @@ pub async fn fetch_html_native_mobile(url: &str, wait_ms: Option<u32>) -> Result
         })
         .window_size(390, 844)
         .arg("--disable-gpu")
-        .arg("--no-sandbox")
         .arg("--disable-dev-shm-usage")
         .arg("--no-first-run")
         .arg("--disable-blink-features=AutomationControlled")
@@ -670,7 +707,6 @@ pub async fn fetch_html_native_mobile(url: &str, wait_ms: Option<u32>) -> Result
         "Failed to launch mobile browser",
     )
     .await?;
-
     let _handle = tokio::spawn(async move {
         while let Some(event) = handler.next().await {
             if let Err(e) = event {
@@ -698,4 +734,27 @@ pub async fn fetch_html_native_mobile(url: &str, wait_ms: Option<u32>) -> Result
 
     shutdown_browser_session(&mut browser, _handle, mobile_data_dir, "fetch_html_native_mobile").await;
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn root_sandbox_args_are_only_added_for_root() {
+        assert_eq!(
+            sandbox_args_for_user(true),
+            ["--no-sandbox", "--disable-setuid-sandbox"]
+        );
+        assert!(sandbox_args_for_user(false).is_empty());
+    }
+
+    #[test]
+    fn headless_config_uses_new_headless_and_disables_sandbox() {
+        let (config, _) = build_headless_config("/bin/echo", None, 1280, 800).expect("config");
+        let debug = format!("{:?}", config);
+
+        assert!(debug.contains("headless: New"), "{debug}");
+        assert!(debug.contains("sandbox: false"), "{debug}");
+    }
 }
