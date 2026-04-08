@@ -4,7 +4,7 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
-## Unreleased
+## v3.3.3 (2026-04-08)
 
 ### Added
 - Added `publish/ci/smoke_deep_research.py` to sweep `deep_research` over MCP with coverage for every public parameter, clamp behavior, and invalid input handling.
