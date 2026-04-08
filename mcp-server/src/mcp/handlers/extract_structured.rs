@@ -266,14 +266,16 @@ pub async fn handle(
     match extract::extract_structured(
         &state,
         url,
-        schema,
-        prompt,
-        strict,
-        max_chars,
-        use_proxy,
-        Some(quality_mode.as_str()),
-        placeholder_word_threshold,
-        placeholder_empty_ratio,
+        extract::ExtractStructuredOptions {
+            schema,
+            prompt,
+            strict,
+            max_chars,
+            use_proxy,
+            quality_mode: Some(quality_mode.as_str().to_string()),
+            placeholder_word_threshold,
+            placeholder_empty_ratio,
+        },
     )
     .await
     {

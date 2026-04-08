@@ -164,23 +164,21 @@ mod tests {
 
     #[test]
     fn parse_request_rejects_empty_query() {
-        let err = match parse_request(&json!({"query": "   "})) {
-            Ok(_) => panic!("empty query should fail"),
-            Err(err) => err,
-        };
+        let result = parse_request(&json!({"query": "   "}));
+        assert!(result.is_err(), "empty query should fail");
+        let err = result.err().expect("error should be present");
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
         assert_eq!(err.1.error, "query must not be empty");
     }
 
     #[test]
     fn parse_request_rejects_invalid_quality_mode() {
-        let err = match parse_request(&json!({
+        let result = parse_request(&json!({
             "query": "rust model context protocol",
             "quality_mode": "turbo"
-        })) {
-            Ok(_) => panic!("invalid quality mode should fail"),
-            Err(err) => err,
-        };
+        }));
+        assert!(result.is_err(), "invalid quality mode should fail");
+        let err = result.err().expect("error should be present");
 
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
         assert_eq!(

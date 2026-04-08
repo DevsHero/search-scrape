@@ -1,4 +1,7 @@
-use crate::setup::{ActionRequired, SetupCheck, SetupOptions, SetupRunMode};
+use crate::setup::{ActionRequired, SetupCheck, SetupOptions};
+
+#[cfg(any(target_os = "macos", all(unix, not(target_os = "macos"))))]
+use crate::setup::SetupRunMode;
 
 #[cfg(all(unix, not(target_os = "macos")))]
 mod linux;

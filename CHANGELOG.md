@@ -4,6 +4,14 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
+## Unreleased
+
+### Changed
+- Cleaned up post-release compiler hygiene by removing a cross-target unused import warning in the setup permission checks.
+
+### Verified
+- Re-ran production cleanup passes over the Rust sources to confirm there are no live `todo!`, `unimplemented!`, or compiler-reported dead-code/unused warnings on the default target.
+
 ## v3.3.3 (2026-04-08)
 
 ### Added

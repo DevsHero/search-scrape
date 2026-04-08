@@ -8,29 +8,43 @@ use crate::rust_scraper::QualityMode;
 use crate::types::*;
 use crate::AppState;
 
+#[derive(Debug, Clone, Default)]
+pub struct ExtractStructuredOptions {
+    pub schema: Option<Vec<ExtractField>>,
+    pub prompt: Option<String>,
+    pub strict: bool,
+    pub max_chars: Option<usize>,
+    pub use_proxy: bool,
+    pub quality_mode: Option<String>,
+    pub placeholder_word_threshold: Option<usize>,
+    pub placeholder_empty_ratio: Option<f64>,
+}
+
 /// Extract structured data from a webpage based on schema or prompt
 /// Uses pattern matching and heuristics (no external LLM required)
 pub async fn extract_structured(
     state: &Arc<AppState>,
     url: &str,
-    schema: Option<Vec<ExtractField>>,
-    prompt: Option<String>,
-    strict: bool,
-    max_chars: Option<usize>,
-    use_proxy: bool,
-    quality_mode: Option<&str>,
-    placeholder_word_threshold: Option<usize>,
-    placeholder_empty_ratio: Option<f64>,
+    options: ExtractStructuredOptions,
 ) -> Result<ExtractResponse> {
-    let max_chars = max_chars.unwrap_or(10000);
+    let max_chars = options.max_chars.unwrap_or(10000);
 
     info!("Extracting structured data from: {}", url);
 
     // First, scrape the page
-    let mode = quality_mode.and_then(QualityMode::parse_str);
-    let scrape_result = crate::scrape::scrape_url_with_options(state, url, use_proxy, mode).await?;
+    let mode = options.quality_mode.as_deref().and_then(QualityMode::parse_str);
+    let scrape_result =
+        crate::scrape::scrape_url_with_options(state, url, options.use_proxy, mode).await?;
 
-    extract_from_scrape(&scrape_result, schema, prompt, strict, max_chars, placeholder_word_threshold, placeholder_empty_ratio)
+    extract_from_scrape(
+        &scrape_result,
+        options.schema,
+        options.prompt,
+        options.strict,
+        max_chars,
+        options.placeholder_word_threshold,
+        options.placeholder_empty_ratio,
+    )
 }
 
 /// Extract structured data from a pre-scraped page.
@@ -1244,6 +1258,78 @@ fn find_keyword_position(content_lower: &str, variants: &[String]) -> Option<(us
     None
 }
 
+// ── Phase 25 helpers ──────────────────────────────────────────────────────────
+
+/// Returns `true` if `value` can be found (exactly or by word-overlap) within
+/// `source_text`.
+///
+/// Algorithm:
+///  1. Skip values shorter than 4 characters — too generic to meaningfully verify.
+///  2. Fast path: case-insensitive exact substring search.
+///  3. Fuzzy path: tokenise the value into significant words (≥ 3 chars) and
+///     require that at least 70 % of those words appear in the normalised source.
+///     This handles collapsed whitespace, Unicode normalisation, and minor
+///     reformatting differences without needing an edit-distance loop.
+fn is_grounded_in_source(value: &str, source_text: &str) -> bool {
+    let v = value.trim();
+    // Very short strings are too generic to ground-check meaningfully.
+    if v.len() < 4 {
+        return true;
+    }
+    let v_lower = v.to_lowercase();
+    let s_lower = source_text.to_lowercase();
+
+    // Fast path: exact case-insensitive substring.
+    if s_lower.contains(&v_lower) {
+        return true;
+    }
+
+    // Fuzzy path: word-overlap.  Significant tokens are words of ≥ 3 chars.
+    let sig_words: Vec<&str> = v_lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() >= 3)
+        .collect();
+
+    if sig_words.is_empty() {
+        // No significant tokens (e.g. all punctuation) — assume grounded.
+        return true;
+    }
+
+    let found = sig_words.iter().filter(|w| s_lower.contains(*w)).count();
+    let overlap = found as f64 / sig_words.len() as f64;
+    overlap >= 0.70
+}
+
+/// Returns `true` if the JSON value's runtime type matches `expected_type`.
+///
+/// Recognised type strings (case-insensitive): `string`, `number`, `integer`,
+/// `int`, `float`, `double`, `boolean`, `bool`, `array`, `list`, `object`,
+/// `dict`, `map`.  Any unrecognised type is treated as `string` and only
+/// requires the value to be non-null.
+fn is_type_valid(value: &serde_json::Value, expected_type: &str) -> bool {
+    match expected_type.to_ascii_lowercase().as_str() {
+        "number" | "integer" | "int" | "float" | "double" => value.is_number(),
+        "boolean" | "bool" => value.is_boolean(),
+        "array" | "list" => value.is_array(),
+        "object" | "dict" | "map" => value.is_object(),
+        // "string" or any unrecognised type: just must be a string (or non-null).
+        _ => value.is_string() || !value.is_null(),
+    }
+}
+
+/// Returns a static, human-readable name for the JSON type of `value`,
+/// used in `type_mismatch` warning messages.
+fn json_type_name(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "boolean",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1331,9 +1417,6 @@ mod tests {
         assert!(fns.contains(&"conv2d".to_string()));
     }
 
-    /// BUG-4: confidence must be 0.0 on a placeholder / unrendered JS page.
-    /// Simulates crates.io returning "crates.io: Rust Package Registry" only —
-    /// word_count < 15, single-line content, all schema fields null.
     #[test]
     fn placeholder_page_forces_confidence_zero() {
         let mut scrape = mk_scrape(
@@ -1341,7 +1424,7 @@ mod tests {
             "crates.io: Rust Package Registry",
             vec![],
         );
-        scrape.word_count = 5; // explicitly set low word count
+        scrape.word_count = 5;
 
         let schema = vec![
             ExtractField {
@@ -1361,24 +1444,14 @@ mod tests {
         let result = extract_from_scrape(&scrape, Some(schema), None, true, 500, None, None)
             .expect("extract_from_scrape should not error");
 
-        assert_eq!(
-            result.confidence, 0.0,
-            "confidence must be 0.0 on placeholder page"
-        );
+        assert_eq!(result.confidence, 0.0, "confidence must be 0.0 on placeholder page");
         assert!(
-            result
-                .warnings
-                .iter()
-                .any(|w| w.contains("placeholder_page")),
+            result.warnings.iter().any(|w| w.contains("placeholder_page")),
             "expected placeholder_page warning, got: {:?}",
             result.warnings
         );
     }
 
-    /// BUG-S1: extract_rustdoc_module_names must match simple relative URLs like
-    /// `init/index.html` (no leading path prefix). The old two-group regex was
-    /// broken because the greedy `(?:[^)]*/)? ` prefix consumed `init/`, leaving
-    /// nothing for the second capture group.
     #[test]
     fn extract_rustdoc_module_names_simple_relative_url() {
         let clean = "[init](init/index.html)Variable initialization.\n[optim](optim/index.html)Optimizers.";
@@ -1391,21 +1464,10 @@ mod tests {
             ],
         );
         let modules = extract_rustdoc_module_names(&scrape);
-        assert!(
-            modules.contains(&"init".to_string()),
-            "expected 'init' in modules, got: {:?}",
-            modules
-        );
-        assert!(
-            modules.contains(&"optim".to_string()),
-            "expected 'optim' in modules, got: {:?}",
-            modules
-        );
+        assert!(modules.contains(&"init".to_string()), "expected 'init' in modules, got: {:?}", modules);
+        assert!(modules.contains(&"optim".to_string()), "expected 'optim' in modules, got: {:?}", modules);
     }
 
-    /// BUG-S2: confidence must NOT be 0.0 when all schema fields are array type.
-    /// A pure-array schema (`structs`, `modules`) cannot be used as a placeholder
-    /// signal because empty arrays are a valid "no items found" extraction result.
     #[test]
     fn pure_array_schema_never_triggers_placeholder_confidence_zero() {
         let mut scrape = mk_scrape(
@@ -1413,7 +1475,7 @@ mod tests {
             "crates.io: Rust Package Registry",
             vec![],
         );
-        scrape.word_count = 5; // sparse — would normally trigger placeholder check
+        scrape.word_count = 5;
 
         let schema = vec![
             ExtractField {
@@ -1429,7 +1491,7 @@ mod tests {
                 required: Some(false),
             },
         ];
-        // scalar_count == 0 → mostly_empty is always false → confidence must not be 0.0.
+
         let result = extract_from_scrape(&scrape, Some(schema), None, true, 500, None, None)
             .expect("extract_from_scrape should not error");
         assert!(
@@ -1442,77 +1504,5 @@ mod tests {
             "must not emit placeholder_page warning for pure-array schema, warnings: {:?}",
             result.warnings
         );
-    }
-}
-
-// ── Phase 25 helpers ──────────────────────────────────────────────────────────
-
-/// Returns `true` if `value` can be found (exactly or by word-overlap) within
-/// `source_text`.
-///
-/// Algorithm:
-///  1. Skip values shorter than 4 characters — too generic to meaningfully verify.
-///  2. Fast path: case-insensitive exact substring search.
-///  3. Fuzzy path: tokenise the value into significant words (≥ 3 chars) and
-///     require that at least 70 % of those words appear in the normalised source.
-///     This handles collapsed whitespace, Unicode normalisation, and minor
-///     reformatting differences without needing an edit-distance loop.
-fn is_grounded_in_source(value: &str, source_text: &str) -> bool {
-    let v = value.trim();
-    // Very short strings are too generic to ground-check meaningfully.
-    if v.len() < 4 {
-        return true;
-    }
-    let v_lower = v.to_lowercase();
-    let s_lower = source_text.to_lowercase();
-
-    // Fast path: exact case-insensitive substring.
-    if s_lower.contains(&v_lower) {
-        return true;
-    }
-
-    // Fuzzy path: word-overlap.  Significant tokens are words of ≥ 3 chars.
-    let sig_words: Vec<&str> = v_lower
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| w.len() >= 3)
-        .collect();
-
-    if sig_words.is_empty() {
-        // No significant tokens (e.g. all punctuation) — assume grounded.
-        return true;
-    }
-
-    let found = sig_words.iter().filter(|w| s_lower.contains(*w)).count();
-    let overlap = found as f64 / sig_words.len() as f64;
-    overlap >= 0.70
-}
-
-/// Returns `true` if the JSON value's runtime type matches `expected_type`.
-///
-/// Recognised type strings (case-insensitive): `string`, `number`, `integer`,
-/// `int`, `float`, `double`, `boolean`, `bool`, `array`, `list`, `object`,
-/// `dict`, `map`.  Any unrecognised type is treated as `string` and only
-/// requires the value to be non-null.
-fn is_type_valid(value: &serde_json::Value, expected_type: &str) -> bool {
-    match expected_type.to_ascii_lowercase().as_str() {
-        "number" | "integer" | "int" | "float" | "double" => value.is_number(),
-        "boolean" | "bool" => value.is_boolean(),
-        "array" | "list" => value.is_array(),
-        "object" | "dict" | "map" => value.is_object(),
-        // "string" or any unrecognised type: just must be a string (or non-null).
-        _ => value.is_string() || !value.is_null(),
-    }
-}
-
-/// Returns a static, human-readable name for the JSON type of `value`,
-/// used in `type_mismatch` warning messages.
-fn json_type_name(value: &serde_json::Value) -> &'static str {
-    match value {
-        serde_json::Value::Null => "null",
-        serde_json::Value::Bool(_) => "boolean",
-        serde_json::Value::Number(_) => "number",
-        serde_json::Value::String(_) => "string",
-        serde_json::Value::Array(_) => "array",
-        serde_json::Value::Object(_) => "object",
     }
 }
