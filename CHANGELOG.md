@@ -4,7 +4,7 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
-## Unreleased
+## v3.3.5 (2026-04-09)
 
 ### Changed
 - Updated agent guidance to prefer direct MCP-tool validation on realistic public URLs after rebuilds when verifying runtime behavior for release decisions.
