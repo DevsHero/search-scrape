@@ -4,7 +4,7 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
-## Unreleased
+## v3.3.6 (2026-04-09)
 
 ### Changed
 - Updated MCP tool descriptions and agent guidance to clarify that proxy use is optional by default, balanced fetches stay on the non-proxy/native path unless blocking signals appear, and all tool responses now expose timing information.
