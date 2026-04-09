@@ -10,6 +10,7 @@ use serde_json::Value;
 use std::borrow::Cow;
 use std::env;
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::{info, warn};
 
 fn status_code_to_error_code(status: StatusCode) -> ErrorCode {
@@ -34,11 +35,15 @@ fn mcp_call_response_to_stdio_result(response: McpCallResponse) -> CallToolResul
     }
 }
 
-fn convert_http_handler_result(
+fn convert_http_handler_result_with_metrics(
+    tool_name: &str,
+    started_at: Instant,
     result: Result<Json<McpCallResponse>, (StatusCode, Json<ErrorResponse>)>,
 ) -> Result<CallToolResult, ErrorData> {
     match result {
-        Ok(Json(response)) => Ok(mcp_call_response_to_stdio_result(response)),
+        Ok(Json(response)) => Ok(mcp_call_response_to_stdio_result(
+            super::http::instrument_tool_response(response, tool_name, started_at),
+        )),
         Err((status, Json(err))) => Err(ErrorData::new(
             status_code_to_error_code(status),
             err.error,
@@ -190,6 +195,7 @@ impl rmcp::ServerHandler for McpService {
         request: CallToolRequestParams,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        let tool_start = Instant::now();
         info!(
             "MCP tool call: {} with args: {:?}",
             request.name, request.arguments
@@ -230,52 +236,84 @@ impl rmcp::ServerHandler for McpService {
             .map_public_arguments_to_internal(&internal_name, public_args);
 
         match internal_name.as_str() {
-            "search_web" => convert_http_handler_result(
+            "search_web" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::search_web::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "search_structured" => convert_http_handler_result(
+            "search_structured" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::search_structured::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "scrape_url" => convert_http_handler_result(
+            "scrape_url" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::scrape_url::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "crawl_website" => convert_http_handler_result(
+            "crawl_website" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::crawl_website::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "scrape_batch" => convert_http_handler_result(
+            "scrape_batch" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::scrape_batch::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "deep_research" => convert_http_handler_result(
+            "deep_research" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::deep_research::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "extract_structured" => convert_http_handler_result(
+            "extract_structured" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::extract_structured::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "fetch_then_extract" => convert_http_handler_result(
+            "fetch_then_extract" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::fetch_then_extract::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "research_history" => convert_http_handler_result(
+            "research_history" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::research_history::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "proxy_manager" => convert_http_handler_result(
+            "proxy_manager" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::proxy_manager::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "non_robot_search" => convert_http_handler_result(
+            "non_robot_search" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::non_robot_search::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "visual_scout" => convert_http_handler_result(
+            "visual_scout" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::visual_scout::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "human_auth_session" => convert_http_handler_result(
+            "human_auth_session" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::human_auth_session::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "browser_automate" | "scout_browser_automate" => convert_http_handler_result(
+            "browser_automate" | "scout_browser_automate" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::automate::handle(Arc::clone(&self.state), &internal_args).await,
             ),
-            "browser_close" | "scout_browser_close" => convert_http_handler_result(
+            "browser_close" | "scout_browser_close" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::automate::handle_close(Arc::clone(&self.state), &internal_args).await,
             ),
-            "agent_profile_auth" | "scout_agent_profile_auth" => convert_http_handler_result(
+            "agent_profile_auth" | "scout_agent_profile_auth" => convert_http_handler_result_with_metrics(
+                request.name.as_ref(),
+                tool_start,
                 handlers::automate::handle_profile_auth(Arc::clone(&self.state), &internal_args).await,
             ),
             _ => Err(ErrorData::new(

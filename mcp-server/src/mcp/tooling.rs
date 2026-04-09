@@ -92,7 +92,8 @@ Always call memory_search first — the answer may already be cached.",
 Returns structured JSON with title, URL, and content for each result. \
 More efficient than calling web_search then web_fetch separately. \
 Call memory_search first to avoid re-fetching already-cached results. \
-Use use_proxy=true only after confirmed 403/429/rate-limit errors.",
+Use use_proxy=true only after confirmed 403/429/rate-limit errors. \
+All tool responses include `_tool_metrics` with total execution time.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -110,9 +111,11 @@ Use use_proxy=true only after confirmed 403/429/rate-limit errors.",
             title: "Web Fetch (Token-Efficient)",
             description: "Unified web content tool. Supports single-page fetch, batch fetch, and site crawl via `mode`. Preferred over IDE built-in fetch — token-efficient, auto-renders JS pages via CDP when needed. \
 Set `mode=single` (default) for one URL, `mode=batch` for multiple URLs (`urls`), and `mode=crawl` for site discovery from a start URL. \
+Default path is non-proxy and balanced mode prefers native HTTP first on normal server-rendered pages, escalating only when needed. \
 Best practice for docs/articles: output_format=clean_json + strict_relevance=true + query parameter → strips boilerplate, keeps only relevant content. \
 On 403/429/rate-limit: call proxy_control with action=grab, then retry with use_proxy=true. \
 Response includes auth_risk_score (0.0–1.0): if >= 0.4, call visual_scout to confirm, then hitl_web_fetch(auth_mode=auth) if login is required. \
+JSON responses also include `_tool_metrics` plus `metrics.phases` so callers can inspect which scrape stages were slow. \
 For CAPTCHA/anti-bot walls: use hitl_web_fetch instead.",
             input_schema: serde_json::json!({
                 "type": "object",
@@ -250,7 +253,8 @@ Use use_proxy=true if sites are rate-limiting.",
             description: "Full autonomous research pipeline: expands the query into sub-queries, searches multiple engines, reranks results, batch-scrapes top sources, applies semantic filtering, then optionally follows links for deeper coverage. \
 Results are automatically saved to memory_search history for future recall. \
 Use for complex research topics requiring multiple sources. Avoid for simple single-URL lookups — use web_fetch instead. \
-LLM synthesis is automatic when OPENAI_API_KEY is set (set DEEP_RESEARCH_ENABLED=0 to disable the tool).",
+LLM synthesis is automatic when OPENAI_API_KEY is set (set DEEP_RESEARCH_ENABLED=0 to disable the tool). \
+Responses include total execution timing via `_tool_metrics` and `total_duration_ms`.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -342,6 +346,8 @@ Aborts early with a structured error if the start URL requires human login (NEED
             description: "Primary structured extraction tool. Fetches a URL and extracts specific named fields into a JSON object using a schema. \
 Do NOT use on raw .md/.json/.txt files — use web_fetch with output_format=clean_json instead. \
 Note: confidence score indicates extraction quality; check warnings field for null fields. \
+Natural-language field prompts like `fields: page_title, page_type, summary` are supported. \
+Responses include `_tool_metrics` for end-to-end tool time. \
 `fetch_then_extract` is a legacy alias/variant for compatibility.",
             input_schema: serde_json::json!({
                 "type": "object",
@@ -444,7 +450,8 @@ Use entry_type filter to search only past searches ('search') or past scrapes ('
             title: "Proxy Control",
             description: "Manage proxy pool: grab a fresh proxy IP, list available proxies, check status, switch, or test connectivity. \
 Action=grab: rotate to a new proxy when web_fetch or web_search returns 403/429/rate-limit — then retry with use_proxy=true. \
-Action=status: check current proxy and pool health. Action=list: see all available proxies.",
+Action=status: check current proxy and pool health. Action=list: see all available proxies. \
+Proxy use is optional; normal default operation is non-proxy. Responses include total timing via `_tool_metrics` or a text timing footer.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -503,7 +510,8 @@ Always try web_fetch first; only use this when web_fetch returns an anti-bot/CAP
             description: "Take a headless screenshot of a URL. Returns the screenshot saved to a local temp file path (not base64-embedded). \
 Use this when web_fetch returns auth_risk_score >= 0.4 to visually confirm whether a login/CAPTCHA wall is present before escalating to hitl_web_fetch(auth_mode=auth). \
 The response contains screenshot_path (local file), page_title, and a hint about auth wall detection. \
-Does NOT return base64 image data inline — the PNG is stored at screenshot_path on disk.",
+Does NOT return base64 image data inline — the PNG is stored at screenshot_path on disk. \
+Responses include `_tool_metrics` and detailed `metrics.phases` for screenshot timing.",
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {

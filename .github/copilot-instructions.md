@@ -45,9 +45,11 @@ Unified web content tool via `mode`:
 - `mode="crawl"`: site crawl from a root URL.
 
 Common behavior:
+- Default path is non-proxy. Use proxies only after confirmed blocking/rate-limit symptoms or when you know your IP reputation is poor.
 - Supports token-efficient extraction (`clean_json` in single mode).
 - Supports proxy retry (`use_proxy=true`).
 - Supports relevance filtering and JS rendering fallback.
+- Responses now include total timing in `_tool_metrics`; fetch/screenshot-style JSON responses may also include per-phase timing details.
 
 ### `extract_fields`
 Primary structured extraction tool.
@@ -103,6 +105,7 @@ These remain callable for backward compatibility, but agents should prefer the u
 - Read long docs: `web_fetch(url, output_format="clean_json", strict_relevance=true, query="...")`
 - Structured extraction: `extract_fields(url, schema=[...])`
 - Memory-first: `memory_search(query)` before live fetch
+- Performance inspection: check `_tool_metrics.total_duration_ms`; for `web_fetch`/`visual_scout`, inspect `metrics.phases` to see where time was spent.
 
 ---
 

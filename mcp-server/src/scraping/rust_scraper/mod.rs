@@ -407,6 +407,7 @@ impl RustScraper {
             auth_risk_score,
             detection_factors,
             final_url: None,
+            metrics: None,
         };
 
         info!(

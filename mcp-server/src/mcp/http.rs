@@ -3,7 +3,9 @@ use crate::types::*;
 use crate::AppState;
 use axum::{extract::State, http::StatusCode, response::Json};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -42,6 +44,43 @@ pub struct McpContent {
     pub text: String,
 }
 
+pub(crate) fn instrument_tool_response(
+    mut response: McpCallResponse,
+    tool_name: &str,
+    started_at: Instant,
+) -> McpCallResponse {
+    let elapsed = started_at.elapsed();
+    let metrics_json = json!({
+        "tool_name": tool_name,
+        "total_duration_ms": elapsed.as_millis() as u64,
+        "total_duration_seconds": elapsed.as_secs_f64()
+    });
+
+    for item in &mut response.content {
+        if item.content_type != "text" {
+            continue;
+        }
+
+        if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&item.text) {
+            if let Some(obj) = value.as_object_mut() {
+                obj.insert("_tool_metrics".to_string(), metrics_json.clone());
+                item.text = serde_json::to_string_pretty(&value).unwrap_or_else(|_| item.text.clone());
+                continue;
+            }
+        }
+
+        if !item.text.contains("Tool timing:") {
+            item.text.push_str(&format!(
+                "\n\nTool timing: {:.3}s ({} ms)",
+                elapsed.as_secs_f64(),
+                elapsed.as_millis() as u64
+            ));
+        }
+    }
+
+    response
+}
+
 pub fn list_tools_for_state(state: &AppState) -> McpToolsResponse {
     let tools = state
         .tool_registry
@@ -68,6 +107,7 @@ pub async fn call_tool_inner(
     state: Arc<AppState>,
     request: McpCallRequest,
 ) -> Result<McpCallResponse, (StatusCode, Json<ErrorResponse>)> {
+    let tool_start = Instant::now();
     info!(
         "MCP tool call: {} with args: {:?}",
         request.name, request.arguments
@@ -126,7 +166,7 @@ pub async fn call_tool_inner(
         )),
     };
 
-    result.map(|Json(r)| r)
+    result.map(|Json(r)| instrument_tool_response(r, &request.name, tool_start))
 }
 
 /// Axum route handler: `POST /mcp/call`

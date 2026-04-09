@@ -135,6 +135,31 @@ pub struct ScrapeResponse {
     /// Final URL after any server-side redirects, when detectable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub final_url: Option<String>,
+
+    /// Execution timing metrics for the scrape pipeline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<ToolExecutionMetrics>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ToolExecutionMetrics {
+    pub total_duration_ms: u64,
+    pub total_duration_seconds: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strategy: Option<String>,
+    #[serde(default)]
+    pub cache_hit: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub phases: Vec<ToolExecutionPhase>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ToolExecutionPhase {
+    pub name: String,
+    pub duration_ms: u64,
+    pub duration_seconds: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 // ───────────────────────────────────────────────────────────────────────────

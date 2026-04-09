@@ -4,6 +4,20 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
+## Unreleased
+
+### Changed
+- Updated MCP tool descriptions and agent guidance to clarify that proxy use is optional by default, balanced fetches stay on the non-proxy/native path unless blocking signals appear, and all tool responses now expose timing information.
+- `web_fetch` balanced-mode strategy now prefers the fast native HTTP path on normal server-rendered pages such as GitHub, only escalating into CDP earlier for proxy mode, high/aggressive mode, or known JS-heavy/problematic hosts.
+
+### Added
+- Added `_tool_metrics` total-duration reporting to all Cortex Scout MCP tool responses through the shared HTTP/stdio dispatch layer.
+- Added structured phase timing metrics to `web_fetch`/scrape responses and `visual_scout` responses so slow steps can be identified without external profiling.
+
+### Verified
+- Re-tested the live MCP runtime after rebuild/reload and confirmed timing metrics now appear in `visual_scout`, `extract_fields`, and `proxy_control` responses.
+- Re-tested the GitHub discussion fetch path through MCP and confirmed the same content path now completes in about 1.7 seconds instead of hanging for tens of seconds on the prior CDP-first behavior.
+
 ## v3.3.5 (2026-04-09)
 
 ### Changed

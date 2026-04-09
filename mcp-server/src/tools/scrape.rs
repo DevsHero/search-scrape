@@ -10,6 +10,7 @@ use select::predicate::Predicate;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
 #[derive(Debug, Clone, Default)]
@@ -62,6 +63,8 @@ pub async fn scrape_url_full(
     url: &str,
     options: ScrapeUrlOptions,
 ) -> Result<ScrapeResponse> {
+    let total_start = Instant::now();
+    let mut metrics = ScrapeMetricsBuilder::default();
     let ScrapeUrlOptions {
         use_proxy,
         quality_mode,
@@ -85,7 +88,15 @@ pub async fn scrape_url_full(
 
     // 🧬 Smart URL rewrite: transform well-known URL patterns into their cleanest form.
     // GitHub /blob/ pages → raw.githubusercontent.com returns plain text directly.
+    let rewrite_start = Instant::now();
     let url_rewritten = rewrite_url_for_clean_content(requested_url);
+    metrics.push_phase(
+        "url_rewrite",
+        rewrite_start.elapsed(),
+        url_rewritten
+            .as_ref()
+            .map(|rewritten| format!("rewritten to {}", rewritten)),
+    );
     let url: &str = url_rewritten.as_deref().unwrap_or(requested_url);
 
     // ─── Step 0: Smart Auth Cache pre-flight ────────────────────────────────
@@ -134,12 +145,18 @@ pub async fn scrape_url_full(
     }
 
     // Check cache (bypass if in testing mode)
+    let cache_lookup_start = Instant::now();
     if !is_testing {
         if let Some(cached) = state.scrape_cache.get(&cache_key).await {
+            metrics.push_phase("cache_lookup", cache_lookup_start.elapsed(), Some("cache hit".to_string()));
             if cached.word_count == 0 || cached.clean_content.trim().is_empty() {
                 // Invalidate poor/empty cache entries and recompute
                 state.scrape_cache.invalidate(&cache_key).await;
             } else {
+                let mut cached = cached;
+                metrics.cache_hit = true;
+                metrics.strategy = Some("cache".to_string());
+                attach_scrape_metrics(&mut cached, &metrics, total_start.elapsed());
                 return Ok(cached);
             }
         }
@@ -147,18 +164,27 @@ pub async fn scrape_url_full(
         // In testing mode, always invalidate cache
         state.scrape_cache.invalidate(&cache_key).await;
     }
+    metrics.push_phase("cache_lookup", cache_lookup_start.elapsed(), Some("cache miss".to_string()));
 
     // Concurrency control
+    let outbound_wait_start = Instant::now();
     let _permit = state
         .outbound_limit
         .acquire()
         .await
         .expect("semaphore closed");
+    metrics.push_phase("outbound_wait", outbound_wait_start.elapsed(), None);
 
     // 🚀 UNIVERSAL CDP STRATEGY: Try native CDP
     let cdp_available = crate::scraping::browser_manager::native_browser_available();
+    let cdp_first = should_try_cdp_first(url, use_proxy, quality_mode, extract_app_state);
+    if cdp_first {
+        metrics.strategy = Some("cdp_first".to_string());
+    } else {
+        metrics.strategy = Some("native_first".to_string());
+    }
 
-    if cdp_available {
+    if cdp_available && cdp_first {
         info!("🚀 CDP available, attempting universal stealth mode");
 
         let rust_scraper = RustScraper::new_with_quality_mode(quality_mode.map(|m| m.as_str()))
@@ -180,15 +206,19 @@ pub async fn scrape_url_full(
         };
 
         // Try CDP fetch (no domain restriction)
+        let cdp_attempt_start = Instant::now();
         let cdp_result = rust_scraper.fetch_via_cdp(url, cdp_proxy.clone()).await;
+        metrics.push_phase("cdp_initial_attempt", cdp_attempt_start.elapsed(), None);
 
         match cdp_result {
             Ok((html, _status_code)) => {
                 info!("✅ CDP fetch succeeded, processing HTML");
 
                 // Process HTML into ScrapeResponse
+                let cdp_process_start = Instant::now();
                 match rust_scraper.process_html(&html, url).await {
                     Ok(mut result) => {
+                        metrics.push_phase("cdp_process_html", cdp_process_start.elapsed(), None);
                         // Record proxy success if used
                         if let (Some(proxy_url), Some(manager)) =
                             (cdp_proxy.as_ref(), state.proxy_manager.as_ref())
@@ -197,6 +227,7 @@ pub async fn scrape_url_full(
                         }
 
                         // 🧬 Semantic Shaving must run even on the CDP fast-path.
+                        let semantic_start = Instant::now();
                         apply_semantic_shaving_if_enabled(
                             state,
                             &mut result,
@@ -205,7 +236,9 @@ pub async fn scrape_url_full(
                             relevance_threshold,
                         )
                         .await;
+                        metrics.push_phase("semantic_shaving", semantic_start.elapsed(), None);
 
+                        let section_start = Instant::now();
                         apply_relevant_section_extract_if_enabled(
                             state,
                             &mut result,
@@ -215,9 +248,11 @@ pub async fn scrape_url_full(
                             section_threshold,
                         )
                         .await;
+                        metrics.push_phase("relevant_section_extract", section_start.elapsed(), None);
 
                         // Log to history
                         if let Some(memory) = state.get_memory() {
+                            let history_start = Instant::now();
                             let summary = format!(
                                 "{} words (CDP stealth), {} code blocks",
                                 result.word_count,
@@ -240,9 +275,11 @@ pub async fn scrape_url_full(
                             {
                                 warn!("Failed to log CDP scrape to history: {}", e);
                             }
+                            metrics.push_phase("history_log", history_start.elapsed(), None);
                         }
 
                         // Cache and return
+                        attach_scrape_metrics(&mut result, &metrics, total_start.elapsed());
                         state
                             .scrape_cache
                             .insert(cache_key.clone(), result.clone())
@@ -251,6 +288,11 @@ pub async fn scrape_url_full(
                         return Ok(result);
                     }
                     Err(e) => {
+                        metrics.push_phase(
+                            "cdp_process_html",
+                            cdp_process_start.elapsed(),
+                            Some(format!("failed: {}", e)),
+                        );
                         warn!(
                             "❌ CDP HTML processing failed: {}, falling back to standard path",
                             e
@@ -285,18 +327,23 @@ pub async fn scrape_url_full(
                         Ok(new_proxy_url) => {
                             info!("🔀 Retrying CDP with different proxy");
 
+                            let cdp_retry_start = Instant::now();
                             match rust_scraper
                                 .fetch_via_cdp(url, Some(new_proxy_url.clone()))
                                 .await
                             {
                                 Ok((html, _)) => {
+                                    metrics.push_phase("cdp_retry_attempt", cdp_retry_start.elapsed(), None);
+                                    let cdp_retry_process_start = Instant::now();
                                     if let Ok(mut result) =
                                         rust_scraper.process_html(&html, url).await
                                     {
+                                        metrics.push_phase("cdp_retry_process_html", cdp_retry_process_start.elapsed(), None);
                                         let _ = proxy_manager
                                             .record_proxy_result(&new_proxy_url, true, None)
                                             .await;
 
+                                        let semantic_start = Instant::now();
                                         apply_semantic_shaving_if_enabled(
                                             state,
                                             &mut result,
@@ -305,7 +352,9 @@ pub async fn scrape_url_full(
                                             relevance_threshold,
                                         )
                                         .await;
+                                        metrics.push_phase("semantic_shaving", semantic_start.elapsed(), None);
 
+                                        let section_start = Instant::now();
                                         apply_relevant_section_extract_if_enabled(
                                             state,
                                             &mut result,
@@ -315,8 +364,10 @@ pub async fn scrape_url_full(
                                             section_threshold,
                                         )
                                         .await;
+                                        metrics.push_phase("relevant_section_extract", section_start.elapsed(), None);
 
                                         // Note: retry path uses the same cache key.
+                                        attach_scrape_metrics(&mut result, &metrics, total_start.elapsed());
                                         state
                                             .scrape_cache
                                             .insert(cache_key.clone(), result.clone())
@@ -326,6 +377,11 @@ pub async fn scrape_url_full(
                                     }
                                 }
                                 Err(e2) => {
+                                    metrics.push_phase(
+                                        "cdp_retry_attempt",
+                                        cdp_retry_start.elapsed(),
+                                        Some(format!("failed: {}", e2)),
+                                    );
                                     warn!("❌ CDP retry also failed: {}, falling back to standard path", e2);
                                     let _ = proxy_manager
                                         .record_proxy_result(&new_proxy_url, false, None)
@@ -368,13 +424,23 @@ pub async fn scrape_url_full(
     }
 
     // Pre-flight checker: quick native probe to detect blocks before full scrape
-    if let Ok(preflight) = rust_scraper.preflight_check(&url_owned).await {
-        if preflight.status_code >= 400 || preflight.blocked_reason.is_some() {
-            info!(
-                "Preflight suggests native CDP (status: {}, reason: {:?})",
-                preflight.status_code, preflight.blocked_reason
+    if should_run_preflight(url, use_proxy, quality_mode) {
+        let preflight_start = Instant::now();
+        if let Ok(preflight) = rust_scraper.preflight_check(&url_owned).await {
+            metrics.push_phase(
+                "preflight_check",
+                preflight_start.elapsed(),
+                Some(format!("status={}, blocked={}", preflight.status_code, preflight.blocked_reason.is_some())),
             );
-            force_browserless = true;
+            if preflight.status_code >= 400 || preflight.blocked_reason.is_some() {
+                info!(
+                    "Preflight suggests native CDP (status: {}, reason: {:?})",
+                    preflight.status_code, preflight.blocked_reason
+                );
+                force_browserless = true;
+            }
+        } else {
+            metrics.push_phase("preflight_check", preflight_start.elapsed(), Some("failed".to_string()));
         }
     }
 
@@ -390,7 +456,9 @@ pub async fn scrape_url_full(
             "🎯 Native CDP forced ({}), using stealth mode",
             extract_domain(url)
         );
+        metrics.strategy = Some("forced_cdp".to_string());
 
+        let forced_cdp_start = Instant::now();
         let initial_result = if let Some(proxy_url) = forced_proxy.clone() {
             rust_scraper
                 .scrape_with_browserless_advanced_with_proxy(&url_owned, None, Some(proxy_url))
@@ -400,6 +468,7 @@ pub async fn scrape_url_full(
                 .scrape_with_browserless_advanced(&url_owned, None)
                 .await
         };
+        metrics.push_phase("forced_cdp_attempt", forced_cdp_start.elapsed(), None);
 
         match initial_result {
             Ok(result) => {
@@ -464,6 +533,8 @@ pub async fn scrape_url_full(
                                                 .await;
 
                                             // Cache and return proxy result
+                                            let mut proxy_result = proxy_result;
+                                            attach_scrape_metrics(&mut proxy_result, &metrics, total_start.elapsed());
                                             state
                                                 .scrape_cache
                                                 .insert(url.to_string(), proxy_result.clone())
@@ -533,6 +604,8 @@ pub async fn scrape_url_full(
                 }
 
                 // Cache and return original result (if proxy retry didn't succeed)
+                let mut result = result;
+                attach_scrape_metrics(&mut result, &metrics, total_start.elapsed());
                 state
                     .scrape_cache
                     .insert(url.to_string(), result.clone())
@@ -568,6 +641,11 @@ pub async fn scrape_url_full(
                 return Ok(result);
             }
             Err(e) => {
+                metrics.push_phase(
+                    "forced_cdp_attempt",
+                    forced_cdp_start.elapsed(),
+                    Some(format!("failed: {}", e)),
+                );
                 if let (Some(proxy_url), Some(manager)) =
                     (forced_proxy.as_ref(), state.proxy_manager.as_ref())
                 {
@@ -582,6 +660,7 @@ pub async fn scrape_url_full(
     }
 
     // Only use Rust-native scraper with retries
+    let native_scrape_start = Instant::now();
     let mut result = retry(
         ExponentialBackoffBuilder::new()
             .with_initial_interval(std::time::Duration::from_millis(200))
@@ -599,6 +678,7 @@ pub async fn scrape_url_full(
         },
     )
     .await?;
+    metrics.push_phase("native_http_scrape", native_scrape_start.elapsed(), None);
 
     // PHASE 3: Adaptive native-CDP fallback for low-quality extractions
     let should_use_native_cdp = (result.extraction_score.map(|s| s < 0.35).unwrap_or(false)
@@ -613,8 +693,10 @@ pub async fn scrape_url_full(
                 result.word_count
             );
 
+            let cdp_fallback_start = Instant::now();
             match rust_scraper.scrape_with_browserless(&url_owned).await {
                 Ok(cdp_result) => {
+                    metrics.push_phase("native_cdp_fallback", cdp_fallback_start.elapsed(), None);
                     if cdp_result.word_count > result.word_count + 20 {
                         info!(
                             "✨ Native CDP improved extraction: {} → {} words",
@@ -628,6 +710,11 @@ pub async fn scrape_url_full(
                     }
                 }
                 Err(e) => {
+                    metrics.push_phase(
+                        "native_cdp_fallback",
+                        cdp_fallback_start.elapsed(),
+                        Some(format!("failed: {}", e)),
+                    );
                     info!("Native CDP fallback failed: {}, using static result", e);
                     result.warnings.push("cdp_fallback_failed".to_string());
                 }
@@ -651,7 +738,9 @@ pub async fn scrape_url_full(
             "Scraper returned empty content after all attempts, using legacy fallback for {}",
             url
         );
+        let legacy_fallback_start = Instant::now();
         result = scrape_url_fallback(state, &url_owned).await?;
+        metrics.push_phase("legacy_fallback", legacy_fallback_start.elapsed(), None);
     } else {
         info!(
             "Scraper succeeded for {} ({} words)",
@@ -706,6 +795,7 @@ pub async fn scrape_url_full(
         state.scrape_cache.invalidate(&cache_key).await;
     }
 
+    let semantic_start = Instant::now();
     apply_semantic_shaving_if_enabled(
         state,
         &mut result,
@@ -714,7 +804,9 @@ pub async fn scrape_url_full(
         relevance_threshold,
     )
     .await;
+    metrics.push_phase("semantic_shaving", semantic_start.elapsed(), None);
 
+    let section_extract_start = Instant::now();
     apply_relevant_section_extract_if_enabled(
         state,
         &mut result,
@@ -724,6 +816,7 @@ pub async fn scrape_url_full(
         section_threshold,
     )
     .await;
+    metrics.push_phase("relevant_section_extract", section_extract_start.elapsed(), None);
 
     if !(result.auth_wall_reason.is_some()
         || result.warnings.iter().any(|w| w == "content_restricted"))
@@ -736,6 +829,7 @@ pub async fn scrape_url_full(
 
     // Auto-log to history if memory is enabled (Phase 1)
     if let Some(memory) = state.get_memory() {
+        let history_start = Instant::now();
         let summary = format!(
             "{} words, {} code blocks",
             result.word_count,
@@ -761,9 +855,91 @@ pub async fn scrape_url_full(
         {
             tracing::warn!("Failed to log scrape to history: {}", e);
         }
+        metrics.push_phase("history_log", history_start.elapsed(), None);
     }
 
+    attach_scrape_metrics(&mut result, &metrics, total_start.elapsed());
+
     Ok(result)
+}
+
+#[derive(Default)]
+struct ScrapeMetricsBuilder {
+    strategy: Option<String>,
+    cache_hit: bool,
+    phases: Vec<ToolExecutionPhase>,
+}
+
+impl ScrapeMetricsBuilder {
+    fn push_phase(&mut self, name: &str, duration: Duration, detail: Option<String>) {
+        self.phases.push(ToolExecutionPhase {
+            name: name.to_string(),
+            duration_ms: duration.as_millis() as u64,
+            duration_seconds: duration.as_secs_f64(),
+            detail,
+        });
+    }
+}
+
+fn attach_scrape_metrics(
+    result: &mut ScrapeResponse,
+    metrics: &ScrapeMetricsBuilder,
+    total_duration: Duration,
+) {
+    result.metrics = Some(ToolExecutionMetrics {
+        total_duration_ms: total_duration.as_millis() as u64,
+        total_duration_seconds: total_duration.as_secs_f64(),
+        strategy: metrics.strategy.clone(),
+        cache_hit: metrics.cache_hit,
+        phases: metrics.phases.clone(),
+    });
+}
+
+fn should_try_cdp_first(
+    url: &str,
+    use_proxy: bool,
+    quality_mode: Option<QualityMode>,
+    extract_app_state: bool,
+) -> bool {
+    if use_proxy || extract_app_state {
+        return true;
+    }
+
+    match quality_mode.unwrap_or(QualityMode::Balanced) {
+        QualityMode::Aggressive | QualityMode::High => true,
+        QualityMode::Balanced => host_prefers_cdp_first(url),
+    }
+}
+
+fn should_run_preflight(url: &str, use_proxy: bool, quality_mode: Option<QualityMode>) -> bool {
+    if use_proxy {
+        return true;
+    }
+
+    match quality_mode.unwrap_or(QualityMode::Balanced) {
+        QualityMode::Aggressive | QualityMode::High => true,
+        QualityMode::Balanced => host_prefers_cdp_first(url),
+    }
+}
+
+fn host_prefers_cdp_first(url: &str) -> bool {
+    let host = url::Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(|host| host.to_ascii_lowercase()));
+
+    let Some(host) = host else {
+        return false;
+    };
+
+    host.contains("ticketmaster.")
+        || host.contains("linkedin.")
+        || host == "x.com"
+        || host.ends_with(".x.com")
+        || host.contains("instagram.")
+        || host.contains("airbnb.")
+        || host.contains("upwork.")
+        || host.contains("indeed.")
+        || host.contains("tiktok.")
 }
 
 fn github_pivot_plain_url(url: &str) -> Option<String> {
@@ -1252,6 +1428,7 @@ pub async fn scrape_url_fallback(state: &Arc<AppState>, url: &str) -> Result<Scr
         auth_risk_score: None,
         detection_factors: Vec::new(),
         final_url: None,
+        metrics: None,
     };
 
     info!("Fallback scraper extracted {} words", result.word_count);
