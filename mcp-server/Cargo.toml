@@ -1,6 +1,6 @@
 [package]
 name = "cortex-scout"
-version = "3.3.3"
+version = "3.3.4"
 edition = "2021"
 description = "God-Tier stealth intelligence engine for AI agents — zero-dependency parallel meta-search (Google/Bing/DDG/Brave), universal anti-bot bypass, native Chromium CDP (zero-Docker standalone), semantic research memory, and HITL nuclear option. Self-hosted, 100% private, MCP-native."
 repository = "https://github.com/cortex-works/cortex-scout"
@@ -90,6 +90,7 @@ chromiumoxide = "0.9"
 
 # Setup / preflight
 dirs = "6.0"
+fs2 = "0.4"
 which = "8.0"
 rfd = { version = "0.15", optional = true, default-features = false, features = ["xdg-portal", "tokio"] }
 

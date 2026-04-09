@@ -30,7 +30,7 @@ pub use core::AppState;
 
 // --- Backwards-compatible module paths ---
 pub use features::{
-    antibot, history, non_robot_search, proxy_grabber, proxy_manager, visual_scout,
+    antibot, history, host_guard, non_robot_search, proxy_grabber, proxy_manager, visual_scout,
 };
 pub use mcp::handlers as mcp_handlers;
 pub use mcp::stdio as stdio_service;

@@ -6,6 +6,7 @@ use axum::http::StatusCode;
 use axum::response::Json;
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::error;
 
 pub async fn handle(
@@ -40,7 +41,7 @@ pub async fn handle(
 
     let entry_type = arguments.get("entry_type").and_then(|v| v.as_str());
 
-    if let Some(memory) = state.get_memory() {
+    if let Some(memory) = state.get_memory_or_wait(Duration::from_secs(8)).await {
         let entry_type_filter = entry_type.map(|s| {
             if s == "search" {
                 EntryType::Search
@@ -140,12 +141,17 @@ pub async fn handle(
             }
         }
     } else {
+        let warning = if state.is_memory_pending() {
+            "research_history_unavailable_memory_initialization_timeout"
+        } else {
+            "research_history_unavailable_memory_not_initialized"
+        };
         let result_json = serde_json::json!({
             "query": query,
             "total_results": 0,
             "threshold": threshold,
             "results": [],
-            "warnings": ["research_history_unavailable_memory_not_initialized"]
+            "warnings": [warning]
         });
 
         Ok(Json(McpCallResponse {

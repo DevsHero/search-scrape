@@ -139,6 +139,8 @@ impl RustScraper {
     }
 
     pub async fn preflight_check(&self, url: &str) -> Result<PreflightCheck> {
+        crate::host_guard::wait_for_url_host(url).await;
+
         let user_agent = antibot::get_random_user_agent();
         let mut request_builder = self
             .client
@@ -183,6 +185,8 @@ impl RustScraper {
             return Err(anyhow!("URL must use HTTP or HTTPS protocol"));
         }
 
+        crate::host_guard::wait_for_url_host(url).await;
+
         // Apply anti-bot delay before request
         antibot::apply_request_delay().await;
 
@@ -213,6 +217,10 @@ impl RustScraper {
             .text()
             .await
             .map_err(|e| anyhow!("Failed to read response body: {}", e))?;
+
+        if let Some(reason) = self.detect_block_reason(&html) {
+            crate::host_guard::note_url_host_blocked(url, reason).await;
+        }
 
         // Parse HTML
         let document = Html::parse_document(&html);
@@ -423,6 +431,7 @@ impl RustScraper {
     ) -> Result<(u16, String)> {
         use crate::scraping::browser_manager;
 
+        crate::host_guard::wait_for_url_host(url).await;
         antibot::apply_request_delay().await;
 
         let domain = url::Url::parse(url)
@@ -444,6 +453,7 @@ impl RustScraper {
 
         // Mobile Safari retry if blocked
         if self.detect_block_reason(&html).is_some() {
+            crate::host_guard::note_url_host_blocked(url, "native_block").await;
             info!("Native fetch blocked, retrying with mobile profile");
             if let Ok((retry_status, retry_html)) = browser_manager::fetch_html_native_mobile(
                 url,

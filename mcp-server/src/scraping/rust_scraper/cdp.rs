@@ -16,6 +16,8 @@ impl RustScraper {
         url: &str,
         proxy_url: Option<String>,
     ) -> Result<(String, u16)> {
+        crate::host_guard::wait_for_url_host(url).await;
+
         let exe = browser_manager::find_chrome_executable().ok_or_else(|| {
             anyhow!("No browser found for CDP stealth mode. Install Brave, Chrome, or Chromium.")
         })?;
@@ -195,6 +197,7 @@ impl RustScraper {
 
         if self.detect_challenge(&content) {
             warn!("❌ CDP fetch hit challenge iframe/content signature");
+            crate::host_guard::note_url_host_blocked(url, "challenge_detected").await;
 
             drop(page);
             browser_manager::shutdown_browser_session(&mut browser, handle, data_dir, "fetch_via_cdp").await;
@@ -204,6 +207,7 @@ impl RustScraper {
 
         if let Some(block_reason) = self.detect_block_reason(&content) {
             warn!("❌ CDP fetch still blocked: {}", block_reason);
+            crate::host_guard::note_url_host_blocked(url, block_reason).await;
 
             drop(page);
             browser_manager::shutdown_browser_session(&mut browser, handle, data_dir, "fetch_via_cdp").await;

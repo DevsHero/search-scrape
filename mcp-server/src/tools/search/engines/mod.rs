@@ -131,7 +131,7 @@ pub async fn fetch_serp_html(
         }
     }
 
-    let direct = fetch_html(client, url.clone())
+    let direct = fetch_html(client, url.clone(), engine)
         .await
         .map_err(|e| EngineError::Transient(e.to_string()))?;
 
@@ -169,7 +169,10 @@ pub async fn fetch_serp_html(
 pub async fn fetch_html(
     client: &reqwest::Client,
     url: reqwest::Url,
+    engine: &str,
 ) -> Result<(StatusCode, String)> {
+    crate::host_guard::wait_for_search_engine(engine).await;
+
     let user_agent = crate::antibot::get_random_user_agent();
     let mut req = client
         .get(url)

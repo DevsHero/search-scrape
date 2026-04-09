@@ -6,7 +6,11 @@
       "command": "env",
       "args": [
         "RUST_LOG=warn",
+        "OUTBOUND_LIMIT=16",
         "SEARCH_ENGINES=google,bing,duckduckgo,brave",
+        "SEARCH_ENGINE_STAGGER_MS=350",
+        "SEARCH_SHARED_CACHE_TTL_SECS=300",
+        "DEEP_RESEARCH_HOP_TIMEOUT_SECS=90",
         "LANCEDB_URI=./lancedb",
         "HTTP_TIMEOUT_SECS=30",
         "HTTP_CONNECT_TIMEOUT_SECS=10",

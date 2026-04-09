@@ -15,12 +15,12 @@ use crate::{
     query_rewriter::QueryRewriter,
     rerank::Reranker,
     rust_scraper::QualityMode,
-    search::search_web_with_params,
+    search::{search_web_with_params, SearchParamOverrides},
     types::{DeepResearchResult, DeepResearchSource, ScrapeBatchResponse},
     AppState,
 };
 use anyhow::{Context, Result};
-use std::{collections::HashMap, collections::HashSet, sync::Arc, time::Instant};
+use std::{collections::HashMap, collections::HashSet, sync::Arc, time::{Duration, Instant}};
 use tracing::{info, warn};
 
 fn is_local_ollama_base_url(base_url: &str) -> bool {
@@ -223,6 +223,88 @@ fn domain_priority(url: &str) -> i32 {
         return -5;
     }
     0
+}
+
+fn push_unique_http_url(urls: &mut Vec<String>, candidate: &str, limit: usize) {
+    if urls.len() >= limit || candidate.trim().is_empty() || !candidate.starts_with("http") {
+        return;
+    }
+
+    if !urls.iter().any(|existing| existing == candidate) {
+        urls.push(candidate.to_string());
+    }
+}
+
+fn extract_urls_from_logged_search_result(value: &serde_json::Value, limit: usize) -> Vec<String> {
+    let mut urls = Vec::new();
+
+    if let Some(items) = value.as_array() {
+        for item in items {
+            if let Some(url) = item.get("url").and_then(|v| v.as_str()) {
+                push_unique_http_url(&mut urls, url, limit);
+            } else if let Some(url) = item.as_str() {
+                push_unique_http_url(&mut urls, url, limit);
+            }
+            if urls.len() >= limit {
+                break;
+            }
+        }
+        return urls;
+    }
+
+    let Some(obj) = value.as_object() else {
+        return urls;
+    };
+
+    for key in ["all_urls", "top_sources"] {
+        let Some(items) = obj.get(key).and_then(|v| v.as_array()) else {
+            continue;
+        };
+
+        for item in items {
+            if let Some(url) = item.as_str() {
+                push_unique_http_url(&mut urls, url, limit);
+            } else if let Some(url) = item.get("url").and_then(|v| v.as_str()) {
+                push_unique_http_url(&mut urls, url, limit);
+            }
+            if urls.len() >= limit {
+                break;
+            }
+        }
+
+        if urls.len() >= limit {
+            break;
+        }
+    }
+
+    if urls.len() < limit {
+        if let Some(items) = obj.get("key_findings").and_then(|v| v.as_array()) {
+            for item in items {
+                if let Some(url) = item.get("url").and_then(|v| v.as_str()) {
+                    push_unique_http_url(&mut urls, url, limit);
+                }
+                if urls.len() >= limit {
+                    break;
+                }
+            }
+        }
+    }
+
+    urls
+}
+
+fn history_bootstrap_query_limit(discovery_budget: usize) -> usize {
+    discovery_budget.max(12)
+}
+
+fn deep_research_hop_timeout() -> Duration {
+    Duration::from_secs(
+        std::env::var("DEEP_RESEARCH_HOP_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(90)
+            .max(30),
+    )
 }
 
 
@@ -516,11 +598,17 @@ pub async fn deep_research(
     {
         let mut seen = HashSet::<String>::new();
         hop_queries.retain(|q| seen.insert(normalize_query_for_dedupe(q)));
-        hop_queries.truncate(8);
+        let query_cap = std::env::var("DEEP_RESEARCH_QUERY_CAP")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(6)
+            .max(1);
+        hop_queries.truncate(query_cap);
     }
 
     all_sub_queries.extend(hop_queries.clone());
     let mut hop_urls: Vec<String> = Vec::new();
+    let research_memory = state.get_memory_or_wait(Duration::from_secs(8)).await;
 
     for current_depth in 1..=depth {
         info!(
@@ -534,10 +622,142 @@ pub async fn deep_research(
         // ── Search phase ─────────────────────────────────────────────────
         let mut candidate_urls: Vec<String> = hop_urls.clone();
         let mut url_via_query: HashMap<String, String> = HashMap::new();
+        let discovery_budget = config.max_sources_per_hop.saturating_mul(
+            std::env::var("DEEP_RESEARCH_URL_DISCOVERY_MULTIPLIER")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(2)
+                .clamp(1, 4),
+        );
+
+        if current_depth == 1 && candidate_urls.len() < discovery_budget {
+            if let Some(memory) = research_memory.as_ref() {
+                let mut recovered = 0usize;
+                let mut skipped_empty_history = 0usize;
+
+                match memory.find_recent_duplicate(&query, 72).await {
+                    Ok(Some((entry, _score))) => {
+                        let duplicate_urls = extract_urls_from_logged_search_result(
+                            &entry.full_result,
+                            discovery_budget.saturating_sub(candidate_urls.len()),
+                        );
+
+                        if duplicate_urls.is_empty() {
+                            skipped_empty_history += 1;
+                        }
+
+                        for url in duplicate_urls {
+                            if !candidate_urls.iter().any(|existing| existing == &url) {
+                                url_via_query
+                                    .entry(url.clone())
+                                    .or_insert_with(|| "memory_duplicate".to_string());
+                                candidate_urls.push(url);
+                                recovered += 1;
+                            }
+                            if candidate_urls.len() >= discovery_budget {
+                                break;
+                            }
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => warnings.push(format!("search_history_duplicate_failed:{}", e)),
+                }
+
+                if recovered == 0 {
+                    match memory
+                        .search_history(
+                            &query,
+                            history_bootstrap_query_limit(discovery_budget),
+                            0.55,
+                            Some(crate::history::EntryType::Search),
+                        )
+                        .await
+                    {
+                        Ok(entries) => {
+                            for (entry, _) in entries {
+                                let history_urls = extract_urls_from_logged_search_result(
+                                    &entry.full_result,
+                                    discovery_budget.saturating_sub(candidate_urls.len()),
+                                );
+
+                                if history_urls.is_empty() {
+                                    skipped_empty_history += 1;
+                                    continue;
+                                }
+
+                                let source_tag = if normalize_query_for_dedupe(&entry.query)
+                                    == normalize_query_for_dedupe(&query)
+                                {
+                                    "memory_exact"
+                                } else {
+                                    "memory_history"
+                                };
+
+                                for url in history_urls {
+                                    if !candidate_urls.iter().any(|existing| existing == &url) {
+                                        url_via_query
+                                            .entry(url.clone())
+                                            .or_insert_with(|| source_tag.to_string());
+                                        candidate_urls.push(url);
+                                        recovered += 1;
+                                    }
+                                    if candidate_urls.len() >= discovery_budget {
+                                        break;
+                                    }
+                                }
+                                if candidate_urls.len() >= discovery_budget {
+                                    break;
+                                }
+                            }
+                        }
+                        Err(e) => warnings.push(format!("search_history_failed:{}", e)),
+                    }
+                }
+
+                if recovered > 0 {
+                    warnings.push(format!("search_history_bootstrap:{}", recovered));
+                } else if skipped_empty_history > 0 {
+                    warnings.push(format!(
+                        "search_history_skipped_empty_entries:{}",
+                        skipped_empty_history
+                    ));
+                }
+            } else if state.is_memory_pending() {
+                warnings.push("search_history_unavailable:memory_initialization_timeout".to_string());
+            }
+        }
 
         for q in &hop_queries {
-            let results = match search_web_with_params(&state, q, None).await {
-                Ok((r, _)) => r,
+            if candidate_urls.len() >= discovery_budget {
+                break;
+            }
+            let results = match search_web_with_params(
+                &state,
+                q,
+                Some(SearchParamOverrides {
+                    disable_recovery: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+            {
+                Ok((r, extras)) => {
+                    if !extras.degraded_engines.is_empty() {
+                        warnings.push(format!(
+                            "search_degraded:{}:{}",
+                            q,
+                            extras.degraded_engines.join("|")
+                        ));
+                    }
+                    if !extras.skipped_engines.is_empty() {
+                        warnings.push(format!(
+                            "search_skipped:{}:{}",
+                            q,
+                            extras.skipped_engines.join("|")
+                        ));
+                    }
+                    r
+                }
                 Err(e) => {
                     warn!("deep_research search failed for '{}': {}", q, e);
                     warnings.push(format!("search_failed:{}", q));
@@ -558,6 +778,14 @@ pub async fn deep_research(
                     candidate_urls.push(r.url);
                 }
             }
+
+            if candidate_urls.len() >= discovery_budget {
+                info!(
+                    "deep_research hop {}: discovery budget reached after query '{}'",
+                    current_depth, q
+                );
+                break;
+            }
         }
 
         // Deduplicate against already-processed URLs.
@@ -565,7 +793,7 @@ pub async fn deep_research(
             .into_iter()
             .filter(|u| !u.is_empty() && u.starts_with("http") && all_urls_seen.insert(u.clone()))
             // Cap per hop to avoid overwhelming the scraper.
-            .take(config.max_sources_per_hop * 3)
+            .take(discovery_budget)
             .collect();
 
         if new_urls.is_empty() {
@@ -577,20 +805,36 @@ pub async fn deep_research(
         }
 
         // ── Batch scrape ─────────────────────────────────────────────────
-        let batch: ScrapeBatchResponse = match batch_scrape::scrape_batch(
-            &state,
-            new_urls.clone(),
-            config.max_concurrent,
-            Some(config.max_chars_per_source),
-            config.use_proxy,
-            config.quality_mode,
+        let hop_timeout = deep_research_hop_timeout();
+        let batch: ScrapeBatchResponse = match tokio::time::timeout(
+            hop_timeout,
+            batch_scrape::scrape_batch(
+                &state,
+                new_urls.clone(),
+                config.max_concurrent,
+                Some(config.max_chars_per_source),
+                config.use_proxy,
+                config.quality_mode,
+            ),
         )
         .await
         {
-            Ok(b) => b,
-            Err(e) => {
+            Ok(Ok(b)) => b,
+            Ok(Err(e)) => {
                 warn!("deep_research batch scrape hop {}: {}", current_depth, e);
                 warnings.push(format!("batch_scrape_failed_hop{}:{}", current_depth, e));
+                break;
+            }
+            Err(_) => {
+                warn!(
+                    "deep_research batch scrape hop {} timed out after {:?}",
+                    current_depth, hop_timeout
+                );
+                warnings.push(format!(
+                    "batch_scrape_timeout_hop{}:{}s",
+                    current_depth,
+                    hop_timeout.as_secs()
+                ));
                 break;
             }
         };
@@ -622,7 +866,7 @@ pub async fn deep_research(
             // Apply semantic shave when the embedding model is available.
             let (relevant_content, kept, total) = if raw_word_count < 200 {
                 (raw_content.clone(), 0, 0)
-            } else if let Some(memory) = state.get_memory() {
+            } else if let Some(memory) = research_memory.as_ref() {
                 match memory.get_embedding_model().await {
                     Ok(model) => {
                         shaved_attempted_count += 1;
@@ -730,10 +974,13 @@ pub async fn deep_research(
     }
 
     // ── Log session to persistent memory ─────────────────────────────────
-    if let Some(memory) = state.get_memory() {
+    if let Some(memory) = research_memory.as_ref() {
         let preview_json = serde_json::json!({
             "sources": sources_scraped,
+            "sources_discovered": sources_discovered,
             "top_sources": all_findings.iter().take(3).map(|f| &f.url).collect::<Vec<_>>(),
+            "all_urls": all_urls.iter().take(config.max_sources_per_hop * 3).cloned().collect::<Vec<_>>(),
+            "warnings": warnings.clone(),
         });
         let _ = memory
             .log_search(query.clone(), &preview_json, sources_scraped)
@@ -806,4 +1053,74 @@ pub async fn deep_research(
         warnings,
         total_duration_ms: start.elapsed().as_millis() as u64,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        deep_research_hop_timeout, extract_urls_from_logged_search_result,
+        history_bootstrap_query_limit,
+    };
+    use std::time::Duration;
+
+    #[test]
+    fn extract_urls_supports_search_result_arrays() {
+        let value = serde_json::json!([
+            {"url": "https://example.com/a"},
+            {"url": "https://example.com/b"}
+        ]);
+
+        let urls = extract_urls_from_logged_search_result(&value, 10);
+        assert_eq!(
+            urls,
+            vec![
+                "https://example.com/a".to_string(),
+                "https://example.com/b".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn extract_urls_supports_deep_research_preview_objects() {
+        let value = serde_json::json!({
+            "sources": 2,
+            "top_sources": ["https://example.com/a", "https://example.com/b"],
+            "all_urls": ["https://example.com/a", "https://example.com/b", "https://example.com/c"]
+        });
+
+        let urls = extract_urls_from_logged_search_result(&value, 3);
+        assert_eq!(
+            urls,
+            vec![
+                "https://example.com/a".to_string(),
+                "https://example.com/b".to_string(),
+                "https://example.com/c".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn extract_urls_supports_deep_research_result_objects() {
+        let value = serde_json::json!({
+            "key_findings": [
+                {"url": "https://example.com/a"},
+                {"url": "https://example.com/b"}
+            ]
+        });
+
+        let urls = extract_urls_from_logged_search_result(&value, 1);
+        assert_eq!(urls, vec!["https://example.com/a".to_string()]);
+    }
+
+    #[test]
+    fn history_bootstrap_query_limit_has_reasonable_floor() {
+        assert_eq!(history_bootstrap_query_limit(1), 12);
+        assert_eq!(history_bootstrap_query_limit(8), 12);
+        assert_eq!(history_bootstrap_query_limit(16), 16);
+    }
+
+    #[test]
+    fn deep_research_hop_timeout_has_safe_floor() {
+        assert!(deep_research_hop_timeout() >= Duration::from_secs(30));
+    }
 }

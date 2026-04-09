@@ -7,12 +7,16 @@ use crate::types::*;
 use crate::AppState;
 use anyhow::{anyhow, Result};
 use futures::future::join_all;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::Duration;
+use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
-pub use service::SearchService;
+pub use service::{SearchExecutionOutcome, SearchService};
 
 #[derive(Debug, Default, Clone)]
 pub struct SearchParamOverrides {
@@ -22,6 +26,7 @@ pub struct SearchParamOverrides {
     pub safesearch: Option<u8>,     // 0,1,2
     pub time_range: Option<String>, // e.g., day, week, month, year
     pub pageno: Option<u32>,        // 1..N
+    pub disable_recovery: bool,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -30,11 +35,57 @@ pub struct SearchExtras {
     pub suggestions: Vec<String>,
     pub corrections: Vec<String>,
     pub unresponsive_engines: Vec<String>,
+    pub degraded_engines: Vec<String>,
+    pub skipped_engines: Vec<String>,
     pub query_rewrite: Option<QueryRewriteResult>,
     pub duplicate_warning: Option<String>,
 }
 
-pub struct InternalSearchService;
+#[derive(Debug, Serialize, Deserialize)]
+struct SharedSearchCacheEntry {
+    cached_at_ms: i64,
+    results: Vec<SearchResult>,
+}
+
+struct SharedSearchLeaderLock {
+    path: PathBuf,
+}
+
+impl Drop for SharedSearchLeaderLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct EngineHealth {
+    blocked_streak: u32,
+    timeout_streak: u32,
+    failure_streak: u32,
+    cooldown_until: Option<Instant>,
+    last_issue: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+enum EngineRunStatus {
+    Success,
+    Recovered { reason: String },
+    Blocked { reason: String },
+    Timeout,
+    Failed { reason: String },
+}
+
+#[derive(Debug, Clone)]
+struct EngineRunOutput {
+    engine: String,
+    results: Vec<SearchResult>,
+    status: EngineRunStatus,
+}
+
+pub struct InternalSearchService {
+    engine_health: Mutex<HashMap<String, EngineHealth>>,
+    selection_cursor: AtomicUsize,
+}
 
 impl Default for InternalSearchService {
     fn default() -> Self {
@@ -44,7 +95,10 @@ impl Default for InternalSearchService {
 
 impl InternalSearchService {
     pub fn new() -> Self {
-        Self
+        Self {
+            engine_health: Mutex::new(HashMap::new()),
+            selection_cursor: AtomicUsize::new(0),
+        }
     }
 
     fn parse_engine_list(engines: Option<String>) -> Vec<String> {
@@ -59,13 +113,325 @@ impl InternalSearchService {
             .collect()
     }
 
+    fn max_engines_per_query(strict_requested: bool, requested_len: usize) -> usize {
+        if strict_requested {
+            return requested_len.max(1);
+        }
+
+        std::env::var("SEARCH_MAX_ENGINES_PER_QUERY")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(3)
+            .clamp(1, requested_len.max(1))
+    }
+
+    fn search_engine_stagger_ms() -> u64 {
+        std::env::var("SEARCH_ENGINE_STAGGER_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(125)
+    }
+
+    fn blocked_backoff_base(engine: &str) -> Duration {
+        match engine {
+            "brave" => Duration::from_secs(45),
+            "google" => Duration::from_secs(30),
+            "bing" => Duration::from_secs(35),
+            _ => Duration::from_secs(25),
+        }
+    }
+
+    fn timeout_backoff_base() -> Duration {
+        Duration::from_secs(12)
+    }
+
+    fn failure_backoff_base() -> Duration {
+        Duration::from_secs(8)
+    }
+
+    fn exp_backoff(base: Duration, streak: u32, cap: Duration) -> Duration {
+        let multiplier = 2u32.saturating_pow(streak.saturating_sub(1).min(4));
+        let scaled = base.saturating_mul(multiplier.max(1));
+        scaled.min(cap)
+    }
+
+    fn format_cooldown(engine: &str, issue: &str, remaining: Duration) -> String {
+        format!(
+            "{}(cooldown:{}s after {})",
+            engine,
+            remaining.as_secs().max(1),
+            issue
+        )
+    }
+
+    fn select_engines(
+        &self,
+        requested: &[String],
+        strict_requested: bool,
+    ) -> (Vec<String>, Vec<String>) {
+        if requested.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+
+        let budget = Self::max_engines_per_query(strict_requested, requested.len());
+        let start = if requested.len() <= 1 || strict_requested {
+            0
+        } else {
+            self.selection_cursor.fetch_add(1, Ordering::Relaxed) % requested.len()
+        };
+        let ordered: Vec<String> = requested
+            .iter()
+            .cycle()
+            .skip(start)
+            .take(requested.len())
+            .cloned()
+            .collect();
+
+        let now = Instant::now();
+        let health = self.engine_health.lock().expect("engine health mutex poisoned");
+        let mut active = Vec::new();
+        let mut skipped = Vec::new();
+        let mut fallback_probe: Option<(String, Duration, String)> = None;
+
+        for engine in ordered {
+            let Some(state) = health.get(&engine) else {
+                active.push(engine);
+                if active.len() >= budget {
+                    break;
+                }
+                continue;
+            };
+
+            if let Some(until) = state.cooldown_until {
+                if until > now {
+                    let remaining = until.duration_since(now);
+                    let issue = state
+                        .last_issue
+                        .clone()
+                        .unwrap_or_else(|| "recent_failure".to_string());
+                    skipped.push(Self::format_cooldown(&engine, &issue, remaining));
+
+                    match &fallback_probe {
+                        Some((_, best_remaining, _)) if *best_remaining <= remaining => {}
+                        _ => fallback_probe = Some((engine.clone(), remaining, issue)),
+                    }
+                    continue;
+                }
+            }
+
+            active.push(engine);
+            if active.len() >= budget {
+                break;
+            }
+        }
+
+        if active.is_empty() {
+            if let Some((engine, remaining, issue)) = fallback_probe {
+                debug!(
+                    "all engines are cooling down; probing '{}' after {:?} remaining ({})",
+                    engine, remaining, issue
+                );
+                active.push(engine);
+            }
+        }
+
+        (active, skipped)
+    }
+
+    fn select_rescue_engine(
+        &self,
+        requested: &[String],
+        attempted: &HashSet<String>,
+    ) -> Option<String> {
+        let now = Instant::now();
+        let health = self.engine_health.lock().expect("engine health mutex poisoned");
+        let mut fallback_probe: Option<(String, Duration)> = None;
+
+        for engine in requested {
+            if attempted.contains(engine) {
+                continue;
+            }
+
+            let Some(state) = health.get(engine) else {
+                return Some(engine.clone());
+            };
+
+            if let Some(until) = state.cooldown_until {
+                if until > now {
+                    let remaining = until.duration_since(now);
+                    match &fallback_probe {
+                        Some((_, best_remaining)) if *best_remaining <= remaining => {}
+                        _ => fallback_probe = Some((engine.clone(), remaining)),
+                    }
+                    continue;
+                }
+            }
+
+            return Some(engine.clone());
+        }
+
+        fallback_probe.map(|(engine, _)| engine)
+    }
+
+    fn update_engine_health(&self, engine: &str, status: &EngineRunStatus) {
+        let mut health = self.engine_health.lock().expect("engine health mutex poisoned");
+        let entry = health.entry(engine.to_string()).or_default();
+        let now = Instant::now();
+
+        match status {
+            EngineRunStatus::Success => {
+                entry.blocked_streak = 0;
+                entry.timeout_streak = 0;
+                entry.failure_streak = 0;
+                entry.cooldown_until = None;
+                entry.last_issue = None;
+            }
+            EngineRunStatus::Recovered { reason } => {
+                entry.blocked_streak = entry.blocked_streak.saturating_add(1);
+                entry.timeout_streak = 0;
+                entry.failure_streak = 0;
+                let backoff = Self::exp_backoff(
+                    Self::blocked_backoff_base(engine),
+                    entry.blocked_streak,
+                    Duration::from_secs(180),
+                );
+                entry.cooldown_until = Some(now + backoff);
+                entry.last_issue = Some(format!("blocked:{}", reason));
+            }
+            EngineRunStatus::Blocked { reason } => {
+                entry.blocked_streak = entry.blocked_streak.saturating_add(1);
+                entry.timeout_streak = 0;
+                entry.failure_streak = 0;
+                let backoff = Self::exp_backoff(
+                    Self::blocked_backoff_base(engine),
+                    entry.blocked_streak,
+                    Duration::from_secs(600),
+                );
+                entry.cooldown_until = Some(now + backoff);
+                entry.last_issue = Some(format!("blocked:{}", reason));
+            }
+            EngineRunStatus::Timeout => {
+                entry.timeout_streak = entry.timeout_streak.saturating_add(1);
+                entry.failure_streak = 0;
+                let backoff = Self::exp_backoff(
+                    Self::timeout_backoff_base(),
+                    entry.timeout_streak,
+                    Duration::from_secs(120),
+                );
+                entry.cooldown_until = Some(now + backoff);
+                entry.last_issue = Some("timeout".to_string());
+            }
+            EngineRunStatus::Failed { reason } => {
+                entry.failure_streak = entry.failure_streak.saturating_add(1);
+                let backoff = Self::exp_backoff(
+                    Self::failure_backoff_base(),
+                    entry.failure_streak,
+                    Duration::from_secs(60),
+                );
+                entry.cooldown_until = Some(now + backoff);
+                entry.last_issue = Some(format!("failed:{}", reason));
+            }
+        }
+    }
+
+    fn should_run_community_expansion_for(
+        query: &str,
+        primary_results: usize,
+        enabled: bool,
+        threshold: usize,
+    ) -> bool {
+        if !enabled {
+            return false;
+        }
+
+        let lower = query.to_ascii_lowercase();
+        let explicit_needles = [
+            "reddit",
+            "hacker news",
+            "news.ycombinator",
+            "community",
+            "discussion",
+            "forum",
+            "forums",
+            "issue",
+            "issues",
+        ];
+        if explicit_needles.iter().any(|needle| lower.contains(needle)) {
+            return true;
+        }
+
+        primary_results < threshold
+    }
+
+    fn should_run_community_expansion(query: &str, primary_results: usize) -> bool {
+        let enabled = std::env::var("SEARCH_COMMUNITY_SOURCES")
+            .unwrap_or_else(|_| "true".to_string())
+            .eq_ignore_ascii_case("true");
+        let threshold = std::env::var("SEARCH_COMMUNITY_TRIGGER_RESULTS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(4);
+        Self::should_run_community_expansion_for(query, primary_results, enabled, threshold)
+    }
+
+    fn extras_from_runs(runs: &[EngineRunOutput], skipped: Vec<String>) -> SearchExtras {
+        let mut extras = SearchExtras {
+            skipped_engines: skipped,
+            ..Default::default()
+        };
+
+        for run in runs {
+            match &run.status {
+                EngineRunStatus::Success => {}
+                EngineRunStatus::Recovered { reason } => {
+                    extras
+                        .degraded_engines
+                        .push(format!("{}(recovered_via_fallback:{})", run.engine, reason));
+                }
+                EngineRunStatus::Blocked { reason } => {
+                    extras.unresponsive_engines.push(run.engine.clone());
+                    extras
+                        .degraded_engines
+                        .push(format!("{}(blocked:{})", run.engine, reason));
+                }
+                EngineRunStatus::Timeout => {
+                    extras.unresponsive_engines.push(run.engine.clone());
+                    extras
+                        .degraded_engines
+                        .push(format!("{}(timeout)", run.engine));
+                }
+                EngineRunStatus::Failed { reason } => {
+                    extras.unresponsive_engines.push(run.engine.clone());
+                    extras
+                        .degraded_engines
+                        .push(format!("{}(failed:{})", run.engine, reason));
+                }
+            }
+        }
+
+        extras
+    }
+
+    async fn sync_host_guard(&self, run: &EngineRunOutput) {
+        match &run.status {
+            EngineRunStatus::Success => crate::host_guard::note_search_engine_success(&run.engine).await,
+            EngineRunStatus::Recovered { reason } | EngineRunStatus::Blocked { reason } => {
+                crate::host_guard::note_search_engine_blocked(&run.engine, reason).await
+            }
+            EngineRunStatus::Timeout => crate::host_guard::note_search_engine_timeout(&run.engine).await,
+            EngineRunStatus::Failed { reason } => {
+                crate::host_guard::note_search_engine_failure(&run.engine, reason).await
+            }
+        }
+    }
+
     async fn run_engine(
         &self,
         state: &Arc<AppState>,
         engine: &str,
         query: &str,
         max_results: usize,
-    ) -> Vec<SearchResult> {
+    ) -> EngineRunOutput {
         let client = &state.http_client;
         let timeout = engine_timeout(engine);
 
@@ -92,21 +458,47 @@ impl InternalSearchService {
                     engine,
                     timeout.as_millis()
                 );
-                return Vec::new();
+                return EngineRunOutput {
+                    engine: engine.to_string(),
+                    results: Vec::new(),
+                    status: EngineRunStatus::Timeout,
+                };
             }
         };
 
         match res {
-            Ok(v) => v,
+            Ok(v) => EngineRunOutput {
+                engine: engine.to_string(),
+                results: v,
+                status: EngineRunStatus::Success,
+            },
             Err(engines::EngineError::Blocked { reason }) => {
                 warn!("engine '{}' blocked: {}", engine, reason);
-                self.tier2_non_robot_fallback(state, engine, query, max_results)
-                    .await
-                    .unwrap_or_default()
+                let fallback = self
+                    .tier2_non_robot_fallback(state, engine, query, max_results)
+                    .await;
+                match fallback {
+                    Some(results) if !results.is_empty() => EngineRunOutput {
+                        engine: engine.to_string(),
+                        results,
+                        status: EngineRunStatus::Recovered { reason },
+                    },
+                    _ => EngineRunOutput {
+                        engine: engine.to_string(),
+                        results: Vec::new(),
+                        status: EngineRunStatus::Blocked { reason },
+                    },
+                }
             }
             Err(e) => {
                 warn!("engine '{}' failed: {}", engine, e);
-                Vec::new()
+                EngineRunOutput {
+                    engine: engine.to_string(),
+                    results: Vec::new(),
+                    status: EngineRunStatus::Failed {
+                        reason: e.to_string(),
+                    },
+                }
             }
         }
     }
@@ -215,8 +607,9 @@ impl SearchService for InternalSearchService {
         state: &Arc<AppState>,
         query: &str,
         overrides: Option<SearchParamOverrides>,
-    ) -> Result<Vec<SearchResult>> {
+    ) -> Result<SearchExecutionOutcome> {
         let mut engines_override = overrides.as_ref().and_then(|o| o.engines.clone());
+        let explicit_engines = engines_override.is_some();
 
         // Context-based forcing (roughly equivalent to the legacy external search engine forcing).
         let query_lower = query.to_lowercase();
@@ -234,38 +627,86 @@ impl SearchService for InternalSearchService {
         }
 
         let engine_list = Self::parse_engine_list(engines_override.take());
+        let (selected_engines, mut skipped_engines) =
+            self.select_engines(&engine_list, explicit_engines);
         let max_results = std::env::var("SEARCH_MAX_RESULTS_PER_ENGINE")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(10);
 
-        // Run all engines in parallel (Tier 1); each engine can still do best-effort Tier 2 fallback.
-        let engine_futs = engine_list
+        // Run the healthiest engines in parallel with a light stagger to reduce burstiness.
+        let stagger_ms = Self::search_engine_stagger_ms();
+        let engine_futs = selected_engines.iter().enumerate().map(|(index, engine)| {
+            let effective_query = effective_query.clone();
+            async move {
+                if index > 0 && stagger_ms > 0 {
+                    tokio::time::sleep(Duration::from_millis(stagger_ms * index as u64)).await;
+                }
+                self.run_engine(state, engine.as_str(), &effective_query, max_results)
+                    .await
+            }
+        });
+        let mut engine_runs: Vec<EngineRunOutput> = join_all(engine_futs).await;
+        for run in &engine_runs {
+            self.update_engine_health(&run.engine, &run.status);
+            self.sync_host_guard(run).await;
+        }
+        let mut results: Vec<SearchResult> = engine_runs
             .iter()
-            .map(|engine| self.run_engine(state, engine.as_str(), &effective_query, max_results));
-        let engine_batches: Vec<Vec<SearchResult>> = join_all(engine_futs).await;
-        let mut results: Vec<SearchResult> = engine_batches.into_iter().flatten().collect();
+            .flat_map(|run| run.results.clone())
+            .collect();
 
-        // Optional "community" expansion, similar intent to old SEARCH_COMMUNITY_SOURCES.
-        if std::env::var("SEARCH_COMMUNITY_SOURCES")
-            .unwrap_or_else(|_| "true".to_string())
-            .to_lowercase()
-            == "true"
-        {
+        if results.is_empty() {
+            let attempted: HashSet<String> = selected_engines.iter().cloned().collect();
+            if let Some(rescue_engine) = self.select_rescue_engine(&engine_list, &attempted) {
+                debug!(
+                    "primary search returned 0 results; probing rescue engine '{}'",
+                    rescue_engine
+                );
+                let rescue_run = self
+                    .run_engine(state, rescue_engine.as_str(), &effective_query, max_results)
+                    .await;
+                self.update_engine_health(&rescue_run.engine, &rescue_run.status);
+                self.sync_host_guard(&rescue_run).await;
+                results.extend(rescue_run.results.clone());
+                engine_runs.push(rescue_run);
+            }
+        }
+
+        // Community expansion is expensive and higher-risk. Only use it when the query
+        // explicitly asks for community discussion or primary results are too sparse.
+        if Self::should_run_community_expansion(&effective_query, results.len()) {
             let community_query = format!(
                 "{} (site:reddit.com OR site:news.ycombinator.com)",
                 effective_query
             );
 
-            let community_engines = Self::parse_engine_list(None);
-            let community_futs = community_engines.iter().map(|engine| {
-                self.run_engine(state, engine.as_str(), &community_query, max_results)
+            let (community_engines, community_skipped) =
+                self.select_engines(&engine_list, explicit_engines);
+            skipped_engines.extend(community_skipped);
+            let community_futs = community_engines.iter().enumerate().map(|(index, engine)| {
+                let community_query = community_query.clone();
+                async move {
+                    if index > 0 && stagger_ms > 0 {
+                        tokio::time::sleep(Duration::from_millis(stagger_ms * index as u64)).await;
+                    }
+                    self.run_engine(state, engine.as_str(), &community_query, max_results)
+                        .await
+                }
             });
-            let community_batches: Vec<Vec<SearchResult>> = join_all(community_futs).await;
-            results.extend(community_batches.into_iter().flatten());
+            let community_runs: Vec<EngineRunOutput> = join_all(community_futs).await;
+            for run in &community_runs {
+                self.update_engine_health(&run.engine, &run.status);
+                self.sync_host_guard(run).await;
+            }
+            results.extend(community_runs.iter().flat_map(|run| run.results.clone()));
+            engine_runs.extend(community_runs);
         }
 
-        Ok(dedup_and_score_results(results, query))
+        Ok(SearchExecutionOutcome {
+            results: dedup_and_score_results(results, query),
+            extras: Self::extras_from_runs(&engine_runs, skipped_engines),
+        })
     }
 }
 
@@ -740,7 +1181,7 @@ pub async fn search_web_with_params(
     // Phase 2: Check for recent duplicates if memory enabled
     let mut duplicate_warning = None;
     if neurosiphon {
-        if let Some(memory) = state.get_memory() {
+        if let Some(memory) = state.get_memory_or_wait(Duration::from_secs(3)).await {
             match memory.find_recent_duplicate(query, 6).await {
                 Ok(Some((entry, score))) => {
                     let time_ago = chrono::Utc::now().signed_duration_since(entry.timestamp);
@@ -799,7 +1240,7 @@ pub async fn search_web_with_params(
 
     let cache_key = if let Some(ref ov) = overrides {
         format!(
-            "q={}|eng={}|cat={}|lang={}|safe={}|time={}|page={}|ns={}",
+            "q={}|eng={}|cat={}|lang={}|safe={}|time={}|page={}|recover={}|ns={}",
             query,
             ov.engines.clone().unwrap_or_default(),
             ov.categories.clone().unwrap_or_default(),
@@ -809,15 +1250,22 @@ pub async fn search_web_with_params(
             ov.pageno
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "1".into()),
+            if ov.disable_recovery { 0 } else { 1 },
             if neurosiphon { 1 } else { 0 }
         )
     } else {
         format!("q={}|default|ns={}", query, if neurosiphon { 1 } else { 0 })
     };
 
+    let disable_recovery = overrides
+        .as_ref()
+        .map(|ov| ov.disable_recovery)
+        .unwrap_or(false);
+
     if let Some(cached) = state.search_cache.get(&cache_key).await {
         debug!("search cache hit for query");
         let cached_extras = SearchExtras {
+            suggestions: rewrite_result.suggestions.clone(),
             query_rewrite: Some(rewrite_result),
             duplicate_warning,
             ..Default::default()
@@ -825,17 +1273,88 @@ pub async fn search_web_with_params(
         return Ok((cached, cached_extras));
     }
 
+    if let Some(shared) = read_shared_search_cache(&cache_key).await {
+        debug!("shared search cache hit for query");
+        state.search_cache.insert(cache_key.clone(), shared.clone()).await;
+        let cached_extras = SearchExtras {
+            suggestions: rewrite_result.suggestions.clone(),
+            query_rewrite: Some(rewrite_result),
+            duplicate_warning,
+            ..Default::default()
+        };
+        return Ok((shared, cached_extras));
+    }
+
+    let _shared_search_lock = if shared_search_cache_enabled() {
+        match try_acquire_shared_search_leader(&cache_key) {
+            Some(lock) => Some(lock),
+            None => {
+                if let Some(shared) = wait_for_shared_search_result(&cache_key).await {
+                    debug!("shared search cache filled by another process");
+                    state.search_cache.insert(cache_key.clone(), shared.clone()).await;
+                    let cached_extras = SearchExtras {
+                        suggestions: rewrite_result.suggestions.clone(),
+                        query_rewrite: Some(rewrite_result),
+                        duplicate_warning,
+                        ..Default::default()
+                    };
+                    return Ok((shared, cached_extras));
+                }
+                try_acquire_shared_search_leader(&cache_key)
+            }
+        }
+    } else {
+        None
+    };
+
     let _permit = state
         .outbound_limit
         .acquire()
         .await
         .expect("semaphore closed");
 
-    let raw_results = state
+    let mut search_outcome = state
         .search_service
         .search(state, &effective_query, overrides.clone())
         .await
         .map_err(|e| anyhow!("internal search failed: {}", e))?;
+
+    if !disable_recovery && search_outcome.results.is_empty() {
+        let recovery_rewrite = if rewrite_result.is_developer_query {
+            rewrite_result.clone()
+        } else {
+            QueryRewriter::new().rewrite_query(query)
+        };
+        let recovery_queries = zero_result_recovery_queries(query, &effective_query, &recovery_rewrite);
+        for fallback_query in recovery_queries {
+            info!(
+                "search recovery: retrying '{}' with fallback query '{}'",
+                query, fallback_query
+            );
+            let fallback_outcome = match state
+                .search_service
+                .search(state, &fallback_query, overrides.clone())
+                .await
+            {
+                Ok(outcome) => outcome,
+                Err(e) => {
+                    warn!(
+                        "search recovery failed for fallback query '{}': {}",
+                        fallback_query, e
+                    );
+                    continue;
+                }
+            };
+
+            merge_search_extras(&mut search_outcome.extras, fallback_outcome.extras);
+            if !fallback_outcome.results.is_empty() {
+                search_outcome.results = fallback_outcome.results;
+                break;
+            }
+        }
+    }
+
+    let raw_results = search_outcome.results;
 
     debug!("Internal search returned {} raw results", raw_results.len());
 
@@ -849,11 +1368,18 @@ pub async fn search_web_with_params(
     }
 
     // Internal engines don't provide external-backend "extras"; keep only rewrite+dup warning.
-    let extras = SearchExtras {
+    let mut extras = SearchExtras {
+        suggestions: rewrite_result.suggestions.clone(),
         query_rewrite: Some(rewrite_result),
         duplicate_warning,
-        ..Default::default()
+        ..search_outcome.extras
     };
+    extras.unresponsive_engines.sort();
+    extras.unresponsive_engines.dedup();
+    extras.degraded_engines.sort();
+    extras.degraded_engines.dedup();
+    extras.skipped_engines.sort();
+    extras.skipped_engines.dedup();
 
     // Enhanced semantic reranking with keyword boosting (NeuroSiphon mode)
     let final_results = if neurosiphon {
@@ -870,10 +1396,17 @@ pub async fn search_web_with_params(
         results
     };
 
-    state
-        .search_cache
-        .insert(cache_key, final_results.clone())
-        .await;
+    let cacheable = !(final_results.is_empty()
+        && (!extras.degraded_engines.is_empty() || !extras.skipped_engines.is_empty()));
+    if cacheable {
+        state
+            .search_cache
+            .insert(cache_key.clone(), final_results.clone())
+            .await;
+        write_shared_search_cache(&cache_key, &final_results).await;
+    } else {
+        debug!("skipping cache for empty degraded search result set");
+    }
 
     if let Some(memory) = state.get_memory() {
         let result_json = serde_json::to_value(&final_results).unwrap_or_default();
@@ -887,6 +1420,213 @@ pub async fn search_web_with_params(
     }
 
     Ok((final_results, extras))
+}
+
+fn zero_result_recovery_queries(
+    original_query: &str,
+    effective_query: &str,
+    rewrite_result: &QueryRewriteResult,
+) -> Vec<String> {
+    let mut candidates = Vec::new();
+
+    if let Some(rewritten) = rewrite_result.rewritten.as_ref() {
+        if rewritten != original_query && rewritten != effective_query {
+            candidates.push(rewritten.clone());
+        }
+    }
+
+    for suggestion in rewrite_result.suggestions.iter().take(3) {
+        if suggestion != original_query
+            && suggestion != effective_query
+            && !candidates.iter().any(|existing| existing == suggestion)
+        {
+            candidates.push(suggestion.clone());
+        }
+    }
+
+    candidates
+}
+
+fn merge_search_extras(target: &mut SearchExtras, addition: SearchExtras) {
+    target.answers.extend(addition.answers);
+    target.suggestions.extend(addition.suggestions);
+    target.corrections.extend(addition.corrections);
+    target
+        .unresponsive_engines
+        .extend(addition.unresponsive_engines);
+    target.degraded_engines.extend(addition.degraded_engines);
+    target.skipped_engines.extend(addition.skipped_engines);
+
+    if target.query_rewrite.is_none() {
+        target.query_rewrite = addition.query_rewrite;
+    }
+    if target.duplicate_warning.is_none() {
+        target.duplicate_warning = addition.duplicate_warning;
+    }
+}
+
+fn shared_search_cache_enabled() -> bool {
+    match std::env::var("SEARCH_SHARED_CACHE") {
+        Ok(v) => {
+            let lower = v.trim().to_ascii_lowercase();
+            !(lower.is_empty() || lower == "0" || lower == "false" || lower == "no" || lower == "off")
+        }
+        Err(_) => true,
+    }
+}
+
+fn shared_search_cache_ttl_secs() -> u64 {
+    std::env::var("SEARCH_SHARED_CACHE_TTL_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(300)
+}
+
+fn shared_search_cache_path(cache_key: &str) -> PathBuf {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    cache_key.hash(&mut hasher);
+    let filename = format!("{:016x}.json", hasher.finish());
+
+    std::env::var("SEARCH_SHARED_CACHE_DIR")
+        .ok()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            dirs::cache_dir()
+                .unwrap_or_else(std::env::temp_dir)
+                .join("cortex-scout")
+                .join("shared-search-cache")
+        })
+        .join(filename)
+}
+
+fn shared_search_lock_path(cache_key: &str) -> PathBuf {
+    shared_search_cache_path(cache_key).with_extension("lock")
+}
+
+fn shared_search_lock_wait_secs() -> u64 {
+    std::env::var("SEARCH_SHARED_CACHE_WAIT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+    .unwrap_or(180)
+}
+
+fn shared_search_lock_stale_secs() -> u64 {
+    std::env::var("SEARCH_SHARED_CACHE_LOCK_STALE_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(120)
+}
+
+fn try_acquire_shared_search_leader(cache_key: &str) -> Option<SharedSearchLeaderLock> {
+    if !shared_search_cache_enabled() {
+        return None;
+    }
+
+    let path = shared_search_lock_path(cache_key);
+    if let Some(parent) = path.parent() {
+        if std::fs::create_dir_all(parent).is_err() {
+            return None;
+        }
+    }
+
+    for attempt in 0..2 {
+        match std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&path)
+        {
+            Ok(_) => return Some(SharedSearchLeaderLock { path }),
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists && attempt == 0 => {
+                let stale = std::fs::metadata(&path)
+                    .ok()
+                    .and_then(|meta| meta.modified().ok())
+                    .and_then(|modified| modified.elapsed().ok())
+                    .map(|elapsed| elapsed.as_secs() > shared_search_lock_stale_secs())
+                    .unwrap_or(false);
+                if stale {
+                    let _ = std::fs::remove_file(&path);
+                    continue;
+                }
+                return None;
+            }
+            Err(_) => return None,
+        }
+    }
+
+    None
+}
+
+async fn read_shared_search_cache(cache_key: &str) -> Option<Vec<SearchResult>> {
+    if !shared_search_cache_enabled() {
+        return None;
+    }
+
+    let path = shared_search_cache_path(cache_key);
+    let bytes = tokio::fs::read(&path).await.ok()?;
+    let entry: SharedSearchCacheEntry = serde_json::from_slice(&bytes).ok()?;
+    let age_ms = chrono::Utc::now()
+        .timestamp_millis()
+        .saturating_sub(entry.cached_at_ms);
+    if age_ms > (shared_search_cache_ttl_secs() as i64 * 1000) {
+        let _ = tokio::fs::remove_file(path).await;
+        return None;
+    }
+
+    Some(entry.results)
+}
+
+async fn wait_for_shared_search_result(cache_key: &str) -> Option<Vec<SearchResult>> {
+    let deadline = Instant::now() + Duration::from_secs(shared_search_lock_wait_secs());
+    let lock_path = shared_search_lock_path(cache_key);
+    while Instant::now() < deadline {
+        if let Some(shared) = read_shared_search_cache(cache_key).await {
+            return Some(shared);
+        }
+
+        let stale = std::fs::metadata(&lock_path)
+            .ok()
+            .and_then(|meta| meta.modified().ok())
+            .and_then(|modified| modified.elapsed().ok())
+            .map(|elapsed| elapsed.as_secs() > shared_search_lock_stale_secs())
+            .unwrap_or(false);
+        if stale {
+            let _ = std::fs::remove_file(&lock_path);
+            break;
+        }
+
+        if !lock_path.exists() {
+            break;
+        }
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    None
+}
+
+async fn write_shared_search_cache(cache_key: &str, results: &[SearchResult]) {
+    if !shared_search_cache_enabled() || results.is_empty() {
+        return;
+    }
+
+    let path = shared_search_cache_path(cache_key);
+    if let Some(parent) = path.parent() {
+        if tokio::fs::create_dir_all(parent).await.is_err() {
+            return;
+        }
+    }
+
+    let entry = SharedSearchCacheEntry {
+        cached_at_ms: chrono::Utc::now().timestamp_millis(),
+        results: results.to_vec(),
+    };
+    let Ok(bytes) = serde_json::to_vec(&entry) else {
+        return;
+    };
+
+    let temp_path = path.with_extension("tmp");
+    if tokio::fs::write(&temp_path, bytes).await.is_ok() {
+        let _ = tokio::fs::rename(&temp_path, &path).await;
+    }
 }
 
 /// Classify search result by domain and source type
@@ -987,4 +1727,96 @@ fn boost_by_early_keywords(results: &[SearchResult], query: &str) -> Vec<SearchR
 
     boosted_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     boosted_results.into_iter().map(|(r, _)| r).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn community_expansion_only_runs_when_needed() {
+        assert!(InternalSearchService::should_run_community_expansion_for(
+            "rust model context protocol reddit discussion",
+            20,
+            true,
+            4,
+        ));
+        assert!(InternalSearchService::should_run_community_expansion_for(
+            "rust model context protocol",
+            2,
+            true,
+            4,
+        ));
+        assert!(!InternalSearchService::should_run_community_expansion_for(
+            "rust model context protocol",
+            8,
+            true,
+            4,
+        ));
+    }
+
+    #[test]
+    fn select_engines_skips_cooling_down_engines() {
+        let service = InternalSearchService::new();
+        {
+            let mut health = service
+                .engine_health
+                .lock()
+                .expect("engine health mutex poisoned");
+            health.insert(
+                "google".to_string(),
+                EngineHealth {
+                    cooldown_until: Some(Instant::now() + Duration::from_secs(30)),
+                    last_issue: Some("blocked:http_429".to_string()),
+                    ..Default::default()
+                },
+            );
+        }
+
+        let requested = vec![
+            "google".to_string(),
+            "bing".to_string(),
+            "duckduckgo".to_string(),
+            "brave".to_string(),
+        ];
+        let (selected, skipped) = service.select_engines(&requested, false);
+
+        assert!(!selected.iter().any(|engine| engine == "google"));
+        assert!(selected.iter().any(|engine| engine == "bing"));
+        assert!(skipped.iter().any(|entry| entry.contains("google(cooldown")));
+    }
+
+    #[test]
+    fn blocked_status_generates_degraded_telemetry() {
+        let extras = InternalSearchService::extras_from_runs(
+            &[
+                EngineRunOutput {
+                    engine: "google".to_string(),
+                    results: Vec::new(),
+                    status: EngineRunStatus::Blocked {
+                        reason: "http_429".to_string(),
+                    },
+                },
+                EngineRunOutput {
+                    engine: "bing".to_string(),
+                    results: Vec::new(),
+                    status: EngineRunStatus::Recovered {
+                        reason: "cloudflare".to_string(),
+                    },
+                },
+            ],
+            vec!["duckduckgo(cooldown:30s after timeout)".to_string()],
+        );
+
+        assert_eq!(extras.unresponsive_engines, vec!["google".to_string()]);
+        assert!(extras
+            .degraded_engines
+            .iter()
+            .any(|entry| entry == "google(blocked:http_429)"));
+        assert!(extras
+            .degraded_engines
+            .iter()
+            .any(|entry| entry == "bing(recovered_via_fallback:cloudflare)"));
+        assert_eq!(extras.skipped_engines.len(), 1);
+    }
 }

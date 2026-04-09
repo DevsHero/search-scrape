@@ -122,13 +122,16 @@ impl McpService {
             tokio::spawn(async move {
                 match history::MemoryManager::new(&lancedb_uri).await {
                     Ok(memory) => {
-                        *state_bg.memory.write().unwrap() = Some(Arc::new(memory));
+                        state_bg.install_memory(Arc::new(memory));
                         info!("Memory initialized successfully (background)");
                     }
-                    Err(e) => warn!(
-                        "Failed to initialize memory: {}. Continuing without memory.",
-                        e
-                    ),
+                    Err(e) => {
+                        state_bg.mark_memory_failed();
+                        warn!(
+                            "Failed to initialize memory: {}. Continuing without memory.",
+                            e
+                        );
+                    }
                 }
             });
         } else {

@@ -1332,7 +1332,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-scout"
-version = "3.3.3"
+version = "3.3.4"
 dependencies = [
  "accessibility-sys",
  "aho-corasick",
@@ -1349,6 +1349,7 @@ dependencies = [
  "core-foundation-sys 0.8.7",
  "crossterm",
  "dirs",
+ "fs2",
  "futures",
  "html2md",
  "is_elevated",
@@ -1412,7 +1413,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "windows 0.61.3",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -2718,6 +2719,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]

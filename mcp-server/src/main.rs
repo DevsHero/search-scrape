@@ -103,10 +103,13 @@ async fn main() -> anyhow::Result<()> {
                 state = state.with_memory(Arc::new(memory));
                 info!("Memory initialized successfully");
             }
-            Err(e) => warn!(
-                "Failed to initialize memory: {}. Continuing without memory feature.",
-                e
-            ),
+            Err(e) => {
+                state.mark_memory_failed();
+                warn!(
+                    "Failed to initialize memory: {}. Continuing without memory feature.",
+                    e
+                );
+            }
         }
     } else {
         info!("Semantic memory disabled (CORTEX_SCOUT_MEMORY_DISABLED=1)");

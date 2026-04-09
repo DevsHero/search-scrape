@@ -77,6 +77,7 @@ pub async fn handle(
             .get("pageno")
             .and_then(|v| v.as_u64())
             .and_then(|n| if n >= 1 { Some(n as u32) } else { None }),
+        disable_recovery: false,
     };
 
     let has_overrides = overrides.engines.is_some()
@@ -121,10 +122,16 @@ pub async fn handle(
                 extras.corrections.join(", ")
             ));
         }
-        if !extras.unresponsive_engines.is_empty() {
+        if !extras.degraded_engines.is_empty() {
             text.push_str(&format!(
-                "\n**Note:** {} search engine(s) did not respond. Try different engines or retry.\n",
-                extras.unresponsive_engines.len()
+                "\n**Degraded engines:** {}\n",
+                extras.degraded_engines.join(", ")
+            ));
+        }
+        if !extras.skipped_engines.is_empty() {
+            text.push_str(&format!(
+                "**Skipped engines:** {}\n",
+                extras.skipped_engines.join(", ")
             ));
         }
         text
@@ -194,10 +201,16 @@ pub async fn handle(
                 extras.suggestions.join(", ")
             ));
         }
-        if !extras.unresponsive_engines.is_empty() {
+        if !extras.degraded_engines.is_empty() {
             text.push_str(&format!(
-                "\n⚠️ **Note:** {} engine(s) did not respond (may affect completeness)\n",
-                extras.unresponsive_engines.len()
+                "\n⚠️ **Degraded engines:** {}\n",
+                extras.degraded_engines.join(", ")
+            ));
+        }
+        if !extras.skipped_engines.is_empty() {
+            text.push_str(&format!(
+                "⚠️ **Skipped engines:** {}\n",
+                extras.skipped_engines.join(", ")
             ));
         }
 

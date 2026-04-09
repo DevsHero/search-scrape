@@ -6,8 +6,20 @@ Policy:
 
 ## Unreleased
 
+### Added
+- Added cross-process host guard coordination for search engines and scrape hosts so multiple Cortex Scout processes on the same machine/IP space requests out instead of self-triggering rate limits.
+- Added shared cross-process search cache + singleflight locking so concurrent repos/agents can reuse live search results instead of duplicating the same upstream traffic.
+- Added regression tests for `deep_research` history URL extraction and timeout helper behavior.
+
 ### Changed
+- Lowered the default outbound concurrency budget to `16`, staggered search-engine fan-out, and tightened when community expansion runs so normal multi-agent usage is less bursty by default.
+- `deep_research` now treats history as a first-class bootstrap source, skips empty history shells, and returns partial results when a hop scrape exceeds the configured timeout instead of hanging until the MCP caller times out.
 - Cleaned up post-release compiler hygiene by removing a cross-target unused import warning in the setup permission checks.
+
+### Fixed
+- Fixed stdio cold-start memory races so `memory_search`, search duplicate detection, and `deep_research` can wait briefly for LanceDB instead of missing reusable history on first request.
+- Fixed `deep_research` history reuse so previously logged search previews and deep-research result objects expose reusable URLs for later runs.
+- Fixed `deep_research` tool-level timeout failures under hostile scrape targets by enforcing a hop timeout and preserving partial output.
 
 ### Verified
 - Re-ran production cleanup passes over the Rust sources to confirm there are no live `todo!`, `unimplemented!`, or compiler-reported dead-code/unused warnings on the default target.

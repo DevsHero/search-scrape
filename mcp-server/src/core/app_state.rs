@@ -1,5 +1,13 @@
 use std::env;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MemoryInitState {
+    Disabled,
+    Pending,
+    Ready,
+    Failed,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub http_client: reqwest::Client,
@@ -13,6 +21,8 @@ pub struct AppState {
     // Memory manager for research history — late-initialized in background to avoid
     // blocking MCP startup. Access via `.read().unwrap().clone()`.
     pub memory: std::sync::Arc<std::sync::RwLock<Option<std::sync::Arc<crate::history::MemoryManager>>>>,
+    memory_state: std::sync::Arc<std::sync::RwLock<MemoryInitState>>,
+    memory_ready: std::sync::Arc<tokio::sync::Notify>,
     // Proxy manager for dynamic IP rotation (optional)
     pub proxy_manager: Option<std::sync::Arc<crate::proxy_manager::ProxyManager>>,
 
@@ -30,6 +40,7 @@ impl std::fmt::Debug for AppState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AppState")
             .field("memory_enabled", &self.memory.read().unwrap().is_some())
+            .field("memory_state", &*self.memory_state.read().unwrap())
             .field("proxy_manager_enabled", &self.proxy_manager.is_some())
             .finish()
     }
@@ -40,11 +51,16 @@ impl AppState {
         let outbound_limit = env::var("OUTBOUND_LIMIT")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(32);
+            .unwrap_or(16);
 
         let tool_registry = std::sync::Arc::new(crate::core::tools_registry::ToolRegistry::load());
         let search_service: std::sync::Arc<dyn crate::tools::search::SearchService> =
             std::sync::Arc::new(crate::tools::search::InternalSearchService::new());
+        let memory_state = if crate::core::config::lancedb_uri().is_some() {
+            MemoryInitState::Pending
+        } else {
+            MemoryInitState::Disabled
+        };
         Self {
             http_client,
             tool_registry,
@@ -59,6 +75,8 @@ impl AppState {
                 .build(),
             outbound_limit: std::sync::Arc::new(tokio::sync::Semaphore::new(outbound_limit)),
             memory: std::sync::Arc::new(std::sync::RwLock::new(None)), // Late-initialized in background
+            memory_state: std::sync::Arc::new(std::sync::RwLock::new(memory_state)),
+            memory_ready: std::sync::Arc::new(tokio::sync::Notify::new()),
             proxy_manager: None, // Will be initialized if IP_LIST_PATH exists
             non_robot_search_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             browser_pool: crate::scraping::browser_manager::BrowserPool::new_auto(),
@@ -67,14 +85,51 @@ impl AppState {
     }
 
     pub fn with_memory(self, memory: std::sync::Arc<crate::history::MemoryManager>) -> Self {
-        *self.memory.write().unwrap() = Some(memory);
+        self.install_memory(memory);
         self
+    }
+
+    pub fn install_memory(&self, memory: std::sync::Arc<crate::history::MemoryManager>) {
+        *self.memory.write().unwrap() = Some(memory);
+        *self.memory_state.write().unwrap() = MemoryInitState::Ready;
+        self.memory_ready.notify_waiters();
+    }
+
+    pub fn mark_memory_failed(&self) {
+        *self.memory_state.write().unwrap() = MemoryInitState::Failed;
+        self.memory_ready.notify_waiters();
     }
 
     /// Returns a clone of the memory Arc if memory is initialized.
     /// Acquires and immediately releases the read lock — safe to use before `await` points.
     pub fn get_memory(&self) -> Option<std::sync::Arc<crate::history::MemoryManager>> {
         self.memory.read().unwrap().clone()
+    }
+
+    pub fn is_memory_pending(&self) -> bool {
+        matches!(*self.memory_state.read().unwrap(), MemoryInitState::Pending)
+    }
+
+    pub async fn get_memory_or_wait(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Option<std::sync::Arc<crate::history::MemoryManager>> {
+        if let Some(memory) = self.get_memory() {
+            return Some(memory);
+        }
+
+        if !self.is_memory_pending() {
+            return None;
+        }
+
+        let notified = self.memory_ready.notified();
+
+        if let Some(memory) = self.get_memory() {
+            return Some(memory);
+        }
+
+        let _ = tokio::time::timeout(timeout, notified).await;
+        self.get_memory()
     }
 
     pub fn with_proxy_manager(

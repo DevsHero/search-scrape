@@ -37,7 +37,7 @@ pub async fn handle(
 
     let quality_mode = parse_quality_mode(arguments)?;
 
-    let (results, _extras) = search::search_web(&state, query).await.map_err(|e| {
+    let (results, extras) = search::search_web(&state, query).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -80,6 +80,18 @@ pub async fn handle(
         "Structured scrapes: {}\n\n",
         scraped_content.len()
     ));
+    if !extras.degraded_engines.is_empty() {
+        text.push_str(&format!(
+            "Degraded engines: {}\n",
+            extras.degraded_engines.join(", ")
+        ));
+    }
+    if !extras.skipped_engines.is_empty() {
+        text.push_str(&format!(
+            "Skipped engines: {}\n\n",
+            extras.skipped_engines.join(", ")
+        ));
+    }
     for (i, item) in scraped_content.iter().enumerate() {
         text.push_str(&format!(
             "{}. {} ({} words)\nURL: {}\n",

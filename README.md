@@ -234,7 +234,7 @@ Create `cortex-scout.json` in the same directory as the binary (or repository ro
 | `RUST_LOG` | `warn` | Log level. **Keep `warn` for MCP stdio** — `info` floods stderr and confuses MCP clients |
 | `HTTP_TIMEOUT_SECS` | `30` | Per-request read timeout (seconds) |
 | `HTTP_CONNECT_TIMEOUT_SECS` | `10` | TCP connect timeout (seconds) |
-| `OUTBOUND_LIMIT` | `32` | Max concurrent outbound HTTP connections |
+| `OUTBOUND_LIMIT` | `16` | Max concurrent outbound HTTP connections |
 | `MAX_CONTENT_CHARS` | `10000` | Max characters returned per scraped page |
 
 ### Browser / Anti-bot
@@ -251,7 +251,17 @@ Create `cortex-scout.json` in the same directory as the binary (or repository ro
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SEARCH_ENGINES` | `google,bing,duckduckgo,brave` | Active engines (comma-separated) |
+| `SEARCH_MAX_ENGINES_PER_QUERY` | `3` | Max engines queried per search before health-based rotation picks the next set |
 | `SEARCH_MAX_RESULTS_PER_ENGINE` | `10` | Results per engine before merge/dedup |
+| `SEARCH_ENGINE_STAGGER_MS` | `125` | Delay between per-engine launches to reduce bursty anti-bot triggers |
+| `SEARCH_COMMUNITY_TRIGGER_RESULTS` | `4` | Only run Reddit/HN community expansion when primary search returns fewer than this many results |
+| `SEARCH_SHARED_CACHE` | `true` | Share successful search results across concurrent Cortex Scout processes on the same host |
+| `SEARCH_SHARED_CACHE_TTL_SECS` | `300` | TTL for the shared cross-process search cache |
+| `SEARCH_HOST_MIN_GAP_MS` | engine-tuned | Cross-process minimum spacing between search-engine requests from the same host IP |
+| `SEARCH_HOST_MAX_GAP_MS` | engine-tuned | Cross-process maximum spacing/jitter between search-engine requests from the same host IP |
+| `SCRAPE_HOST_MIN_GAP_MS` | `900` | Cross-process minimum spacing between scrape requests to the same host |
+| `SCRAPE_HOST_MAX_GAP_MS` | `1800` | Cross-process maximum spacing/jitter between scrape requests to the same host |
+| `CORTEX_SCOUT_HOST_GUARD_DISABLED` | `false` | Set `1` only if you explicitly want to disable shared host-level throttling |
 
 ### Proxy
 
@@ -277,6 +287,7 @@ Create `cortex-scout.json` in the same directory as the binary (or repository ro
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible endpoint (OpenRouter, Ollama, LM Studio, etc.) |
 | `DEEP_RESEARCH_LLM_MODEL` | `gpt-4o-mini` | Model identifier (must be supported by the endpoint) |
 | `DEEP_RESEARCH_SYNTHESIS` | `1` | Set `0` to skip LLM synthesis (search+scrape only) |
+| `DEEP_RESEARCH_HOP_TIMEOUT_SECS` | `90` | Per-hop scrape timeout. When exceeded, `deep_research` returns partial results instead of hanging until the MCP caller times out |
 | `DEEP_RESEARCH_SYNTHESIS_MAX_TOKENS` | `1024` | Max tokens for synthesis response. Use `4096`+ for large-context models |
 | `DEEP_RESEARCH_SYNTHESIS_MAX_SOURCES` | `8` | Max source documents fed to LLM synthesis |
 | `DEEP_RESEARCH_SYNTHESIS_MAX_CHARS_PER_SOURCE` | `2500` | Max characters extracted per source for synthesis |
