@@ -4,7 +4,7 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
-## Unreleased
+## v3.3.4 (2026-04-09)
 
 ### Added
 - Added cross-process host guard coordination for search engines and scrape hosts so multiple Cortex Scout processes on the same machine/IP space requests out instead of self-triggering rate limits.
