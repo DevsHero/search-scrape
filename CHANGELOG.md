@@ -4,6 +4,19 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
+## Unreleased
+
+### Changed
+- Updated agent guidance to prefer direct MCP-tool validation on realistic public URLs after rebuilds when verifying runtime behavior for release decisions.
+
+### Fixed
+- Fixed `extract_fields` natural-language schema parsing so prompts like `fields: page_title, page_type, main_topics, summary` and `Return a JSON response with fields ...` now resolve to the requested strict output fields instead of drifting into generic auto-extraction keys.
+- Fixed extraction grounding so metadata-backed fields such as `summary` and inferred classification fields such as `page_type` no longer trigger false `grounding_fail` warnings or depressed confidence.
+- Fixed MCP handler/schema parsing drift by routing prompt-to-schema parsing through the shared extractor implementation instead of maintaining a second copy.
+
+### Verified
+- Re-tested `extract_fields`, `proxy_control(status)`, and `visual_scout` through MCP tools only, using realistic public pages, and confirmed the runtime output now matches the documented behavior.
+
 ## v3.3.4 (2026-04-09)
 
 ### Added

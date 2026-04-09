@@ -185,11 +185,7 @@ pub fn extract_from_scrape(
     }
 
     // ── Source Grounding + Type Validation ────────────────────────────────────────
-    let source_text = if !scrape_result.clean_content.is_empty() {
-        &scrape_result.clean_content
-    } else {
-        &scrape_result.content
-    };
+    let grounding_source = build_grounding_source(scrape_result);
 
     let (grounded_count, grounded_of, type_valid_count, type_checked_count) =
         if let Some(fields) = &schema {
@@ -206,15 +202,19 @@ pub fn extract_from_scrape(
                 // Non-strings (numbers, arrays, booleans) are structurally derived
                 // and are assumed to be grounded.
                 if let Some(s) = val.as_str() {
-                    grounded_denom += 1;
-                    if is_grounded_in_source(s, source_text) {
+                    if should_skip_grounding(field, s) {
                         grounded += 1;
                     } else {
-                        warnings.push(format!(
-                            "grounding_fail: '{}' value {:?} not found in source content",
-                            field.name,
-                            s.chars().take(60).collect::<String>()
-                        ));
+                        grounded_denom += 1;
+                        if is_grounded_in_source(s, &grounding_source) {
+                            grounded += 1;
+                        } else {
+                            warnings.push(format!(
+                                "grounding_fail: '{}' value {:?} not found in source or page metadata",
+                                field.name,
+                                s.chars().take(60).collect::<String>()
+                            ));
+                        }
                     }
                 }
                 // Type validation.
@@ -379,6 +379,39 @@ fn extract_field_value(scrape: &ScrapeResponse, field: &ExtractField) -> serde_j
     let name_lower = field.name.to_lowercase();
     let desc_lower = field.description.to_lowercase();
 
+    if name_lower.contains("title") {
+        return serde_json::Value::String(scrape.title.clone());
+    }
+
+    if name_lower.contains("summary")
+        || (name_lower.contains("description") && name_lower != "meta_description")
+    {
+        if !scrape.meta_description.is_empty() {
+            return serde_json::Value::String(scrape.meta_description.clone());
+        }
+        let first_para: String = content
+            .lines()
+            .find(|l| l.len() > 50)
+            .unwrap_or("")
+            .chars()
+            .take(500)
+            .collect();
+        return serde_json::Value::String(first_para);
+    }
+
+    if name_lower.contains("page_type") || desc_lower.contains("page type") {
+        return serde_json::Value::String(infer_page_type(scrape));
+    }
+
+    if name_lower.contains("topic") {
+        let topics = extract_main_topics(scrape);
+        if !topics.is_empty() {
+            return serde_json::Value::Array(
+                topics.into_iter().map(serde_json::Value::String).collect(),
+            );
+        }
+    }
+
     // ── Rustdoc / docs.rs fast-path ------------------------------------------------
     // docs.rs (rustdoc HTML) pages contain highly structured symbol lists (Structs /
     // Traits / Functions / Types / Enums) but our generic "hallucination guard" may
@@ -528,6 +561,50 @@ fn extract_field_value(scrape: &ScrapeResponse, field: &ExtractField) -> serde_j
     }
 }
 
+fn infer_page_type(scrape: &ScrapeResponse) -> String {
+    let url = scrape.url.to_ascii_lowercase();
+    let title = scrape.title.to_ascii_lowercase();
+
+    if url.ends_with('/') && scrape.headings.is_empty() && scrape.word_count < 80 {
+        return "landing_page".to_string();
+    }
+    if url.contains("/docs")
+        || url.contains("/learn")
+        || title.contains("documentation")
+        || title.contains("guide")
+        || title.contains("learn")
+    {
+        return "documentation".to_string();
+    }
+    if url.contains("/blog") || url.contains("/news") || scrape.published_at.is_some() {
+        return "article".to_string();
+    }
+    if url.contains("/product") || url.contains("/pricing") || scrape.clean_content.contains("Add to cart") {
+        return "product".to_string();
+    }
+    if url.ends_with('/') || title.contains("home") {
+        return "homepage".to_string();
+    }
+
+    "webpage".to_string()
+}
+
+fn extract_main_topics(scrape: &ScrapeResponse) -> Vec<String> {
+    let mut topics = Vec::new();
+    for heading in &scrape.headings {
+        if heading.level == "h2" || heading.level == "h3" {
+            let text = heading.text.trim();
+            if !text.is_empty() && !topics.iter().any(|item| item == text) {
+                topics.push(text.to_string());
+            }
+        }
+        if topics.len() >= 8 {
+            break;
+        }
+    }
+    topics
+}
+
 fn extract_crate_name(scrape: &ScrapeResponse) -> Option<String> {
     for heading in &scrape.headings {
         let text = heading.text.trim();
@@ -658,7 +735,7 @@ fn auto_extract(
     data
 }
 
-fn parse_schema_from_prompt(prompt: &str) -> Option<Vec<ExtractField>> {
+pub(crate) fn parse_schema_from_prompt(prompt: &str) -> Option<Vec<ExtractField>> {
     let trimmed = prompt.trim();
     if trimmed.is_empty() {
         return None;
@@ -717,34 +794,180 @@ fn parse_schema_from_prompt(prompt: &str) -> Option<Vec<ExtractField>> {
     if let (Some(start), Some(end)) = (candidate.find('{'), candidate.rfind('}')) {
         if end > start {
             let inside = &candidate[start + 1..end];
-            let mut fields = Vec::new();
-            for raw in inside.split([',', '\n', '\t']) {
-                let name = raw.trim().trim_matches('"').trim_matches('`');
-                if name.is_empty() {
-                    continue;
-                }
-                // Keep only safe identifier-ish names.
-                let name: String = name
-                    .chars()
-                    .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
-                    .collect();
-                if name.is_empty() {
-                    continue;
-                }
-                fields.push(ExtractField {
-                    name: name.clone(),
-                    description: name,
-                    field_type: None,
-                    required: None,
-                });
-            }
+            let fields = parse_field_list_segment(inside);
             if !fields.is_empty() {
                 return Some(fields);
             }
         }
     }
 
+    if let Some(fields) = parse_natural_language_field_list(candidate) {
+        return Some(fields);
+    }
+
     None
+}
+
+fn parse_natural_language_field_list(candidate: &str) -> Option<Vec<ExtractField>> {
+    let patterns = [
+        r"(?is)\bfields?\b\s*[:=-]\s*(.+)$",
+        r"(?is)\b(?:json\s+object|response|output)\s+with\s+fields?\b\s*[:=-]?\s*(.+)$",
+        r"(?is)\bwith\s+fields?\b\s*[:=-]?\s*(.+)$",
+    ];
+
+    for pattern in patterns {
+        let regex = Regex::new(pattern).unwrap();
+        if let Some(captures) = regex.captures(candidate) {
+            if let Some(segment) = captures.get(1).map(|m| m.as_str()) {
+                let fields = parse_field_list_segment(segment);
+                if !fields.is_empty() {
+                    return Some(fields);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn parse_field_list_segment(segment: &str) -> Vec<ExtractField> {
+    let truncated = truncate_field_segment(segment);
+    let mut fields = Vec::new();
+
+    for raw in split_field_items(&truncated) {
+        if let Some(field) = parse_field_item(&raw) {
+            fields.push(field);
+        }
+    }
+
+    fields
+}
+
+fn truncate_field_segment(segment: &str) -> String {
+    let directive_re = Regex::new(r"(?i)\b(?:use|return|when|where|ensure|make sure|if unavailable|if absent)\b").unwrap();
+    let mut end = segment.len();
+
+    if let Some(found) = directive_re.find(segment) {
+        end = end.min(found.start());
+    }
+    for needle in ['.', ';', '\n'] {
+        if let Some(index) = segment.find(needle) {
+            end = end.min(index);
+        }
+    }
+
+    segment[..end].trim().trim_end_matches('.').to_string()
+}
+
+fn split_field_items(segment: &str) -> Vec<String> {
+    let normalized = segment.replace(" and ", ", ").replace(" or ", ", ");
+    let mut items = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0usize;
+
+    for ch in normalized.chars() {
+        match ch {
+            '(' | '[' | '{' => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' | ']' | '}' => {
+                depth = depth.saturating_sub(1);
+                current.push(ch);
+            }
+            ',' | '\n' | '\t' if depth == 0 => {
+                let piece = current.trim();
+                if !piece.is_empty() {
+                    items.push(piece.to_string());
+                }
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    let tail = current.trim();
+    if !tail.is_empty() {
+        items.push(tail.to_string());
+    }
+
+    items
+}
+
+fn parse_field_item(raw: &str) -> Option<ExtractField> {
+    let trimmed = raw
+        .trim()
+        .trim_matches('"')
+        .trim_matches('`')
+        .trim_start_matches("and ")
+        .trim_start_matches("or ")
+        .trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let before_colon = trimmed.split(':').next().unwrap_or(trimmed).trim();
+    let base_name = before_colon
+        .split('(')
+        .next()
+        .unwrap_or(before_colon)
+        .trim()
+        .trim_matches('"')
+        .trim_matches('`')
+        .trim();
+    let name = normalize_field_name(base_name)?;
+    let lower = trimmed.to_ascii_lowercase();
+    let field_type = if lower.contains("array") || lower.contains("list") {
+        Some("array".to_string())
+    } else if lower.contains("boolean") || lower.contains("bool") {
+        Some("boolean".to_string())
+    } else if lower.contains("integer") {
+        Some("integer".to_string())
+    } else if lower.contains("number") {
+        Some("number".to_string())
+    } else if lower.contains("object") || lower.contains("map") || lower.contains("dictionary") {
+        Some("object".to_string())
+    } else if lower.contains("string") || lower.contains("text") {
+        Some("string".to_string())
+    } else {
+        None
+    };
+
+    Some(ExtractField {
+        description: name.replace(['_', '-'], " "),
+        name,
+        field_type,
+        required: None,
+    })
+}
+
+fn normalize_field_name(raw: &str) -> Option<String> {
+    let cleaned = raw
+        .trim()
+        .trim_matches(|c: char| c == '"' || c == '`' || c == '\'' || c == '.')
+        .trim();
+    if cleaned.is_empty() {
+        return None;
+    }
+
+    let mut out = String::new();
+    let mut last_was_separator = false;
+    for ch in cleaned.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+            last_was_separator = false;
+        } else if (ch == '_' || ch == '-' || ch.is_ascii_whitespace()) && !last_was_separator {
+            out.push('_');
+            last_was_separator = true;
+        }
+    }
+
+    let out = out.trim_matches('_').to_string();
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
 }
 
 fn parse_schema_value(value: &serde_json::Value) -> Option<Vec<ExtractField>> {
@@ -1300,6 +1523,50 @@ fn is_grounded_in_source(value: &str, source_text: &str) -> bool {
     overlap >= 0.70
 }
 
+fn build_grounding_source(scrape: &ScrapeResponse) -> String {
+    let mut parts = Vec::new();
+    if !scrape.clean_content.is_empty() {
+        parts.push(scrape.clean_content.as_str());
+    }
+    if !scrape.content.is_empty() {
+        parts.push(scrape.content.as_str());
+    }
+    if !scrape.title.is_empty() {
+        parts.push(scrape.title.as_str());
+    }
+    if !scrape.meta_description.is_empty() {
+        parts.push(scrape.meta_description.as_str());
+    }
+    if let Some(author) = scrape.author.as_deref() {
+        if !author.is_empty() {
+            parts.push(author);
+        }
+    }
+    if let Some(published_at) = scrape.published_at.as_deref() {
+        if !published_at.is_empty() {
+            parts.push(published_at);
+        }
+    }
+
+    parts.join("\n")
+}
+
+fn should_skip_grounding(field: &ExtractField, value: &str) -> bool {
+    let name = field.name.to_ascii_lowercase();
+    let desc = field.description.to_ascii_lowercase();
+    let value = value.trim();
+
+    if value.is_empty() {
+        return true;
+    }
+
+    name == "page_type"
+        || name.ends_with("_type")
+        || desc.contains("page type")
+        || desc.contains("classification")
+        || desc.contains("category")
+}
+
 /// Returns `true` if the JSON value's runtime type matches `expected_type`.
 ///
 /// Recognised type strings (case-insensitive): `string`, `number`, `integer`,
@@ -1393,6 +1660,120 @@ mod tests {
         assert!(names.contains(&"structs".to_string()));
         assert!(names.contains(&"traits".to_string()));
         assert!(names.contains(&"functions".to_string()));
+    }
+
+    #[test]
+    fn parse_schema_from_prompt_natural_language_fields_are_supported() {
+        let prompt = "Extract a compact JSON object with fields: page_title, page_type, main_topics (array of strings), and summary. Use null or [] when unavailable.";
+        let fields = parse_schema_from_prompt(prompt).expect("should parse natural-language fields");
+        assert_eq!(fields.len(), 4);
+        assert_eq!(fields[0].name, "page_title");
+        assert_eq!(fields[1].name, "page_type");
+        assert_eq!(fields[2].name, "main_topics");
+        assert_eq!(fields[2].field_type.as_deref(), Some("array"));
+        assert_eq!(fields[3].name, "summary");
+    }
+
+    #[test]
+    fn extract_from_scrape_uses_requested_prompt_fields() {
+        let mut scrape = mk_scrape(
+            "https://www.rust-lang.org/learn",
+            "Rust Learn page summary paragraph that is comfortably longer than fifty characters for extraction.",
+            vec![],
+        );
+        scrape.title = "Learn Rust".to_string();
+        scrape.meta_description = "Start learning Rust with docs and hands-on resources.".to_string();
+        scrape.headings = vec![
+            Heading {
+                level: "h2".to_string(),
+                text: "Get Started".to_string(),
+            },
+            Heading {
+                level: "h3".to_string(),
+                text: "Install Rust".to_string(),
+            },
+        ];
+
+        let result = extract_from_scrape(
+            &scrape,
+            None,
+            Some("Extract a compact JSON object with fields: page_title, page_type, main_topics (array of strings), and summary.".to_string()),
+            true,
+            500,
+            None,
+            None,
+        )
+        .expect("extract_from_scrape should succeed");
+
+        assert_eq!(result.extraction_method, "schema_based");
+        assert_eq!(
+            result
+                .extracted_data
+                .get("page_title")
+                .and_then(|v| v.as_str()),
+            Some("Learn Rust")
+        );
+        assert_eq!(
+            result
+                .extracted_data
+                .get("page_type")
+                .and_then(|v| v.as_str()),
+            Some("documentation")
+        );
+        assert_eq!(
+            result
+                .extracted_data
+                .get("summary")
+                .and_then(|v| v.as_str()),
+            Some("Start learning Rust with docs and hands-on resources.")
+        );
+        assert_eq!(
+            result
+                .extracted_data
+                .get("main_topics")
+                .and_then(|v| v.as_array())
+                .map(|items| items.len()),
+            Some(2)
+        );
+        assert!(
+            result.extracted_data.get("title").is_none(),
+            "strict schema output should not drift"
+        );
+    }
+
+    #[test]
+    fn metadata_grounding_does_not_emit_false_warning_for_summary() {
+        let mut scrape = mk_scrape(
+            "https://www.rust-lang.org/learn",
+            "Body text that does not repeat the meta description verbatim but is long enough for extraction.",
+            vec![],
+        );
+        scrape.title = "Learn Rust - Rust Programming Language".to_string();
+        scrape.meta_description = "A language empowering everyone to build reliable and efficient software.".to_string();
+
+        let schema = vec![
+            ExtractField {
+                name: "summary".to_string(),
+                description: "summary".to_string(),
+                field_type: Some("string".to_string()),
+                required: Some(false),
+            },
+            ExtractField {
+                name: "page_type".to_string(),
+                description: "page type".to_string(),
+                field_type: Some("string".to_string()),
+                required: Some(false),
+            },
+        ];
+
+        let result = extract_from_scrape(&scrape, Some(schema), None, true, 500, None, None)
+            .expect("extract_from_scrape should succeed");
+
+        assert!(
+            !result.warnings.iter().any(|warning| warning.contains("grounding_fail")),
+            "expected no false grounding warnings, got {:?}",
+            result.warnings
+        );
     }
 
     #[test]

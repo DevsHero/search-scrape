@@ -5,7 +5,6 @@ use crate::types::{ErrorResponse, ExtractField};
 use crate::AppState;
 use axum::http::StatusCode;
 use axum::response::Json;
-use regex::Regex;
 use serde_json::Value;
 use std::sync::Arc;
 use tracing::error;
@@ -106,89 +105,7 @@ fn parse_extract_schema(schema_value: Option<&serde_json::Value>) -> Option<Vec<
 }
 
 fn parse_schema_from_prompt(prompt: &str) -> Option<Vec<ExtractField>> {
-    let trimmed = prompt.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    let candidate = if let Some(rest) = trimmed.strip_prefix("schema:") {
-        rest.trim()
-    } else {
-        trimmed
-    };
-
-    let json_snippet = if let (Some(start), Some(end)) = (candidate.find('['), candidate.rfind(']'))
-    {
-        candidate.get(start..=end)
-    } else if candidate.starts_with('{') && candidate.ends_with('}') {
-        Some(candidate)
-    } else {
-        None
-    };
-
-    if let Some(snippet) = json_snippet {
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(snippet) {
-            if let Some(fields) = parse_extract_schema(Some(&parsed)) {
-                return Some(fields);
-            }
-        }
-
-        let normalized = snippet.replace("\\\"", "\"");
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&normalized) {
-            if let Some(fields) = parse_extract_schema(Some(&parsed)) {
-                return Some(fields);
-            }
-        }
-
-        let name_re = Regex::new(r#"\bname\b[^a-zA-Z0-9_-]*([a-zA-Z0-9_-]+)"#).unwrap();
-        let mut fields = Vec::new();
-        for cap in name_re.captures_iter(&normalized) {
-            if let Some(name) = cap.get(1).map(|m| m.as_str().to_string()) {
-                fields.push(ExtractField {
-                    name: name.clone(),
-                    description: name,
-                    field_type: None,
-                    required: None,
-                });
-            }
-        }
-        if !fields.is_empty() {
-            return Some(fields);
-        }
-    }
-
-    // Heuristic: brace-list schema anywhere in the prompt, e.g.
-    // "Return fields {structs, traits, functions}".
-    if let (Some(start), Some(end)) = (candidate.find('{'), candidate.rfind('}')) {
-        if end > start {
-            let inside = &candidate[start + 1..end];
-            let mut out = Vec::new();
-            for raw in inside.split([',', '\n', '\t']) {
-                let name = raw.trim().trim_matches('"').trim_matches('`');
-                if name.is_empty() {
-                    continue;
-                }
-                let name: String = name
-                    .chars()
-                    .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
-                    .collect();
-                if name.is_empty() {
-                    continue;
-                }
-                out.push(ExtractField {
-                    name: name.clone(),
-                    description: name,
-                    field_type: None,
-                    required: None,
-                });
-            }
-            if !out.is_empty() {
-                return Some(out);
-            }
-        }
-    }
-
-    None
+    crate::extract::parse_schema_from_prompt(prompt)
 }
 
 /// Returns `true` when the URL points to a raw text/markdown file where schema

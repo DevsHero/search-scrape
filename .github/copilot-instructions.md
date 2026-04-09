@@ -52,6 +52,7 @@ Common behavior:
 ### `extract_fields`
 Primary structured extraction tool.
 - Use for schema/field extraction (title, price, author, etc.).
+- Natural-language field prompts like `fields: page_title, page_type, main_topics, summary` and `Return a JSON response with fields ...` are supported for strict extraction contracts.
 - Do not use for raw `.md/.json/.txt` files; use `web_fetch(output_format="clean_json")`.
 
 ### `hitl_web_fetch`
@@ -110,6 +111,7 @@ These remain callable for backward compatibility, but agents should prefer the u
 - Calling `web_search` then `web_fetch` separately when you need both.
 - Skipping `memory_search` before live requests.
 - Using `extract_fields` on raw markdown/json URLs.
+- Using repo smoke scripts to validate MCP runtime behavior after a rebuild. For release validation, prefer direct MCP tool calls against realistic public URLs so the observed result matches what agents actually receive.
 - Escalating to HITL before trying `web_fetch` + `visual_scout`.
 - Leaving browser automation sessions open (call `scout_browser_close`).
 
