@@ -10,7 +10,7 @@ use serde_json::Value;
 use std::borrow::Cow;
 use std::env;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
 fn status_code_to_error_code(status: StatusCode) -> ErrorCode {
@@ -235,91 +235,55 @@ impl rmcp::ServerHandler for McpService {
             .tool_registry
             .map_public_arguments_to_internal(&internal_name, public_args);
 
-        match internal_name.as_str() {
-            "search_web" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::search_web::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "search_structured" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::search_structured::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "scrape_url" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::scrape_url::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "crawl_website" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::crawl_website::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "scrape_batch" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::scrape_batch::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "deep_research" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::deep_research::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "extract_structured" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::extract_structured::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "fetch_then_extract" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::fetch_then_extract::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "research_history" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::research_history::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "proxy_manager" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::proxy_manager::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "non_robot_search" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::non_robot_search::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "visual_scout" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::visual_scout::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "human_auth_session" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::human_auth_session::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "browser_automate" | "scout_browser_automate" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::automate::handle(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "browser_close" | "scout_browser_close" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::automate::handle_close(Arc::clone(&self.state), &internal_args).await,
-            ),
-            "agent_profile_auth" | "scout_agent_profile_auth" => convert_http_handler_result_with_metrics(
-                request.name.as_ref(),
-                tool_start,
-                handlers::automate::handle_profile_auth(Arc::clone(&self.state), &internal_args).await,
-            ),
-            _ => Err(ErrorData::new(
-                ErrorCode::METHOD_NOT_FOUND,
-                format!("Unknown tool: {}", request.name),
-                None,
+        let tool_timeout =
+            Duration::from_secs(crate::core::config::mcp_tool_timeout_secs(&internal_name));
+        let request_name = request.name.to_string();
+        let state = Arc::clone(&self.state);
+        let dispatch_name = internal_name.clone();
+
+        let dispatch = async move {
+            match dispatch_name.as_str() {
+                "search_web" => handlers::search_web::handle(Arc::clone(&state), &internal_args).await,
+                "search_structured" => handlers::search_structured::handle(Arc::clone(&state), &internal_args).await,
+                "scrape_url" => handlers::scrape_url::handle(Arc::clone(&state), &internal_args).await,
+                "crawl_website" => handlers::crawl_website::handle(Arc::clone(&state), &internal_args).await,
+                "scrape_batch" => handlers::scrape_batch::handle(Arc::clone(&state), &internal_args).await,
+                "deep_research" => handlers::deep_research::handle(Arc::clone(&state), &internal_args).await,
+                "extract_structured" => handlers::extract_structured::handle(Arc::clone(&state), &internal_args).await,
+                "fetch_then_extract" => handlers::fetch_then_extract::handle(Arc::clone(&state), &internal_args).await,
+                "research_history" => handlers::research_history::handle(Arc::clone(&state), &internal_args).await,
+                "proxy_manager" => handlers::proxy_manager::handle(Arc::clone(&state), &internal_args).await,
+                "non_robot_search" => handlers::non_robot_search::handle(Arc::clone(&state), &internal_args).await,
+                "visual_scout" => handlers::visual_scout::handle(Arc::clone(&state), &internal_args).await,
+                "human_auth_session" => handlers::human_auth_session::handle(Arc::clone(&state), &internal_args).await,
+                "browser_automate" | "scout_browser_automate" => {
+                    handlers::automate::handle(Arc::clone(&state), &internal_args).await
+                }
+                "browser_close" | "scout_browser_close" => {
+                    handlers::automate::handle_close(Arc::clone(&state), &internal_args).await
+                }
+                "agent_profile_auth" | "scout_agent_profile_auth" => {
+                    handlers::automate::handle_profile_auth(Arc::clone(&state), &internal_args).await
+                }
+                _ => Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!("Unknown tool: {}", request_name),
+                    }),
+                )),
+            }
+        };
+
+        match tokio::time::timeout(tool_timeout, dispatch).await {
+            Ok(result) => {
+                convert_http_handler_result_with_metrics(request.name.as_ref(), tool_start, result)
+            }
+            Err(_) => Ok(mcp_call_response_to_stdio_result(
+                super::http::instrument_tool_response(
+                    super::timeout::timeout_call_response(request.name.as_ref(), tool_timeout),
+                    request.name.as_ref(),
+                    tool_start,
+                ),
             )),
         }
     }

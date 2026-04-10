@@ -112,11 +112,20 @@ pub async fn launch_browser_serialized(
 ) -> Result<(Browser, chromiumoxide::Handler)> {
     let _guard = browser_launch_lock().lock().await;
     cleanup_chromiumoxide_runner_profile();
-    match Browser::launch(config).await {
-        Ok(result) => Ok(result),
-        Err(e) => {
+    let launch_timeout = Duration::from_secs(crate::core::config::browser_launch_timeout_secs());
+    match tokio::time::timeout(launch_timeout, Browser::launch(config)).await {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(e)) => {
             cleanup_chromiumoxide_runner_profile();
             Err(anyhow!("{}: {}", context, e))
+        }
+        Err(_) => {
+            cleanup_chromiumoxide_runner_profile();
+            Err(anyhow!(
+                "{}: browser launch timed out after {} seconds",
+                context,
+                launch_timeout.as_secs()
+            ))
         }
     }
 }
@@ -378,10 +387,17 @@ impl BrowserPool {
     /// * Close the returned `Page` when done — the browser stays alive.
     pub async fn acquire(&self, proxy_url: Option<&str>) -> Result<Page> {
         let mut guard = self.inner.lock().await;
+        let probe_timeout = Duration::from_secs(crate::core::config::browser_tab_probe_timeout_secs());
 
         // Probe: try opening a blank tab to test if browser is still alive.
         let alive = match guard.as_mut() {
-            Some((b, _)) => b.new_page("about:blank").await.is_ok(),
+            Some((b, _)) => match tokio::time::timeout(probe_timeout, b.new_page("about:blank")).await {
+                Ok(Ok(page)) => {
+                    drop(page);
+                    true
+                }
+                Ok(Err(_)) | Err(_) => false,
+            },
             None => false,
         };
 

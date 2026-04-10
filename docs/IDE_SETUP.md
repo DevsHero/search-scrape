@@ -33,6 +33,8 @@ cargo build --release --all-features --bin cortex-scout-mcp
 
 ## VS Code
 
+Treat the timeout guard env vars in the examples below as required MCP config, not optional tuning. They are the mechanism that turns a potentially stuck fetch into a bounded timeout response.
+
 VS Code reads MCP servers from two places (both are valid):
 
 | File | Top-level key | Scope |
@@ -54,6 +56,17 @@ VS Code reads MCP servers from two places (both are valid):
       "command": "env",
       "args": [
         "RUST_LOG=warn",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS=90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SCRAPE_URL=90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SEARCH_STRUCTURED=120",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_VISUAL_SCOUT=45",
+        "CORTEX_SCOUT_BROWSER_LAUNCH_TIMEOUT_SECS=12",
+        "CORTEX_SCOUT_BROWSER_TAB_PROBE_TIMEOUT_SECS=4",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS=20",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_INITIAL_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_RETRY_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_FORCED_CDP_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_NATIVE_CDP_FALLBACK=25",
         "SEARCH_ENGINES=google,bing,duckduckgo,brave",
         "LANCEDB_URI=/absolute/path/to/cortex-scout/lancedb",
         "HTTP_TIMEOUT_SECS=30",
@@ -81,6 +94,17 @@ Windows has no `env` command. Use the `command` + `env` object format:
       "args": [],
       "env": {
         "RUST_LOG": "warn",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS": "90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SCRAPE_URL": "90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SEARCH_STRUCTURED": "120",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_VISUAL_SCOUT": "45",
+        "CORTEX_SCOUT_BROWSER_LAUNCH_TIMEOUT_SECS": "12",
+        "CORTEX_SCOUT_BROWSER_TAB_PROBE_TIMEOUT_SECS": "4",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS": "20",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_INITIAL_ATTEMPT": "25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_RETRY_ATTEMPT": "25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_FORCED_CDP_ATTEMPT": "25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_NATIVE_CDP_FALLBACK": "25",
         "SEARCH_ENGINES": "google,bing,duckduckgo,brave",
         "LANCEDB_URI": "C:\\Users\\YOU\\cortex-scout\\lancedb",
         "HTTP_TIMEOUT_SECS": "30",
@@ -110,6 +134,17 @@ Claude uses `"mcpServers"` (not `"servers"`).
       "command": "env",
       "args": [
         "RUST_LOG=warn",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS=90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SCRAPE_URL=90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SEARCH_STRUCTURED=120",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_VISUAL_SCOUT=45",
+        "CORTEX_SCOUT_BROWSER_LAUNCH_TIMEOUT_SECS=12",
+        "CORTEX_SCOUT_BROWSER_TAB_PROBE_TIMEOUT_SECS=4",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS=20",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_INITIAL_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_RETRY_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_FORCED_CDP_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_NATIVE_CDP_FALLBACK=25",
         "SEARCH_ENGINES=google,bing,duckduckgo,brave",
         "LANCEDB_URI=/absolute/path/to/cortex-scout/lancedb",
         "HTTP_TIMEOUT_SECS=30",
@@ -137,6 +172,17 @@ Cursor stores MCP config in `~/.cursor/mcp.json` (also configurable via UI).
       "command": "env",
       "args": [
         "RUST_LOG=warn",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS=90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SCRAPE_URL=90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SEARCH_STRUCTURED=120",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_VISUAL_SCOUT=45",
+        "CORTEX_SCOUT_BROWSER_LAUNCH_TIMEOUT_SECS=12",
+        "CORTEX_SCOUT_BROWSER_TAB_PROBE_TIMEOUT_SECS=4",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS=20",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_INITIAL_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_RETRY_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_FORCED_CDP_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_NATIVE_CDP_FALLBACK=25",
         "SEARCH_ENGINES=google,bing,duckduckgo,brave",
         "LANCEDB_URI=/absolute/path/to/cortex-scout/lancedb",
         "HTTP_TIMEOUT_SECS=30",
@@ -224,6 +270,7 @@ These require an `OPENAI_API_KEY` (or compatible endpoint) in the environment.
 |---------|-----|
 | "no tools found" | Check binary path is correct and executable (`chmod +x`) |
 | Tools time out immediately | Ensure `RUST_LOG=warn` — not `info` or `debug` |
+| A fetch looks hung for minutes | Verify the required `CORTEX_SCOUT_TOOL_TIMEOUT_SECS*`, `CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS*`, `CORTEX_SCOUT_BROWSER_LAUNCH_TIMEOUT_SECS`, and `CORTEX_SCOUT_BROWSER_TAB_PROBE_TIMEOUT_SECS` vars are present in your MCP config, then fully restart the client |
 | Proxy tools fail | Proxy support is optional. If you want it, set `IP_LIST_PATH`/`PROXY_SOURCE_PATH`; keep `ip.txt` empty by default and populate it only when needed |
 | `hitl_web_fetch` not available | Binary must be built with `--all-features` |
 | Config not picked up | Fully restart the client app after editing the JSON/YAML |

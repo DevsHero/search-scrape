@@ -6,6 +6,7 @@ use axum::http::StatusCode;
 use axum::response::Json;
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::warn;
 
 pub async fn handle(
@@ -49,28 +50,37 @@ pub async fn handle(
     let to_scrape: Vec<String> = results.iter().take(top_n).map(|r| r.url.clone()).collect();
     let mut scraped_content = Vec::new();
     let mut tasks = Vec::new();
+    let scrape_timeout = Duration::from_secs(crate::core::config::mcp_tool_timeout_secs("scrape_url"));
 
     for url in to_scrape {
         let state_cloned = Arc::clone(&state);
         let quality_mode_cloned = quality_mode;
+        let scrape_timeout_cloned = scrape_timeout;
         tasks.push(tokio::spawn(async move {
-            (
-                url.clone(),
+            let outcome = tokio::time::timeout(
+                scrape_timeout_cloned,
                 scrape::scrape_url_with_options(
                     &state_cloned,
                     &url,
                     use_proxy,
                     Some(quality_mode_cloned),
-                )
-                .await,
+                ),
             )
+            .await;
+
+            (url.clone(), outcome)
         }));
     }
 
     for task in tasks {
         match task.await {
-            Ok((_, Ok(content))) => scraped_content.push(content),
-            Ok((url, Err(e))) => warn!("Structured scrape failed for {}: {}", url, e),
+            Ok((_, Ok(Ok(content)))) => scraped_content.push(content),
+            Ok((url, Ok(Err(e)))) => warn!("Structured scrape failed for {}: {}", url, e),
+            Ok((url, Err(_))) => warn!(
+                "Structured scrape timed out for {} after {} seconds",
+                url,
+                scrape_timeout.as_secs()
+            ),
             Err(e) => warn!("Structured scrape task join error: {}", e),
         }
     }

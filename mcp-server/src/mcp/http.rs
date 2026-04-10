@@ -5,7 +5,7 @@ use axum::{extract::State, http::StatusCode, response::Json};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -108,15 +108,16 @@ pub async fn call_tool_inner(
     request: McpCallRequest,
 ) -> Result<McpCallResponse, (StatusCode, Json<ErrorResponse>)> {
     let tool_start = Instant::now();
+    let request_name = request.name.clone();
     info!(
         "MCP tool call: {} with args: {:?}",
-        request.name, request.arguments
+        request_name, request.arguments
     );
 
     let internal_name = state
         .tool_registry
-        .resolve_incoming_tool_name(&request.name)
-        .or_else(|| match request.name.as_str() {
+        .resolve_incoming_tool_name(&request_name)
+        .or_else(|| match request_name.as_str() {
             "scout_browser_automate" => Some("browser_automate".to_string()),
             "scout_browser_close" => Some("browser_close".to_string()),
             "scout_agent_profile_auth" => Some("agent_profile_auth".to_string()),
@@ -126,7 +127,7 @@ pub async fn call_tool_inner(
             (
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: format!("Unknown tool: {}", request.name),
+                    error: format!("Unknown tool: {}", request_name),
                 }),
             )
         })?;
@@ -135,38 +136,52 @@ pub async fn call_tool_inner(
         .tool_registry
         .map_public_arguments_to_internal(&internal_name, request.arguments);
 
-    let result = match internal_name.as_str() {
-        "search_web" => handlers::search_web::handle(state, &internal_args).await,
-        "search_structured" => handlers::search_structured::handle(state, &internal_args).await,
-        "scrape_url" => handlers::scrape_url::handle(state, &internal_args).await,
-        "crawl_website" => handlers::crawl_website::handle(state, &internal_args).await,
-        "scrape_batch" => handlers::scrape_batch::handle(state, &internal_args).await,
-        "deep_research" => handlers::deep_research::handle(state, &internal_args).await,
-        "extract_structured" => handlers::extract_structured::handle(state, &internal_args).await,
-        "fetch_then_extract" => handlers::fetch_then_extract::handle(state, &internal_args).await,
-        "research_history" => handlers::research_history::handle(state, &internal_args).await,
-        "proxy_manager" => handlers::proxy_manager::handle(state, &internal_args).await,
-        "non_robot_search" => handlers::non_robot_search::handle(state, &internal_args).await,
-        "visual_scout" => handlers::visual_scout::handle(state, &internal_args).await,
-        "human_auth_session" => handlers::human_auth_session::handle(state, &internal_args).await,
-        "browser_automate" | "scout_browser_automate" => {
-            handlers::automate::handle(state, &internal_args).await
+    let tool_timeout = Duration::from_secs(crate::core::config::mcp_tool_timeout_secs(&internal_name));
+    let dispatch_name = internal_name.clone();
+    let state_for_dispatch = Arc::clone(&state);
+    let request_name_for_dispatch = request_name.clone();
+
+    let dispatch = async move {
+        match dispatch_name.as_str() {
+            "search_web" => handlers::search_web::handle(state_for_dispatch, &internal_args).await,
+            "search_structured" => handlers::search_structured::handle(state_for_dispatch, &internal_args).await,
+            "scrape_url" => handlers::scrape_url::handle(state_for_dispatch, &internal_args).await,
+            "crawl_website" => handlers::crawl_website::handle(state_for_dispatch, &internal_args).await,
+            "scrape_batch" => handlers::scrape_batch::handle(state_for_dispatch, &internal_args).await,
+            "deep_research" => handlers::deep_research::handle(state_for_dispatch, &internal_args).await,
+            "extract_structured" => handlers::extract_structured::handle(state_for_dispatch, &internal_args).await,
+            "fetch_then_extract" => handlers::fetch_then_extract::handle(state_for_dispatch, &internal_args).await,
+            "research_history" => handlers::research_history::handle(state_for_dispatch, &internal_args).await,
+            "proxy_manager" => handlers::proxy_manager::handle(state_for_dispatch, &internal_args).await,
+            "non_robot_search" => handlers::non_robot_search::handle(state_for_dispatch, &internal_args).await,
+            "visual_scout" => handlers::visual_scout::handle(state_for_dispatch, &internal_args).await,
+            "human_auth_session" => handlers::human_auth_session::handle(state_for_dispatch, &internal_args).await,
+            "browser_automate" | "scout_browser_automate" => {
+                handlers::automate::handle(state_for_dispatch, &internal_args).await
+            }
+            "browser_close" | "scout_browser_close" => {
+                handlers::automate::handle_close(state_for_dispatch, &internal_args).await
+            }
+            "agent_profile_auth" | "scout_agent_profile_auth" => {
+                handlers::automate::handle_profile_auth(state_for_dispatch, &internal_args).await
+            }
+            _ => Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("Unknown tool: {}", request_name_for_dispatch),
+                }),
+            )),
         }
-        "browser_close" | "scout_browser_close" => {
-            handlers::automate::handle_close(state, &internal_args).await
-        }
-        "agent_profile_auth" | "scout_agent_profile_auth" => {
-            handlers::automate::handle_profile_auth(state, &internal_args).await
-        }
-        _ => Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: format!("Unknown tool: {}", request.name),
-            }),
-        )),
     };
 
-    result.map(|Json(r)| instrument_tool_response(r, &request.name, tool_start))
+    match tokio::time::timeout(tool_timeout, dispatch).await {
+        Ok(result) => result.map(|Json(r)| instrument_tool_response(r, &request_name, tool_start)),
+        Err(_) => Ok(instrument_tool_response(
+            super::timeout::timeout_call_response(&request_name, tool_timeout),
+            &request_name,
+            tool_start,
+        )),
+    }
 }
 
 /// Axum route handler: `POST /mcp/call`

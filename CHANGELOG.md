@@ -4,6 +4,18 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
+## Unreleased
+
+### Changed
+- Updated MCP setup guidance so hard timeout env vars are treated as required guardrails in copy-pasteable MCP config examples, not optional tuning.
+
+### Fixed
+- Fixed MCP tool sessions getting stuck on pathological fetches by enforcing hard per-tool timeouts in both HTTP and stdio dispatch, plus bounded timeouts for expensive scrape stages and browser launch/probe paths.
+- Fixed `web_fetch` on the LLVM `CodeGenerator.html` path by removing UTF-8-unsafe string slicing in the cleaner, which could panic a worker and leave the MCP caller waiting indefinitely.
+
+### Verified
+- Re-tested the exact `web_fetch` MCP request from the stuck-user report against `https://llvm.org/docs/CodeGenerator.html` with `output_format=clean_json`, `strict_relevance=true`, `extract_relevant_sections=true`, `section_limit=6`, `quality_mode=high`, and `max_chars=12000`; the first call now returns normally in about 18 seconds and an immediate repeat in the same stdio session returns in under 0.1 seconds instead of hanging.
+
 ## v3.3.6 (2026-04-09)
 
 ### Changed

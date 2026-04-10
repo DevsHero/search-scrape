@@ -28,6 +28,8 @@ cargo build --release --all-features --bin cortex-scout-mcp
 
 ## 2. Configure VS Code
 
+The timeout guard env vars shown in the examples below are required. They are what force Cortex Scout to cancel a pathological fetch or stalled browser path instead of leaving the MCP client stuck forever.
+
 VS Code reads MCP servers from two places:
 
 | File | Top-level key | Scope |
@@ -52,6 +54,17 @@ VS Code reads MCP servers from two places:
       "command": "env",
       "args": [
         "RUST_LOG=warn",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS=90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SCRAPE_URL=90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SEARCH_STRUCTURED=120",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_VISUAL_SCOUT=45",
+        "CORTEX_SCOUT_BROWSER_LAUNCH_TIMEOUT_SECS=12",
+        "CORTEX_SCOUT_BROWSER_TAB_PROBE_TIMEOUT_SECS=4",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS=20",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_INITIAL_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_RETRY_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_FORCED_CDP_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_NATIVE_CDP_FALLBACK=25",
         "SEARCH_ENGINES=google,bing,duckduckgo,brave",
         "LANCEDB_URI=/absolute/path/to/cortex-scout/lancedb",
         "HTTP_TIMEOUT_SECS=30",
@@ -79,6 +92,17 @@ Windows has no `env` command. Pass env vars as an object instead:
       "args": [],
       "env": {
         "RUST_LOG": "warn",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS": "90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SCRAPE_URL": "90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SEARCH_STRUCTURED": "120",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_VISUAL_SCOUT": "45",
+        "CORTEX_SCOUT_BROWSER_LAUNCH_TIMEOUT_SECS": "12",
+        "CORTEX_SCOUT_BROWSER_TAB_PROBE_TIMEOUT_SECS": "4",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS": "20",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_INITIAL_ATTEMPT": "25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_RETRY_ATTEMPT": "25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_FORCED_CDP_ATTEMPT": "25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_NATIVE_CDP_FALLBACK": "25",
         "SEARCH_ENGINES": "google,bing,duckduckgo,brave",
         "LANCEDB_URI": "C:\\Users\\YOU\\cortex-scout\\lancedb",
         "HTTP_TIMEOUT_SECS": "30",
@@ -127,6 +151,7 @@ Legacy names (`web_search_json`, `web_fetch_batch`, `web_crawl`, `fetch_then_ext
 |---------|-----|
 | No tools appear | Confirm binary path is correct and executable (`chmod +x`) |
 | Tools time out | Set `RUST_LOG=warn` (not `info` or `debug`) |
+| A fetch appears stuck for too long | Confirm your MCP config includes the required `CORTEX_SCOUT_TOOL_TIMEOUT_SECS*`, `CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS*`, `CORTEX_SCOUT_BROWSER_LAUNCH_TIMEOUT_SECS`, and `CORTEX_SCOUT_BROWSER_TAB_PROBE_TIMEOUT_SECS` guards, then fully restart VS Code |
 | `hitl_web_fetch` missing | Rebuild with `--all-features` |
 | Config not picked up | Fully restart VS Code after editing mcp.json |
 | Proxy tools fail | Proxy support is optional. If you want it, set `IP_LIST_PATH`/`PROXY_SOURCE_PATH`; keep `ip.txt` empty by default and populate it only when needed |

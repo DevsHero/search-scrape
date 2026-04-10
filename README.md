@@ -146,6 +146,8 @@ Add a server entry to your MCP config.
 
 **VS Code** (`mcp.json` — global, or `settings.json` under `mcp.servers`):
 
+The hard timeout guard vars below are required in MCP configs. They are the safety rail that prevents a bad page, stalled browser launch, or stuck scrape stage from holding the whole MCP session open indefinitely.
+
 ```jsonc
 // mcp.json (global): top-level key is "servers"
 // settings.json (workspace): use "mcp.servers" instead
@@ -156,6 +158,17 @@ Add a server entry to your MCP config.
       "command": "env",
       "args": [
         "RUST_LOG=warn",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS=90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SCRAPE_URL=90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SEARCH_STRUCTURED=120",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_VISUAL_SCOUT=45",
+        "CORTEX_SCOUT_BROWSER_LAUNCH_TIMEOUT_SECS=12",
+        "CORTEX_SCOUT_BROWSER_TAB_PROBE_TIMEOUT_SECS=4",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS=20",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_INITIAL_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_RETRY_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_FORCED_CDP_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_NATIVE_CDP_FALLBACK=25",
         "SEARCH_ENGINES=google,bing,duckduckgo,brave",
         "LANCEDB_URI=/YOUR_PATH/cortex-scout/lancedb",
         "HTTP_TIMEOUT_SECS=30",
@@ -183,6 +196,17 @@ Default behavior is direct/no-proxy. Add `IP_LIST_PATH` and `PROXY_SOURCE_PATH` 
       "command": "env",
       "args": [
         "RUST_LOG=warn",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS=90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SCRAPE_URL=90",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SEARCH_STRUCTURED=120",
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_VISUAL_SCOUT=45",
+        "CORTEX_SCOUT_BROWSER_LAUNCH_TIMEOUT_SECS=12",
+        "CORTEX_SCOUT_BROWSER_TAB_PROBE_TIMEOUT_SECS=4",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS=20",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_INITIAL_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_RETRY_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_FORCED_CDP_ATTEMPT=25",
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_NATIVE_CDP_FALLBACK=25",
         "SEARCH_ENGINES=google,bing,duckduckgo,brave",
         "LANCEDB_URI=/YOUR_PATH/cortex-scout/lancedb",
         "HTTP_TIMEOUT_SECS=30",
@@ -236,6 +260,10 @@ Create `cortex-scout.json` in the same directory as the binary (or repository ro
 | `HTTP_CONNECT_TIMEOUT_SECS` | `10` | TCP connect timeout (seconds) |
 | `OUTBOUND_LIMIT` | `16` | Max concurrent outbound HTTP connections |
 | `MAX_CONTENT_CHARS` | `10000` | Max characters returned per scraped page |
+| `CORTEX_SCOUT_TOOL_TIMEOUT_SECS` | tool-specific | Hard upper bound for every MCP/HTTP tool call. When exceeded, Cortex Scout cancels the tool and returns a structured timeout response instead of hanging |
+| `CORTEX_SCOUT_TOOL_TIMEOUT_SECS_<TOOL>` | unset | Per-tool override, for example `CORTEX_SCOUT_TOOL_TIMEOUT_SECS_SCRAPE_URL=90` or `CORTEX_SCOUT_TOOL_TIMEOUT_SECS_VISUAL_SCOUT=20` |
+| `CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS` | stage-specific | Shared timeout for heavy scrape stages such as CDP fetch, native scrape, semantic shaving, and history logging |
+| `CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_<STAGE>` | unset | Per-stage override, for example `CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_CDP_INITIAL_ATTEMPT=30` |
 
 ### Browser / Anti-bot
 

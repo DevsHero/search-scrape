@@ -245,3 +245,63 @@ pub fn neurosiphon_enabled() -> bool {
     }
     !matches!(v.as_str(), "0" | "false" | "no" | "off" | "disabled")
 }
+
+fn env_duration_secs(key: &str) -> Option<u64> {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|secs| *secs > 0)
+}
+
+pub fn mcp_tool_timeout_secs(tool_name: &str) -> u64 {
+    let normalized = tool_name.trim().to_ascii_lowercase().replace('-', "_");
+    let specific_key = format!(
+        "CORTEX_SCOUT_TOOL_TIMEOUT_SECS_{}",
+        normalized.to_ascii_uppercase()
+    );
+
+    env_duration_secs(&specific_key)
+        .or_else(|| env_duration_secs("CORTEX_SCOUT_TOOL_TIMEOUT_SECS"))
+        .unwrap_or_else(|| match normalized.as_str() {
+            "search_web" | "proxy_manager" | "research_history" => 30,
+            "search_structured" | "scrape_url" | "extract_structured" | "fetch_then_extract" => 75,
+            "scrape_batch" | "crawl_website" => 120,
+            "deep_research" => 180,
+            "visual_scout" => 45,
+            "browser_automate" | "scout_browser_automate" => 120,
+            "browser_close" | "scout_browser_close" => 15,
+            "human_auth_session" | "agent_profile_auth" | "scout_agent_profile_auth" => 1500,
+            "non_robot_search" => 1500,
+            _ => 60,
+        })
+}
+
+pub fn scrape_stage_timeout_secs(stage_name: &str) -> u64 {
+    let normalized = stage_name.trim().to_ascii_lowercase().replace('-', "_");
+    let specific_key = format!(
+        "CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS_{}",
+        normalized.to_ascii_uppercase()
+    );
+
+    env_duration_secs(&specific_key)
+        .or_else(|| env_duration_secs("CORTEX_SCOUT_SCRAPE_STAGE_TIMEOUT_SECS"))
+        .unwrap_or_else(|| match normalized.as_str() {
+            "preflight_check" => 8,
+            "cdp_initial_attempt" | "cdp_retry_attempt" | "forced_cdp_attempt" | "native_cdp_fallback" => 25,
+            "cdp_process_html" | "cdp_retry_process_html" => 20,
+            "native_http_scrape" => 20,
+            "legacy_fallback" => 15,
+            "semantic_shaving" => 12,
+            "relevant_section_extract" => 8,
+            "history_log" => 10,
+            _ => 15,
+        })
+}
+
+pub fn browser_launch_timeout_secs() -> u64 {
+    env_duration_secs("CORTEX_SCOUT_BROWSER_LAUNCH_TIMEOUT_SECS").unwrap_or(12)
+}
+
+pub fn browser_tab_probe_timeout_secs() -> u64 {
+    env_duration_secs("CORTEX_SCOUT_BROWSER_TAB_PROBE_TIMEOUT_SECS").unwrap_or(4)
+}

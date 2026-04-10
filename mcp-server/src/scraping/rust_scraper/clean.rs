@@ -203,7 +203,7 @@ impl RustScraper {
         // Use a larger peek window to reduce false negatives for SPA markers like
         // __NEXT_DATA__ which may appear later in the document.
         let peek = if html.len() > 50_000 {
-            &html[..50_000]
+            safe_utf8_prefix_bytes(html, 50_000)
         } else {
             html
         };
@@ -225,7 +225,7 @@ impl RustScraper {
                 // Raw JSON/XML — serve as-is (truncate if massive)
                 info!("⚡ API response: serving raw JSON/XML directly");
                 let text = if html.len() > 50_000 {
-                    &html[..50_000]
+                    safe_utf8_prefix_bytes(html, 50_000)
                 } else {
                     html
                 };
@@ -489,7 +489,10 @@ impl RustScraper {
                             }
                         }
                         // Return raw JSON if it can't be parsed (still better than noisy HTML)
-                        return Some(format!("```json\n{}\n```", &raw[..raw.len().min(20_000)]));
+                        return Some(format!(
+                            "```json\n{}\n```",
+                            safe_utf8_prefix_bytes(&raw, 20_000)
+                        ));
                     }
                 }
             }
@@ -660,7 +663,7 @@ impl RustScraper {
                     let cleaned = self.clean_text(&raw);
                     let trimmed = cleaned.trim();
                     if trimmed.len() > 200 {
-                        trimmed[..200].to_string()
+                        truncate_utf8_chars(trimmed, 200)
                     } else {
                         trimmed.to_string()
                     }
@@ -1547,7 +1550,11 @@ fn flatten_json_recursive(
             {
                 return;
             }
-            let display = if s.len() > 500 { &s[..500] } else { s.as_str() };
+            let display = if s.len() > 500 {
+                truncate_utf8_chars(s, 500)
+            } else {
+                s.to_string()
+            };
             if !prefix.is_empty() {
                 lines.push(format!("{}: {}", prefix, display));
             }
@@ -1568,6 +1575,23 @@ fn flatten_json_recursive(
         serde_json::Value::Null => {}
     }
 }
+
+fn safe_utf8_prefix_bytes(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
+fn truncate_utf8_chars(s: &str, max_chars: usize) -> String {
+    s.chars().take(max_chars).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

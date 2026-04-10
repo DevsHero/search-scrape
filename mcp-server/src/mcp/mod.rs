@@ -1,6 +1,7 @@
 pub mod handlers;
 pub mod http;
 pub mod stdio;
+pub mod timeout;
 pub mod tooling;
 
 // Preserve existing call sites: cortex_scout::mcp::{list_tools, call_tool, call_tool_inner}

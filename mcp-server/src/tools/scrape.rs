@@ -8,6 +8,7 @@ use backoff::future::retry;
 use backoff::ExponentialBackoffBuilder;
 use select::predicate::Predicate;
 use std::collections::hash_map::DefaultHasher;
+use std::future::Future;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -207,7 +208,11 @@ pub async fn scrape_url_full(
 
         // Try CDP fetch (no domain restriction)
         let cdp_attempt_start = Instant::now();
-        let cdp_result = rust_scraper.fetch_via_cdp(url, cdp_proxy.clone()).await;
+        let cdp_result = run_scrape_stage_with_timeout(
+            "cdp_initial_attempt",
+            rust_scraper.fetch_via_cdp(url, cdp_proxy.clone()),
+        )
+        .await;
         metrics.push_phase("cdp_initial_attempt", cdp_attempt_start.elapsed(), None);
 
         match cdp_result {
@@ -216,7 +221,12 @@ pub async fn scrape_url_full(
 
                 // Process HTML into ScrapeResponse
                 let cdp_process_start = Instant::now();
-                match rust_scraper.process_html(&html, url).await {
+                match run_scrape_stage_with_timeout(
+                    "cdp_process_html",
+                    rust_scraper.process_html(&html, url),
+                )
+                .await
+                {
                     Ok(mut result) => {
                         metrics.push_phase("cdp_process_html", cdp_process_start.elapsed(), None);
                         // Record proxy success if used
@@ -228,27 +238,63 @@ pub async fn scrape_url_full(
 
                         // 🧬 Semantic Shaving must run even on the CDP fast-path.
                         let semantic_start = Instant::now();
-                        apply_semantic_shaving_if_enabled(
-                            state,
-                            &mut result,
-                            query,
-                            strict_relevance,
-                            relevance_threshold,
+                        match run_scrape_stage_with_timeout(
+                            "semantic_shaving",
+                            async {
+                                apply_semantic_shaving_if_enabled(
+                                    state,
+                                    &mut result,
+                                    query,
+                                    strict_relevance,
+                                    relevance_threshold,
+                                )
+                                .await;
+                                Ok(())
+                            },
                         )
-                        .await;
-                        metrics.push_phase("semantic_shaving", semantic_start.elapsed(), None);
+                        .await
+                        {
+                            Ok(()) => metrics.push_phase("semantic_shaving", semantic_start.elapsed(), None),
+                            Err(e) => {
+                                metrics.push_phase(
+                                    "semantic_shaving",
+                                    semantic_start.elapsed(),
+                                    Some(format!("failed: {}", e)),
+                                );
+                                result.warnings.push("semantic_shaving_timed_out".to_string());
+                            }
+                        }
 
                         let section_start = Instant::now();
-                        apply_relevant_section_extract_if_enabled(
-                            state,
-                            &mut result,
-                            query,
-                            extract_relevant_sections,
-                            section_limit,
-                            section_threshold,
+                        match run_scrape_stage_with_timeout(
+                            "relevant_section_extract",
+                            async {
+                                apply_relevant_section_extract_if_enabled(
+                                    state,
+                                    &mut result,
+                                    query,
+                                    extract_relevant_sections,
+                                    section_limit,
+                                    section_threshold,
+                                )
+                                .await;
+                                Ok(())
+                            },
                         )
-                        .await;
-                        metrics.push_phase("relevant_section_extract", section_start.elapsed(), None);
+                        .await
+                        {
+                            Ok(()) => metrics.push_phase("relevant_section_extract", section_start.elapsed(), None),
+                            Err(e) => {
+                                metrics.push_phase(
+                                    "relevant_section_extract",
+                                    section_start.elapsed(),
+                                    Some(format!("failed: {}", e)),
+                                );
+                                result
+                                    .warnings
+                                    .push("relevant_section_extract_timed_out".to_string());
+                            }
+                        }
 
                         // Log to history
                         if let Some(memory) = state.get_memory() {
@@ -263,15 +309,17 @@ pub async fn scrape_url_full(
                                 .and_then(|u| u.host_str().map(|s| s.to_string()));
                             let result_json = serde_json::to_value(&result).unwrap_or_default();
 
-                            if let Err(e) = memory
-                                .log_scrape(
+                            if let Err(e) = run_scrape_stage_with_timeout(
+                                "history_log",
+                                memory.log_scrape(
                                     url.to_string(),
                                     Some(result.title.clone()),
                                     summary,
                                     domain,
                                     &result_json,
-                                )
-                                .await
+                                ),
+                            )
+                            .await
                             {
                                 warn!("Failed to log CDP scrape to history: {}", e);
                             }
@@ -328,15 +376,20 @@ pub async fn scrape_url_full(
                             info!("🔀 Retrying CDP with different proxy");
 
                             let cdp_retry_start = Instant::now();
-                            match rust_scraper
-                                .fetch_via_cdp(url, Some(new_proxy_url.clone()))
-                                .await
+                            match run_scrape_stage_with_timeout(
+                                "cdp_retry_attempt",
+                                rust_scraper.fetch_via_cdp(url, Some(new_proxy_url.clone())),
+                            )
+                            .await
                             {
                                 Ok((html, _)) => {
                                     metrics.push_phase("cdp_retry_attempt", cdp_retry_start.elapsed(), None);
                                     let cdp_retry_process_start = Instant::now();
-                                    if let Ok(mut result) =
-                                        rust_scraper.process_html(&html, url).await
+                                    if let Ok(mut result) = run_scrape_stage_with_timeout(
+                                        "cdp_retry_process_html",
+                                        rust_scraper.process_html(&html, url),
+                                    )
+                                    .await
                                     {
                                         metrics.push_phase("cdp_retry_process_html", cdp_retry_process_start.elapsed(), None);
                                         let _ = proxy_manager
@@ -344,24 +397,38 @@ pub async fn scrape_url_full(
                                             .await;
 
                                         let semantic_start = Instant::now();
-                                        apply_semantic_shaving_if_enabled(
-                                            state,
-                                            &mut result,
-                                            query,
-                                            strict_relevance,
-                                            relevance_threshold,
+                                        let _ = run_scrape_stage_with_timeout(
+                                            "semantic_shaving",
+                                            async {
+                                                apply_semantic_shaving_if_enabled(
+                                                    state,
+                                                    &mut result,
+                                                    query,
+                                                    strict_relevance,
+                                                    relevance_threshold,
+                                                )
+                                                .await;
+                                                Ok(())
+                                            },
                                         )
                                         .await;
                                         metrics.push_phase("semantic_shaving", semantic_start.elapsed(), None);
 
                                         let section_start = Instant::now();
-                                        apply_relevant_section_extract_if_enabled(
-                                            state,
-                                            &mut result,
-                                            query,
-                                            extract_relevant_sections,
-                                            section_limit,
-                                            section_threshold,
+                                        let _ = run_scrape_stage_with_timeout(
+                                            "relevant_section_extract",
+                                            async {
+                                                apply_relevant_section_extract_if_enabled(
+                                                    state,
+                                                    &mut result,
+                                                    query,
+                                                    extract_relevant_sections,
+                                                    section_limit,
+                                                    section_threshold,
+                                                )
+                                                .await;
+                                                Ok(())
+                                            },
                                         )
                                         .await;
                                         metrics.push_phase("relevant_section_extract", section_start.elapsed(), None);
@@ -426,7 +493,12 @@ pub async fn scrape_url_full(
     // Pre-flight checker: quick native probe to detect blocks before full scrape
     if should_run_preflight(url, use_proxy, quality_mode) {
         let preflight_start = Instant::now();
-        if let Ok(preflight) = rust_scraper.preflight_check(&url_owned).await {
+        if let Ok(preflight) = run_scrape_stage_with_timeout(
+            "preflight_check",
+            rust_scraper.preflight_check(&url_owned),
+        )
+        .await
+        {
             metrics.push_phase(
                 "preflight_check",
                 preflight_start.elapsed(),
@@ -460,13 +532,21 @@ pub async fn scrape_url_full(
 
         let forced_cdp_start = Instant::now();
         let initial_result = if let Some(proxy_url) = forced_proxy.clone() {
-            rust_scraper
-                .scrape_with_browserless_advanced_with_proxy(&url_owned, None, Some(proxy_url))
-                .await
+            run_scrape_stage_with_timeout(
+                "forced_cdp_attempt",
+                rust_scraper.scrape_with_browserless_advanced_with_proxy(
+                    &url_owned,
+                    None,
+                    Some(proxy_url),
+                ),
+            )
+            .await
         } else {
-            rust_scraper
-                .scrape_with_browserless_advanced(&url_owned, None)
-                .await
+            run_scrape_stage_with_timeout(
+                "forced_cdp_attempt",
+                rust_scraper.scrape_with_browserless_advanced(&url_owned, None),
+            )
+            .await
         };
         metrics.push_phase("forced_cdp_attempt", forced_cdp_start.elapsed(), None);
 
@@ -511,13 +591,15 @@ pub async fn scrape_url_full(
                                 });
 
                                 // Retry with proxy
-                                match rust_scraper
-                                    .scrape_with_browserless_advanced_with_proxy(
+                                match run_scrape_stage_with_timeout(
+                                    "forced_cdp_attempt",
+                                    rust_scraper.scrape_with_browserless_advanced_with_proxy(
                                         &url_owned,
                                         None,
                                         Some(proxy_url.clone()),
-                                    )
-                                    .await
+                                    ),
+                                )
+                                .await
                                 {
                                     Ok(proxy_result) => {
                                         // Check if proxy result is better
@@ -555,15 +637,17 @@ pub async fn scrape_url_full(
                                                     serde_json::to_value(&proxy_result)
                                                         .unwrap_or_default();
 
-                                                if let Err(e) = memory
-                                                    .log_scrape(
+                                                if let Err(e) = run_scrape_stage_with_timeout(
+                                                    "history_log",
+                                                    memory.log_scrape(
                                                         url.to_string(),
                                                         Some(proxy_result.title.clone()),
                                                         summary,
                                                         domain,
                                                         &result_json,
-                                                    )
-                                                    .await
+                                                    ),
+                                                )
+                                                .await
                                                 {
                                                     tracing::warn!(
                                                         "Failed to log scrape to history: {}",
@@ -623,15 +707,17 @@ pub async fn scrape_url_full(
                         .and_then(|u| u.host_str().map(|s| s.to_string()));
                     let result_json = serde_json::to_value(&result).unwrap_or_default();
 
-                    if let Err(e) = memory
-                        .log_scrape(
+                    if let Err(e) = run_scrape_stage_with_timeout(
+                        "history_log",
+                        memory.log_scrape(
                             url.to_string(),
                             Some(result.title.clone()),
                             summary,
                             domain,
                             &result_json,
-                        )
-                        .await
+                        ),
+                    )
+                    .await
                     {
                         tracing::warn!("Failed to log scrape to history: {}", e);
                     }
@@ -661,21 +747,24 @@ pub async fn scrape_url_full(
 
     // Only use Rust-native scraper with retries
     let native_scrape_start = Instant::now();
-    let mut result = retry(
-        ExponentialBackoffBuilder::new()
-            .with_initial_interval(std::time::Duration::from_millis(200))
-            .with_max_interval(std::time::Duration::from_secs(2))
-            .with_max_elapsed_time(Some(std::time::Duration::from_secs(6)))
-            .build(),
-        || async {
-            match rust_scraper.scrape_url(&url_owned).await {
-                Ok(r) => Ok(r),
-                Err(e) => {
-                    // Treat network/temporary HTML parse errors as transient
-                    Err(backoff::Error::transient(anyhow!("{}", e)))
+    let mut result = run_scrape_stage_with_timeout(
+        "native_http_scrape",
+        retry(
+            ExponentialBackoffBuilder::new()
+                .with_initial_interval(std::time::Duration::from_millis(200))
+                .with_max_interval(std::time::Duration::from_secs(2))
+                .with_max_elapsed_time(Some(std::time::Duration::from_secs(6)))
+                .build(),
+            || async {
+                match rust_scraper.scrape_url(&url_owned).await {
+                    Ok(r) => Ok(r),
+                    Err(e) => {
+                        // Treat network/temporary HTML parse errors as transient
+                        Err(backoff::Error::transient(anyhow!("{}", e)))
+                    }
                 }
-            }
-        },
+            },
+        ),
     )
     .await?;
     metrics.push_phase("native_http_scrape", native_scrape_start.elapsed(), None);
@@ -694,7 +783,12 @@ pub async fn scrape_url_full(
             );
 
             let cdp_fallback_start = Instant::now();
-            match rust_scraper.scrape_with_browserless(&url_owned).await {
+            match run_scrape_stage_with_timeout(
+                "native_cdp_fallback",
+                rust_scraper.scrape_with_browserless(&url_owned),
+            )
+            .await
+            {
                 Ok(cdp_result) => {
                     metrics.push_phase("native_cdp_fallback", cdp_fallback_start.elapsed(), None);
                     if cdp_result.word_count > result.word_count + 20 {
@@ -739,7 +833,7 @@ pub async fn scrape_url_full(
             url
         );
         let legacy_fallback_start = Instant::now();
-        result = scrape_url_fallback(state, &url_owned).await?;
+        result = run_scrape_stage_with_timeout("legacy_fallback", scrape_url_fallback(state, &url_owned)).await?;
         metrics.push_phase("legacy_fallback", legacy_fallback_start.elapsed(), None);
     } else {
         info!(
@@ -796,27 +890,63 @@ pub async fn scrape_url_full(
     }
 
     let semantic_start = Instant::now();
-    apply_semantic_shaving_if_enabled(
-        state,
-        &mut result,
-        query,
-        strict_relevance,
-        relevance_threshold,
+    match run_scrape_stage_with_timeout(
+        "semantic_shaving",
+        async {
+            apply_semantic_shaving_if_enabled(
+                state,
+                &mut result,
+                query,
+                strict_relevance,
+                relevance_threshold,
+            )
+            .await;
+            Ok(())
+        },
     )
-    .await;
-    metrics.push_phase("semantic_shaving", semantic_start.elapsed(), None);
+    .await
+    {
+        Ok(()) => metrics.push_phase("semantic_shaving", semantic_start.elapsed(), None),
+        Err(e) => {
+            metrics.push_phase(
+                "semantic_shaving",
+                semantic_start.elapsed(),
+                Some(format!("failed: {}", e)),
+            );
+            result.warnings.push("semantic_shaving_timed_out".to_string());
+        }
+    }
 
     let section_extract_start = Instant::now();
-    apply_relevant_section_extract_if_enabled(
-        state,
-        &mut result,
-        query,
-        extract_relevant_sections,
-        section_limit,
-        section_threshold,
+    match run_scrape_stage_with_timeout(
+        "relevant_section_extract",
+        async {
+            apply_relevant_section_extract_if_enabled(
+                state,
+                &mut result,
+                query,
+                extract_relevant_sections,
+                section_limit,
+                section_threshold,
+            )
+            .await;
+            Ok(())
+        },
     )
-    .await;
-    metrics.push_phase("relevant_section_extract", section_extract_start.elapsed(), None);
+    .await
+    {
+        Ok(()) => metrics.push_phase("relevant_section_extract", section_extract_start.elapsed(), None),
+        Err(e) => {
+            metrics.push_phase(
+                "relevant_section_extract",
+                section_extract_start.elapsed(),
+                Some(format!("failed: {}", e)),
+            );
+            result
+                .warnings
+                .push("relevant_section_extract_timed_out".to_string());
+        }
+    }
 
     if !(result.auth_wall_reason.is_some()
         || result.warnings.iter().any(|w| w == "content_restricted"))
@@ -843,15 +973,17 @@ pub async fn scrape_url_full(
 
         let result_json = serde_json::to_value(&result).unwrap_or_default();
 
-        if let Err(e) = memory
-            .log_scrape(
+        if let Err(e) = run_scrape_stage_with_timeout(
+            "history_log",
+            memory.log_scrape(
                 url.to_string(),
                 Some(result.title.clone()),
                 summary,
                 domain,
                 &result_json,
-            )
-            .await
+            ),
+        )
+        .await
         {
             tracing::warn!("Failed to log scrape to history: {}", e);
         }
@@ -893,6 +1025,21 @@ fn attach_scrape_metrics(
         cache_hit: metrics.cache_hit,
         phases: metrics.phases.clone(),
     });
+}
+
+async fn run_scrape_stage_with_timeout<T, F>(stage_name: &str, future: F) -> Result<T>
+where
+    F: Future<Output = Result<T>>,
+{
+    let timeout = Duration::from_secs(crate::core::config::scrape_stage_timeout_secs(stage_name));
+    match tokio::time::timeout(timeout, future).await {
+        Ok(result) => result,
+        Err(_) => Err(anyhow!(
+            "{} timed out after {} seconds",
+            stage_name,
+            timeout.as_secs()
+        )),
+    }
 }
 
 fn should_try_cdp_first(
