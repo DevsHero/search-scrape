@@ -4,7 +4,7 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
-## Unreleased
+## v3.3.7 (2026-04-10)
 
 ### Changed
 - Updated MCP setup guidance so hard timeout env vars are treated as required guardrails in copy-pasteable MCP config examples, not optional tuning.
