@@ -1,3 +1,4 @@
+use crate::mcp::http::McpIcon;
 use crate::mcp::tooling::tool_catalog;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -8,7 +9,7 @@ pub struct PublicToolSpec {
     pub public_title: String,
     pub public_description: String,
     pub public_input_schema: Value,
-    pub icons: Vec<String>,
+    pub icons: Vec<McpIcon>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -56,9 +57,10 @@ impl ToolRegistry {
         registry
             .public_to_internal
             .insert("web_search_json".to_string(), "search_web".to_string());
-        registry
-            .public_to_internal
-            .insert("search_structured".to_string(), "search_structured".to_string());
+        registry.public_to_internal.insert(
+            "search_structured".to_string(),
+            "search_structured".to_string(),
+        );
         registry
             .public_to_internal
             .insert("fetch_url".to_string(), "scrape_url".to_string());
@@ -124,7 +126,16 @@ impl ToolRegistry {
                     .insert(internal_name.clone(), internal_name.clone());
                 continue;
             }
-            let icons = internal.icons.into_iter().map(|s| s.to_string()).collect();
+            let icons = internal
+                .icons
+                .into_iter()
+                .map(|i| McpIcon {
+                    src: i.src.to_string(),
+                    mime_type: Some(i.mime_type.to_string()),
+                    sizes: Some(i.sizes.iter().map(|s| s.to_string()).collect()),
+                    theme: None,
+                })
+                .collect();
 
             // Public-facing tool names are designed to be "agent-attractive" verbs.
             // Internal names remain stable for handler routing and for backwards compatibility.
@@ -313,7 +324,9 @@ mod tests {
             Some("search_web")
         );
         assert_eq!(
-            registry.resolve_incoming_tool_name("web_search_json").as_deref(),
+            registry
+                .resolve_incoming_tool_name("web_search_json")
+                .as_deref(),
             Some("search_web")
         );
     }

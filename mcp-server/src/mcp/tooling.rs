@@ -2,12 +2,19 @@ use serde_json::{Map, Value};
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
+pub struct CatalogIcon {
+    pub src: &'static str,
+    pub mime_type: &'static str,
+    pub sizes: &'static [&'static str],
+}
+
+#[derive(Clone, Debug)]
 pub struct ToolCatalogEntry {
     pub name: &'static str,
     pub title: &'static str,
     pub description: &'static str,
     pub input_schema: Value,
-    pub icons: Vec<&'static str>,
+    pub icons: Vec<CatalogIcon>,
 }
 
 pub const CORTEX_SCOUT_ICON: &str = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgICA8ZGVmcz4KICAgICAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImNyYXdsZXJfZ3JhZCIgeDE9IjAlIiB5MT0iMjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICAgICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMWUxZTVhO3N0b3Atb3BhY2l0eToxIiAvPiA8c3RvcCBvZmZzZXQ9IjUwJSIgc3R5bGU9InN0b3AtY29sb3I6IzNhM2E5ZTtzdG9wLW9wYWNpdHk6MSIgLz4gPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMDBmMmZmO3N0b3Atb3BhY2l0eToxIiAvPiA8L2xpbmVhckdyYWRpZW50PgogICAgICAgIAogICAgICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZXllX2dsb3ciIGN4PSI1MCUiIGN5PSI1MCUiIHI9IjUwJSIgZng9IjUwJSIgZnk9IjUwJSI+CiAgICAgICAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZmZmZmY7c3RvcC1vcGFjaXR5OjEiIC8+CiAgICAgICAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3R5bGU9InN0b3AtY29sb3I6IzAwZjJmZjtzdG9wLW9wYWNpdHk6MSIgLz4KICAgICAgICA8L3JhZGlhbEdyYWRpZW50PgoKICAgICAgICA8ZmlsdGVyIGlkPSJzaGFkb3dCbHVyIiB4PSItNTAlIiB5PSItMjAlIiB3aWR0aD0iMjAwJSIgaGVpZ2h0PSIxNTAlIj4KICAgICAgICAgICAgPGZlR2F1c3NpYW5CbHVyIGluPSJTb3VyY2VHcmFwaGljIiBzdGREZXZpYXRpb249IjgiIC8+CiAgICAgICAgPC9maWx0ZXI+CiAgICA8L2RlZnM+CgogICAgPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjU2LCAyNTYpIj4KICAgICAgICA8cGF0aCBkPSJNLTEyMCA0MCBDIC0xNDAgODAsIC04MCAxNjAsIDAgMTgwIEMgODAgMTYwLCAxNDAgODAsIDEyMCA0MCBMIDAgODAgWiIgCiAgICAgICAgICAgICAgZmlsbD0idXJsKCNjcmF3bGVyX2dyYWQpIiAKICAgICAgICAgICAgICBvcGFjaXR5PSIwLjQiIAogICAgICAgICAgICAgIGZpbHRlcj0idXJsKCNzaGFkb3dCbHVyKSIKICAgICAgICAgICAgICB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwLCAtMjApIi8+CgogICAgICAgIDxwYXRoIGQ9Ik0wIC0xODAgTCAxNDAgLTYwIEwgMTAwIDYwIEwgMCAxMjAgTCAtMTAwIDYwIEwgLTE0MCAtNjAgWiIgCiAgICAgICAgICAgICAgZmlsbD0idXJsKCNjcmF3bGVyX2dyYWQpIgogICAgICAgICAgICAgIHN0cm9rZT0iIzAwZjJmZiIKICAgICAgICAgICAgICBzdHJva2Utd2lkdGg9IjQiCiAgICAgICAgICAgICAgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogICAgICAgICAgICAgIAogICAgICAgIDxwYXRoIGQ9Ik0wIC00MCBMIDQwIDAgTCAwIDQwIEwgLTQwIDAgWiIgCiAgICAgICAgICAgICAgZmlsbD0idXJsKCNleWVfZ2xvdykiCiAgICAgICAgICAgICAgZmlsdGVyPSJkcm9wLXNoYWRvdygwIDAgMTBweCAjMDBmMmZmKSIvPgogICAgICAgICAgICAgIAogICAgICAgIDxwYXRoIGQ9Ik0tMTAwIDYwIEwgLTEzMCAxNDAgTCAtOTAgMTIwIE0xMDAgNjAgTCAxMzAgMTQwIEwgOTAgMTIwIiAKICAgICAgICAgICAgICBzdHJva2U9InVybCgjY3Jhd2xlcl9ncmFkKSIgCiAgICAgICAgICAgICAgc3Ryb2tlLXdpZHRoPSIxMiIgCiAgICAgICAgICAgICAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogICAgICAgICAgICAgIGZpbGw9Im5vbmUiLz4KICAgIDwvZz4KICAgIAogICAgPC9zdmc+";
@@ -83,7 +90,7 @@ Always call memory_search first — the answer may already be cached.",
                 },
                 "required": ["query"]
             }),
-            icons: vec![CORTEX_SCOUT_ICON],
+            icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
         },
         ToolCatalogEntry {
             name: "search_structured",
@@ -104,7 +111,7 @@ All tool responses include `_tool_metrics` with total execution time.",
                 },
                 "required": ["query"]
             }),
-            icons: vec![CORTEX_SCOUT_ICON],
+            icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
         },
         ToolCatalogEntry {
             name: "scrape_url",
@@ -225,7 +232,7 @@ For CAPTCHA/anti-bot walls: use hitl_web_fetch instead.",
                 },
                 "required": []
             }),
-            icons: vec![CORTEX_SCOUT_ICON],
+            icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
         },
         ToolCatalogEntry {
             name: "scrape_batch",
@@ -245,7 +252,7 @@ Use use_proxy=true if sites are rate-limiting.",
                 },
                 "required": ["urls"]
             }),
-            icons: vec![CORTEX_SCOUT_ICON],
+            icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
         },
         ToolCatalogEntry {
             name: "deep_research",
@@ -310,7 +317,7 @@ Responses include total execution timing via `_tool_metrics` and `total_duration
                 },
                 "required": ["query"]
             }),
-            icons: vec![CORTEX_SCOUT_ICON],
+            icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
         },
         ToolCatalogEntry {
             name: "crawl_website",
@@ -338,7 +345,7 @@ Aborts early with a structured error if the start URL requires human login (NEED
                 },
                 "required": ["url"]
             }),
-            icons: vec![CORTEX_SCOUT_ICON],
+            icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
         },
         ToolCatalogEntry {
             name: "extract_structured",
@@ -374,7 +381,7 @@ Responses include `_tool_metrics` for end-to-end tool time. \
                 },
                 "required": ["url"]
             }),
-            icons: vec![CORTEX_SCOUT_ICON],
+            icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
         },
 
         ToolCatalogEntry {
@@ -407,7 +414,7 @@ Best for well-structured HTML pages; less reliable on heavily JS-rendered or nav
                 },
                 "required": ["url"]
             }),
-            icons: vec![CORTEX_SCOUT_ICON],
+            icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
         },
        ToolCatalogEntry {
         name: "research_history",
@@ -443,7 +450,7 @@ Use entry_type filter to search only past searches ('search') or past scrapes ('
             },
             "required": ["query"]
             }),
-            icons: vec![CORTEX_SCOUT_ICON],
+            icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
             },
         ToolCatalogEntry {
             name: "proxy_manager",
@@ -470,7 +477,7 @@ Proxy use is optional; normal default operation is non-proxy. Responses include 
                 },
                 "required": ["action"]
             }),
-            icons: vec![CORTEX_SCOUT_ICON],
+            icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
         },
         ToolCatalogEntry {
             name: "non_robot_search",
@@ -502,7 +509,7 @@ Always try web_fetch first; only use this when web_fetch returns an anti-bot/CAP
         },
         "required": ["url"]
         }),
-        icons: vec![CORTEX_SCOUT_ICON],
+        icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
     },
         ToolCatalogEntry {
             name: "visual_scout",
@@ -523,7 +530,7 @@ Responses include `_tool_metrics` and detailed `metrics.phases` for screenshot t
                 },
                 "required": ["url"]
             }),
-            icons: vec![CORTEX_SCOUT_ICON],
+            icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
         },
         ToolCatalogEntry {
             name: "human_auth_session",
@@ -557,7 +564,7 @@ Set instruction_message to tell the user exactly what to do, e.g. 'Please log in
                 },
                 "required": ["url"]
             }),
-            icons: vec![CORTEX_SCOUT_ICON],
+            icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
         }
     ];
 
@@ -887,7 +894,7 @@ First-time login to a service: use scout_agent_profile_auth to authenticate the 
             },
             "required": ["steps"]
         }),
-        icons: vec![CORTEX_SCOUT_ICON],
+        icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
     });
 
     tools.push(ToolCatalogEntry {
@@ -898,7 +905,7 @@ First-time login to a service: use scout_agent_profile_auth to authenticate the 
             "type": "object",
             "properties": {}
         }),
-        icons: vec![CORTEX_SCOUT_ICON],
+        icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
     });
 
     // ── Phase 20: Agent Auth Portal ───────────────────────────────────────────
@@ -930,7 +937,7 @@ After this completes, scout_browser_automate can reuse those cookies silently.",
             },
             "required": ["url"]
         }),
-        icons: vec![CORTEX_SCOUT_ICON],
+        icons: vec![CatalogIcon { src: CORTEX_SCOUT_ICON, mime_type: "image/svg+xml", sizes: &["any"] }],
     });
 
     // Build-time + runtime gate: remove deep_research from the catalog when disabled.

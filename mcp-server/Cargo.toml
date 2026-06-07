@@ -67,7 +67,7 @@ model2vec-rs = "0.1.4"
 lancedb = "0.26.2"
 arrow-array = "57"
 arrow-schema = "57"
-rmcp = { version = "1.2", features = ["server", "transport-io"] }
+rmcp = { version = "1.7", features = ["server", "transport-io", "schemars"] }
 moka = { version = "0.12", features = ["future"] }
 
 # HTML Processing

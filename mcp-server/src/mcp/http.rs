@@ -8,6 +8,17 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::info;
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct McpIcon {
+    pub src: String,
+    #[serde(rename = "mimeType", skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sizes: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct McpTool {
     pub name: String,
@@ -16,7 +27,7 @@ pub struct McpTool {
     #[serde(rename = "inputSchema")]
     pub input_schema: serde_json::Value,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub icons: Vec<String>,
+    pub icons: Vec<McpIcon>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -64,7 +75,8 @@ pub(crate) fn instrument_tool_response(
         if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&item.text) {
             if let Some(obj) = value.as_object_mut() {
                 obj.insert("_tool_metrics".to_string(), metrics_json.clone());
-                item.text = serde_json::to_string_pretty(&value).unwrap_or_else(|_| item.text.clone());
+                item.text =
+                    serde_json::to_string_pretty(&value).unwrap_or_else(|_| item.text.clone());
                 continue;
             }
         }
@@ -136,7 +148,8 @@ pub async fn call_tool_inner(
         .tool_registry
         .map_public_arguments_to_internal(&internal_name, request.arguments);
 
-    let tool_timeout = Duration::from_secs(crate::core::config::mcp_tool_timeout_secs(&internal_name));
+    let tool_timeout =
+        Duration::from_secs(crate::core::config::mcp_tool_timeout_secs(&internal_name));
     let dispatch_name = internal_name.clone();
     let state_for_dispatch = Arc::clone(&state);
     let request_name_for_dispatch = request_name.clone();
@@ -144,18 +157,40 @@ pub async fn call_tool_inner(
     let dispatch = async move {
         match dispatch_name.as_str() {
             "search_web" => handlers::search_web::handle(state_for_dispatch, &internal_args).await,
-            "search_structured" => handlers::search_structured::handle(state_for_dispatch, &internal_args).await,
+            "search_structured" => {
+                handlers::search_structured::handle(state_for_dispatch, &internal_args).await
+            }
             "scrape_url" => handlers::scrape_url::handle(state_for_dispatch, &internal_args).await,
-            "crawl_website" => handlers::crawl_website::handle(state_for_dispatch, &internal_args).await,
-            "scrape_batch" => handlers::scrape_batch::handle(state_for_dispatch, &internal_args).await,
-            "deep_research" => handlers::deep_research::handle(state_for_dispatch, &internal_args).await,
-            "extract_structured" => handlers::extract_structured::handle(state_for_dispatch, &internal_args).await,
-            "fetch_then_extract" => handlers::fetch_then_extract::handle(state_for_dispatch, &internal_args).await,
-            "research_history" => handlers::research_history::handle(state_for_dispatch, &internal_args).await,
-            "proxy_manager" => handlers::proxy_manager::handle(state_for_dispatch, &internal_args).await,
-            "non_robot_search" => handlers::non_robot_search::handle(state_for_dispatch, &internal_args).await,
-            "visual_scout" => handlers::visual_scout::handle(state_for_dispatch, &internal_args).await,
-            "human_auth_session" => handlers::human_auth_session::handle(state_for_dispatch, &internal_args).await,
+            "crawl_website" => {
+                handlers::crawl_website::handle(state_for_dispatch, &internal_args).await
+            }
+            "scrape_batch" => {
+                handlers::scrape_batch::handle(state_for_dispatch, &internal_args).await
+            }
+            "deep_research" => {
+                handlers::deep_research::handle(state_for_dispatch, &internal_args).await
+            }
+            "extract_structured" => {
+                handlers::extract_structured::handle(state_for_dispatch, &internal_args).await
+            }
+            "fetch_then_extract" => {
+                handlers::fetch_then_extract::handle(state_for_dispatch, &internal_args).await
+            }
+            "research_history" => {
+                handlers::research_history::handle(state_for_dispatch, &internal_args).await
+            }
+            "proxy_manager" => {
+                handlers::proxy_manager::handle(state_for_dispatch, &internal_args).await
+            }
+            "non_robot_search" => {
+                handlers::non_robot_search::handle(state_for_dispatch, &internal_args).await
+            }
+            "visual_scout" => {
+                handlers::visual_scout::handle(state_for_dispatch, &internal_args).await
+            }
+            "human_auth_session" => {
+                handlers::human_auth_session::handle(state_for_dispatch, &internal_args).await
+            }
             "browser_automate" | "scout_browser_automate" => {
                 handlers::automate::handle(state_for_dispatch, &internal_args).await
             }
