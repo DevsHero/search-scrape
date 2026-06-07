@@ -4,7 +4,7 @@ Policy:
 - Keep changes under **Unreleased** during normal development.
 - `bash scripts/release.sh` automatically promotes `## Unreleased` → `## vX.Y.Z (YYYY-MM-DD)` and commits the changelog before tagging.
 
-## Unreleased
+## v3.3.7 (2026-06-07)
 
 ### Fixed
 - Fixed MCP `tools/list` response crashing strict MCP clients (e.g. nanobot, Python `mcp` library) by emitting the `icons` field in spec-compliant `Icon` object form (`{src, mimeType, sizes, theme}`) instead of a bare `Vec<String>`, as required by the MCP specification (SEP-973). The stdio transport was unaffected because it never serialized the field; the HTTP transport now matches both transports and the schema that strict clients validate against.
