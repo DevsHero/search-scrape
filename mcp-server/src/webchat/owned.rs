@@ -104,8 +104,29 @@ struct Command {
 }
 async fn descriptor(State(runtime): State<Shared>) -> Json<Value> {
     let r = runtime.lock().await;
+    let active_state = match &r.job {
+        Some(job)
+            if job.readiness.is_ready()
+                && job.turns.values().any(|(_, message)| message.is_some()) =>
+        {
+            "tested"
+        }
+        Some(job) if job.readiness.is_ready() => "ready",
+        _ => "unknown",
+    };
+    let matches_saved = r.job.as_ref().is_some_and(|job| {
+        serde_json::to_value(&job.descriptor).ok() == serde_json::to_value(&r.descriptor).ok()
+    });
+    let saved_state = if !r.descriptor.enabled {
+        "disabled"
+    } else if matches_saved && active_state != "unknown" {
+        active_state
+    } else {
+        "saved"
+    };
     Json(
-        json!({"descriptor":r.descriptor, "state": if !r.descriptor.enabled {"disabled"} else if r.job.as_ref().is_some_and(|j| j.readiness.is_ready() && j.messages > 0) {"tested"} else if r.job.as_ref().is_some_and(|j| j.readiness.is_ready()) {"ready"} else {"saved"}}),
+        json!({"descriptor":r.descriptor,"state":saved_state,"active_job_state":active_state,
+        "active_recipe_revision":r.job.as_ref().and_then(|job|job.descriptor.recipe.as_ref().map(|recipe|recipe.revision))}),
     )
 }
 async fn command(
