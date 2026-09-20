@@ -119,7 +119,7 @@ fn build_profile_config(
         .arg("--disable-blink-features=AutomationControlled")
         // Persistent isolated profile — avoids SingletonLock conflicts with
         // the user's active browser while retaining cookies/session state.
-        .arg(format!("--user-data-dir={}", profile_dir.display()))
+        .user_data_dir(&profile_dir)
         .arg(format!("--user-agent={}", ua))
         .build()
         .map_err(|e| anyhow!("Failed to build agent browser config: {}", e))?;

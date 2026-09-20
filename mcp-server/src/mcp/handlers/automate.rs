@@ -100,7 +100,7 @@ fn build_visible_auth_config(
         .arg("--no-first-run")
         .arg("--no-default-browser-check")
         .arg("--disable-blink-features=AutomationControlled")
-        .arg(format!("--user-data-dir={}", profile_dir.display()))
+        .user_data_dir(&profile_dir)
         .arg(format!("--user-agent={}", ua))
         .build()
         .map_err(|e| anyhow!("Failed to build visible auth browser config: {}", e))
