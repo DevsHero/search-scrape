@@ -369,7 +369,7 @@ async fn perform(runtime: &mut Runtime, command: Command) -> Result<Value> {
                 .await?;
             job.messages += 1;
             for _ in 0..100 {
-                let result = page_value(page, format!("(()=>{{const s={selectors_json};const a=[...document.querySelectorAll(s.assistant_messages)];const e=document.querySelector(s.error);if(e.textContent)return {{error:true}};if(a.length<={}||!document.querySelector(s.generating).hidden)return null;const m=a[a.length-1];return {{id:m.dataset.messageId,role:m.dataset.role,terminal:m.dataset.terminal==='true',content:m.textContent}}}})()",before)).await?;
+                let result = page_value(page, format!("(()=>{{const s={selectors_json};const a=[...document.querySelectorAll(s.assistant_messages)];const e=document.querySelector(s.error);if(e.textContent)return {{error:true}};if(a.length<={}||!document.querySelector(s.generating).hidden)return {{pending:true}};const m=a[a.length-1];return {{id:m.dataset.messageId,role:m.dataset.role,terminal:m.dataset.terminal==='true',content:m.textContent}}}})()",before)).await?;
                 if result.get("error") == Some(&Value::Bool(true)) {
                     bail!("owned chat error; no resend");
                 }
