@@ -1603,6 +1603,7 @@ mod tests {
 
     fn mk_scrape(url: &str, clean_content: &str, links: Vec<&str>) -> ScrapeResponse {
         ScrapeResponse {
+            metrics: None,
             url: url.to_string(),
             title: "tch::nn - Rust".to_string(),
             content: String::new(),

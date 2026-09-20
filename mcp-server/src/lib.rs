@@ -1,5 +1,6 @@
 #![recursion_limit = "512"]
 
+pub mod webchat;
 pub mod cdp;
 pub mod core;
 pub mod features;

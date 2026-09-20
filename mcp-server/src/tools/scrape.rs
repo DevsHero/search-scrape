@@ -1687,6 +1687,7 @@ mod tests {
 
     fn mk_response(clean_content: &str) -> ScrapeResponse {
         ScrapeResponse {
+            metrics: None,
             url: "https://example.com".to_string(),
             title: "Test".to_string(),
             content: String::new(),

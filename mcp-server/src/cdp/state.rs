@@ -43,8 +43,7 @@ pub struct AutomationSession {
 impl AutomationSession {
     /// Gracefully close the browser.  The persistent agent profile is preserved.
     pub async fn shutdown(mut self) {
-        let _ =
-            tokio::time::timeout(std::time::Duration::from_secs(3), self.browser.close()).await;
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(3), self.browser.close()).await;
         self.handler_task.abort();
         let _ = self.handler_task.await;
         if self.cleanup_profile {
@@ -70,10 +69,7 @@ pub fn agent_profile_dir() -> (PathBuf, bool) {
         }
     }
     // Fallback: temp dir (cleaned up on shutdown)
-    let dir = std::env::temp_dir().join(format!(
-        "cortex-scout-agent-{}",
-        uuid::Uuid::new_v4()
-    ));
+    let dir = std::env::temp_dir().join(format!("cortex-scout-agent-{}", uuid::Uuid::new_v4()));
     let _ = std::fs::create_dir_all(&dir);
     (dir, true)
 }
@@ -87,6 +83,14 @@ pub fn agent_profile_dir() -> (PathBuf, bool) {
 /// * Passes `--headless=new` for modern full-fidelity headless rendering.
 fn build_agent_config(exe: &str) -> Result<(BrowserConfig, PathBuf, bool)> {
     let (profile_dir, cleanup) = agent_profile_dir();
+    build_profile_config(exe, profile_dir, cleanup)
+}
+
+fn build_profile_config(
+    exe: &str,
+    profile_dir: PathBuf,
+    cleanup: bool,
+) -> Result<(BrowserConfig, PathBuf, bool)> {
     let ua = browser_manager::random_user_agent();
 
     let config = BrowserConfig::builder()
@@ -145,6 +149,26 @@ pub fn session_lock() -> &'static Mutex<Option<AutomationSession>> {
 pub async fn ensure_session(
     guard: &mut tokio::sync::MutexGuard<'_, Option<AutomationSession>>,
 ) -> Result<()> {
+    let (profile, cleanup) = agent_profile_dir();
+    super::lease::assert_closable(
+        &super::lease::profile_key_for(&profile),
+        "legacy-automation",
+    )
+    .map_err(anyhow::Error::msg)?;
+    ensure_profile_session(guard, profile, cleanup).await
+}
+
+/// Same browser owner, with an explicit isolated profile for owned webchat.
+pub async fn ensure_profile_session(
+    guard: &mut tokio::sync::MutexGuard<'_, Option<AutomationSession>>,
+    profile: PathBuf,
+    cleanup: bool,
+) -> Result<()> {
+    std::fs::create_dir_all(&profile)?;
+    let profile = profile.canonicalize()?;
+    if guard.as_ref().is_some_and(|s| s.data_dir != profile) {
+        return Err(anyhow!("another profile owns the automation session"));
+    }
     // Probe liveness: clone Page (cheap Arc clone) so we don't hold a borrow
     // across the await point, which would conflict with the later mutable take.
     let probe_page: Option<Page> = guard.as_ref().map(|s| s.page.clone());
@@ -169,9 +193,12 @@ pub async fn ensure_session(
     let exe = browser_manager::find_chrome_executable()
         .ok_or_else(|| anyhow!("No browser found. Install Brave, Chrome, or Chromium."))?;
 
-    info!("🚀 Launching automation session ({}) with --headless=new + persistent profile", exe);
+    info!(
+        "🚀 Launching automation session ({}) with --headless=new + persistent profile",
+        exe
+    );
 
-    let (config, data_dir, cleanup_profile) = build_agent_config(&exe)?;
+    let (config, data_dir, cleanup_profile) = build_profile_config(&exe, profile, cleanup)?;
 
     let (browser, mut handler) =
         browser_manager::launch_browser_serialized(config, "automation").await?;
@@ -204,6 +231,13 @@ pub async fn ensure_session(
 /// Called by `scout_browser_close`.
 pub async fn close_session() -> Result<()> {
     let mut guard = AUTOMATION_SESSION.lock().await;
+    if let Some(session) = guard.as_ref() {
+        super::lease::assert_closable(
+            &super::lease::profile_key_for(&session.data_dir),
+            "legacy-automation",
+        )
+        .map_err(anyhow::Error::msg)?;
+    }
     if let Some(session) = guard.take() {
         session.shutdown().await;
     }

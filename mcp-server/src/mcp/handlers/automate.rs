@@ -3239,11 +3239,8 @@ pub async fn handle_profile_auth(
         }
     };
 
-    info!(
-        "🔓 Opening agent profile in VISIBLE mode for human auth ({}s window): {}",
-        timeout_secs, url
-    );
-    info!("📋 Instruction: {}", instruction);
+    let _ = instruction;
+    info!("Opening agent profile for human auth; completion requires a separate readiness probe");
 
     let (mut browser, mut handler) =
         match browser_manager::launch_browser_serialized(config, "agent_profile_auth").await {
@@ -3309,13 +3306,13 @@ pub async fn handle_profile_auth(
     } else {
         "timeout reached"
     };
-    info!("✅ Auth portal closed ({}). Agent profile is now authenticated.", reason);
+    info!("Auth portal closed ({}); session readiness remains unknown.", reason);
 
     let text = serde_json::to_string_pretty(&json!({
-        "status": "ok",
+        "status": "unknown",
         "reason": reason,
-        "profile": profile_dir.to_string_lossy(),
-        "message": "Session saved to agent profile. Future scout_browser_automate calls will reuse these cookies silently."
+        "profile": "agent_profile",
+        "message": "Portal closed. Authentication has not been verified; a site readiness probe is required."
     }))
     .unwrap_or_default();
 

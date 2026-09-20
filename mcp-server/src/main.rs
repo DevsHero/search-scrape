@@ -50,6 +50,16 @@ async fn main() -> anyhow::Result<()> {
 
     // Handle setup-only mode
     let args: Vec<String> = std::env::args().collect();
+    if let Some(index) = args.iter().position(|a| a == "--webchat-root") {
+        let root = args
+            .get(index + 1)
+            .ok_or_else(|| anyhow::anyhow!("--webchat-root requires a directory"))?;
+        return cortex_scout::webchat::owned::serve(
+            root.into(),
+            parse_port_from_args().unwrap_or(0),
+        )
+        .await;
+    }
     if args.iter().any(|a| a == "--setup") {
         let opts = cortex_scout::setup::SetupOptions {
             mode: cortex_scout::setup::SetupRunMode::SetupFlag,
